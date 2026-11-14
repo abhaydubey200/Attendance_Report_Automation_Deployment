@@ -145,7 +145,8 @@ def gather(session: Session, day: date, upload_ids: dict[str, list[int]], rules:
     seen: dict[tuple[str, int], int] = defaultdict(int)
     duplicates: list[dict] = []
 
-    att_ids = upload_ids.get("BIZOM_ATTENDANCE", []) + upload_ids.get("HRMS_ATTENDANCE", [])
+    att_ids = (upload_ids.get("BIZOM_ATTENDANCE", []) + upload_ids.get("HRMS_ATTENDANCE", [])
+               + upload_ids.get("HRMS_ATTENDANCE_SUMMARY", []))
     if att_ids:
         for r in session.scalars(select(SourceAttendance).where(SourceAttendance.upload_id.in_(att_ids),
                                                                  SourceAttendance.attendance_date == day)):
@@ -177,7 +178,7 @@ def gather(session: Session, day: date, upload_ids: dict[str, list[int]], rules:
             if r.approval_status in ("APPROVED", "PENDING"):
                 inputs[key].leave_approval, inputs[key].leave_portion = r.approval_status, r.day_portion
 
-    punch_ids = upload_ids.get("HRMS_PUNCH", [])
+    punch_ids = upload_ids.get("HRMS_PUNCH", []) + upload_ids.get("HRMS_ATTENDANCE_SUMMARY", [])
     if punch_ids:
         for r in session.scalars(select(AttendancePunch).where(AttendancePunch.upload_id.in_(punch_ids),
                                                                 AttendancePunch.attendance_date == day)

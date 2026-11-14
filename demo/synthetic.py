@@ -114,3 +114,61 @@ def build_dataset_files(day: date, variant: int = 0) -> dict[str, tuple[str, byt
 
 MASTER_ORDER = ["DEPARTMENT_MASTER", "HRMS_EMPLOYEE_MASTER", "HOLIDAY_CALENDAR"]
 DAILY_ORDER = ["HRMS_ATTENDANCE", "BIZOM_ATTENDANCE", "HRMS_LEAVE", "HRMS_PUNCH"]
+
+
+# ----------------------------------------------------------------------------
+# Pocket HRMS "AttendanceSummary" layout (synthetic content, real layout).
+# Layout learned from the first real sample: 4 preamble rows, header on row 5,
+# two rows per employee (in time, then out time), no status column.
+
+SUMMARY_EMPLOYEES = [
+    # code, name, category, shift
+    ("HO9001", "Aarti Synth", "Head Office", "General Shift"),
+    ("HO9002", "Bimal Synth", "Head Office", "General Shift"),
+    ("HO9003", "Charu Synth", "Head Office", "General Shift"),
+    ("RK90001", "Deepak Synth", "Plant", "General Shift"),
+    ("RK90002", "Ekta Synth", "Plant", "General Shift"),
+    ("SL90001", "Firoz Synth", "Sales", "Shift Not Assigned"),
+    ("SL90002", "Gauri Synth", "Sales", "Shift Not Assigned"),
+    ("SL90003", "Harsh Synth", "Sales", "General Shift"),
+    ("SLDUMMY9", "Dummy Synth", "Sales", "Shift Not Assigned"),
+]
+
+
+def build_summary_xlsx(day: date, seed: int | None = None) -> bytes:
+    """Synthetic AttendanceSummary workbook for `day`."""
+    import random
+
+    from openpyxl import Workbook
+
+    rng = random.Random(seed if seed is not None else day.toordinal())
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "AttendanceSummary"
+    ws.append(["Generated with Pocket HRMS"])
+    ws.append(["Head Office : SYNTHETIC ADDRESS"])
+    ws.append(["AttendanceSummary"])
+    ws.append(["Run Date", f"{day:%d/%m/%Y} 15:36"])
+    ws.append(["Code", "Name", "Category", "Date", "Shift Name", "In-Out Time", "Type", "Day", "Remarks"])
+    d = day.strftime("%d/%m/%Y")
+    for i, (code, name, cat, shift) in enumerate(SUMMARY_EMPLOYEES):
+        if code == "HO9003":                      # leave
+            rows = [("", "PL", "Full Day")] * 2
+        elif code == "SL90003":                   # on duty code
+            rows = [("", "LD", "Full Day")] * 2
+        elif code == "RK90002":                   # single punch
+            rows = [("09:12", "", ""), ("", "", "")]
+        elif cat == "Sales" and code != "SL90002":
+            rows = [("", "", "")] * 2             # no punch (field staff)
+        else:
+            roll = rng.random()
+            if roll < 0.8:
+                rows = [(f"09:{rng.randint(0, 59):02d}", "", ""), (f"18:{rng.randint(0, 59):02d}", "", "")]
+            else:
+                rows = [("", "", "")] * 2
+        for t, typ, portion in rows:
+            ws.append([code, name + " ", cat, d, shift, t, typ, portion, "synthetic remark" if typ else ""])
+    import io
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

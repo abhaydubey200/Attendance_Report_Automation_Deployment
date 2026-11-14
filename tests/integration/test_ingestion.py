@@ -32,7 +32,11 @@ MB = 1024 * 1024
 
 @pytest.fixture
 def registry():
-    return load_dataset_registry()
+    """Bizom is switched off in production config (Pocket HRMS only since 14-Nov-2026), but its
+    path is kept dormant and still tested: re-enable it for these synthetic tests only."""
+    reg = load_dataset_registry()
+    return reg.model_copy(update={"datasets": tuple(
+        d.model_copy(update={"active": True}) if d.dataset_id == "BIZOM_ATTENDANCE" else d for d in reg.datasets)})
 
 
 def define_all(engine):

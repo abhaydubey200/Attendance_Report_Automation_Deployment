@@ -4,6 +4,7 @@ administrator maps the file's own columns onto the fixed internal fields below."
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -25,6 +26,20 @@ TARGET_FIELDS: dict[str, dict[str, tuple[FieldType, bool]]] = {
         "last_out": ("datetime", False),
         "first_in_time": ("time", False),
         "last_out_time": ("time", False),
+        "source_record_id": ("str", False),
+    },
+    "ATTENDANCE_SUMMARY": {
+        "source_employee_id": ("str", True),
+        "source_employee_name": ("str", False),
+        "category": ("str", False),
+        "attendance_date": ("date", True),
+        "shift_name": ("str", False),
+        "first_in_time": ("time", False),
+        "last_out_time": ("time", False),
+        "punch_count": ("str", False),
+        "leave_type": ("str", False),
+        "day_portion": ("str", False),
+        "source_status": ("str", True),
         "source_record_id": ("str", False),
     },
     "LEAVE": {
@@ -77,6 +92,7 @@ TARGET_FIELDS: dict[str, dict[str, tuple[FieldType, bool]]] = {
 }
 
 DATASET_KIND: dict[str, str] = {
+    "HRMS_ATTENDANCE_SUMMARY": "ATTENDANCE_SUMMARY",
     "BIZOM_ATTENDANCE": "ATTENDANCE",
     "HRMS_ATTENDANCE": "ATTENDANCE",
     "HRMS_LEAVE": "LEAVE",
@@ -97,7 +113,10 @@ VALUE_MAP_TARGETS: dict[str, set[str]] = {
 }
 
 # Field whose value must equal the upload's reporting date for daily datasets.
-PERIOD_FIELD: dict[str, str] = {"ATTENDANCE": "attendance_date", "PUNCH": "punch_date"}
+PERIOD_FIELD: dict[str, str] = {"ATTENDANCE": "attendance_date", "ATTENDANCE_SUMMARY": "attendance_date", "PUNCH": "punch_date"}
+
+# Fields that identify an employee (used by exclusion patterns).
+ID_FIELDS = ("source_employee_id", "employee_code")
 
 
 class SchemaDefinition(BaseModel):
@@ -110,6 +129,7 @@ class SchemaDefinition(BaseModel):
     time_formats: list[str] = Field(default_factory=lambda: ["%H:%M:%S", "%H:%M"])
     value_maps: dict[str, dict[str, str]] = Field(default_factory=dict)
     check_reporting_period: bool = True
+    exclude_codes: list[str] = Field(default_factory=list, description="regex patterns; matching employee codes are skipped")
 
     def validate_for(self, dataset_id: str) -> list[str]:
         """Problems that make this definition unusable for `dataset_id` (empty = OK)."""
@@ -135,6 +155,11 @@ class SchemaDefinition(BaseModel):
         missing_pk = sorted(set(self.primary_key) - set(targets))
         if missing_pk:
             problems.append(f"Business-key fields not mapped: {', '.join(missing_pk)}.")
+        for pattern in self.exclude_codes:
+            try:
+                re.compile(pattern)
+            except re.error:
+                problems.append(f"Invalid exclusion pattern: {pattern!r}.")
         for field_name, mapping in self.value_maps.items():
             allowed = VALUE_MAP_TARGETS.get(field_name)
             if allowed is None:

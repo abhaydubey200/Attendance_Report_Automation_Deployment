@@ -177,6 +177,7 @@ export interface SchemaDef {
   time_formats: string[];
   value_maps: Record<string, Record<string, string>>;
   check_reporting_period: boolean;
+  exclude_codes: string[];
 }
 
 export interface DatasetInfo {

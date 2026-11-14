@@ -99,7 +99,7 @@ export function UploadPage() {
               </select>
             </Field>
           )}
-          <Field label="Header row" hint="Only if the header is not on row 1">
+          <Field label="Header row" hint={datasetId === "HRMS_ATTENDANCE_SUMMARY" ? "Found automatically for this report" : "Only if the header is not on row 1"}>
             <input type="number" min={1} max={50} value={headerRow} onChange={(e) => setHeaderRow(Number(e.target.value) || 1)} />
           </Field>
           <div className="form-actions">
@@ -197,6 +197,7 @@ function SchemaEditor({ ds, catalog, onSaved }: { ds: DatasetInfo; catalog: Fiel
   const [maps, setMaps] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(existing?.value_maps ?? {}).map(([f, m]) => [f, Object.entries(m).map(([k, v]) => `${k} = ${v}`).join("\n")])));
   const [checkPeriod, setCheckPeriod] = useState(existing?.check_reporting_period ?? true);
+  const [excludes, setExcludes] = useState((existing?.exclude_codes ?? []).join("\n"));
   const [notes, setNotes] = useState("");
   const sample = useAction();
   const save = useAction();
@@ -236,6 +237,7 @@ function SchemaEditor({ ds, catalog, onSaved }: { ds: DatasetInfo; catalog: Fiel
       time_formats: timeFormats.split(",").map((s) => s.trim()).filter(Boolean),
       value_maps: Object.fromEntries(valueFields.map((f) => [f, parseMap(maps[f] ?? "", catalog.value_maps[f])]).filter(([, m]) => Object.keys(m).length)),
       check_reporting_period: checkPeriod,
+      exclude_codes: excludes.split("\n").map((s) => s.trim()).filter(Boolean),
     };
     const r = await save.run(() => api.post<{ version: number }>(`/v1/datasets/${ds.dataset_id}/schemas`, { definition, notes: notes || null }),
       (res) => `Schema version ${res.version} saved and active.`);
@@ -245,6 +247,7 @@ function SchemaEditor({ ds, catalog, onSaved }: { ds: DatasetInfo; catalog: Fiel
   return (
     <Card title={`Column schema: ${ds.dataset_name}`}>
       <p className="muted">
+        {existing && <>Current version {ds.schema_version}{ds.schema_notes ? ` — ${ds.schema_notes}` : ""}. </>}
         Upload a real sample file from {ds.source_system.replace("_", " ")}; its columns are read, never assumed. Map each column to an internal field
         (or leave it ignored), then save. Each save creates a new version; earlier uploads keep the version they used.
       </p>
@@ -281,6 +284,9 @@ function SchemaEditor({ ds, catalog, onSaved }: { ds: DatasetInfo; catalog: Fiel
               <button type="button" className="btn btn-ghost btn-small" onClick={() => prefill(f)}>Add sample values</button>
             </Field>
           ))}
+          <Field label="Exclude employee codes" hint="One pattern per line (regular expression, case-insensitive), e.g. ^test$ or DUMMY or ^CAND-. Matching rows are skipped and counted.">
+            <textarea rows={3} value={excludes} onChange={(e) => setExcludes(e.target.value)} />
+          </Field>
           <label className="check"><input type="checkbox" checked={checkPeriod} onChange={(e) => setCheckPeriod(e.target.checked)} /> Reject rows whose date differs from the reporting date (daily datasets)</label>
           <Field label="Change note"><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. defined from Pocket HRMS export of 12-Nov" /></Field>
           <ActionMessages error={save.error} message={save.message} />

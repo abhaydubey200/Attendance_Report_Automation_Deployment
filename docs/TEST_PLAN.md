@@ -2,7 +2,7 @@
 
 Run: `.\.venv\Scripts\python.exe -m pytest` (backend) and `npm --prefix frontend test` (frontend). All fixtures are synthetic (`TEST-0001`-style codes) and isolated in temp directories.
 
-## Coverage (165 backend + 11 frontend tests, all passing on 2026-11-14, v0.4.0)
+## Coverage (174 backend + 11 frontend tests, all passing on 2026-11-14, v0.5.0)
 
 | Area | File | Covers |
 |---|---|---|
@@ -24,6 +24,8 @@ Run: `.\.venv\Scripts\python.exe -m pytest` (backend) and `npm --prefix frontend
 | HTTP (2-12) | `tests/integration/test_api_phases.py` | Full flow over HTTP, rejections, HOD scope on every new endpoint |
 
 A browser walk-through of the demo also exercised all 30 pages, the exception workflow, re-processing, approval, report preview, test distribution and an upload with an invalid row.
+
+| Pocket HRMS AttendanceSummary | `tests/integration/test_attendance_summary.py` | Row pairing and labels, header detection, init-db seeding, employees/categories created, exclusions without forced review, engine run with summary only, expected datasets, CSV variant (synthetic workbook in the real layout) |
 
 ## Not yet covered
 - A real SQL Server (`-m mssql` marker is reserved; needs `DB_PROFILE=mssql` and a reachable instance).

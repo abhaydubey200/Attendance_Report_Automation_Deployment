@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2026-11-14 - Pocket HRMS AttendanceSummary (Pocket HRMS only)
+- Direction from APIS: manual upload only for now; all data comes from Pocket HRMS. Bizom dataset switched off (kept for later).
+- New dataset `HRMS_ATTENDANCE_SUMMARY` for the Pocket HRMS "AttendanceSummary" export, modelled on the first real sample: header found automatically below the preamble, the two rows per employee (in time, out time) paired into one record, Remarks dropped.
+- Factual labels per record (PUNCH_IN_OUT, PUNCH_SINGLE, NO_PUNCH, NO_PUNCH_NO_SHIFT, LEAVE:<code>); their meaning is an editable value map. Seeded proposal: PUNCH_IN_OUT=PRESENT, PUNCH_SINGLE=MISSING_PUNCH, LEAVE:PL/SL=APPROVED_LEAVE; NO_PUNCH, NO_PUNCH_NO_SHIFT and LEAVE:LD left UNRESOLVED for HR.
+- The summary also builds the employee list; Category becomes the reporting group (HOD reports per category).
+- Exclusion patterns for test/dummy codes (skipped rows do not force a review); unmapped values reported once per value with a count.
+- `init-db` seeds a dataset's first schema from `datasets.yaml` (never overwrites an existing one). Demo rebuilt on the new format.
+- Verified with the real sample in a throwaway database (deleted afterwards): 721 employees, 126 present, 2 approved leave, 593 awaiting HR decisions, reports for 4 categories.
+- Tests: 174 backend, 11 frontend.
+
 ## 0.4.0 - 2026-11-14 - Phases 2-12
 - Phase 2-3: upload inspection (type/size/signature/macro/encryption), CSV/XLSX reader, preview, schema and content validation with structured issues, exception CSV, SHA-256 duplicate prevention, supersede and controlled reprocessing, read-only raw archive.
 - Column-schema discovery: map a real sample file's columns in the Dataset Registry; versioned schemas.

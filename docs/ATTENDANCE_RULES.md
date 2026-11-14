@@ -49,6 +49,18 @@ The engine (`data_engine/attendance_processor.py`) applies this order. HR should
 
 Eligibility uses only the objective employment window (joined on or before the date, not exited before it). Attendance % and absenteeism % stay blank until every rule they use is approved.
 
+## Pocket HRMS AttendanceSummary labels (edit in Dataset Registry -> value map for source_status)
+
+| Label | Seeded proposal | Needs HR |
+|---|---|---|
+| PUNCH_IN_OUT | PRESENT | Confirm |
+| PUNCH_SINGLE | MISSING_PUNCH | Confirm |
+| LEAVE:PL, LEAVE:SL | APPROVED_LEAVE | Confirm that a Type code means approved leave |
+| LEAVE:LD | unmapped (UNRESOLVED) | What is LD? |
+| NO_PUNCH | unmapped (UNRESOLVED) | Absent? |
+| NO_PUNCH_NO_SHIFT | unmapped (UNRESOLVED) | Absent, or field staff not tracked by punches? (most Sales staff) |
+| Test codes (A001, test, SL0DUMMY, CAND-...) | not excluded | Exclude? (Dataset Registry -> exclusion list) |
+
 ## Change procedure
 
 1. HR records the decision in writing.

@@ -13,6 +13,21 @@ from tests.integration.test_ingestion import DAY
 H = {CSRF_HEADER: "1"}
 
 
+@pytest.fixture(autouse=True)
+def _bizom_enabled_for_tests(monkeypatch):
+    """Bizom is off in production config; keep its dormant path covered in these synthetic tests."""
+    from ingestion import dataset_registry
+
+    real = dataset_registry.load_dataset_registry
+
+    def with_bizom(config_dir=None):
+        reg = real(config_dir)
+        return reg.model_copy(update={"datasets": tuple(
+            d.model_copy(update={"active": True}) if d.dataset_id == "BIZOM_ATTENDANCE" else d for d in reg.datasets)})
+
+    monkeypatch.setattr("api.routers.data.load_dataset_registry", with_bizom)
+
+
 @pytest.fixture
 def operator(settings, engine, tmp_path):
     """No-login mode: HR_ADMIN + SYSTEM_ADMIN local operator."""

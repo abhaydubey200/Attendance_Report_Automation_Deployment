@@ -39,6 +39,22 @@ def cmd_check(_: argparse.Namespace) -> int:
     return 1 if any(r.status is Status.FAIL for r in results) else 0
 
 
+def seed_schemas(session, settings) -> list[str]:
+    """Create a dataset's first schema version from datasets.yaml `seed_schema` if it has none.
+    Never overwrites a schema an administrator already saved."""
+    from ingestion.dataset_registry import load_dataset_registry
+    from ingestion.schema_definition import SchemaDefinition
+    from ingestion.schema_service import get_active_schema, save_schema
+
+    seeded = []
+    for d in load_dataset_registry(settings.config_dir).datasets:
+        if d.seed_schema and get_active_schema(session, d.dataset_id) is None:
+            save_schema(session, d.dataset_id, SchemaDefinition.model_validate(d.seed_schema["definition"]),
+                        "seed:datasets.yaml", d.seed_schema.get("notes"))
+            seeded.append(d.dataset_id)
+    return seeded
+
+
 def cmd_init_db(_: argparse.Namespace) -> int:
     from database.connection import session_scope
     from database.migrate import upgrade_to_head
@@ -49,7 +65,10 @@ def cmd_init_db(_: argparse.Namespace) -> int:
     upgrade_to_head(engine)
     with session_scope(engine) as session:
         counts = SecurityRepository(session).sync_roles_and_permissions(settings.security)
+        seeded = seed_schemas(session, settings)
     print(f"Migrations applied. Security model synced: {counts}")
+    if seeded:
+        print(f"Seeded column schemas from config/datasets.yaml: {', '.join(seeded)}")
     return 0
 
 

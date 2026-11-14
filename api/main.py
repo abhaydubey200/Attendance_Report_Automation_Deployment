@@ -42,7 +42,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
 
     app = FastAPI(
         title=settings.app.name,
-        version="0.4.0",
+        version="0.5.0",
         docs_url="/api/docs" if settings.environment != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if settings.environment != "production" else None,

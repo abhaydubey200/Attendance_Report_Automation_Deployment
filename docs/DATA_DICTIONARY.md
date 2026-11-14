@@ -17,3 +17,21 @@ Then set `required_columns`, `primary_key_columns` and `date_column`, and switch
 4. Save. Each save is a new version; earlier uploads keep the version they used.
 
 Synthetic schemas used by the demo and tests live in `demo/synthetic.py` and are **not** real column names.
+
+## Pocket HRMS AttendanceSummary (dataset HRMS_ATTENDANCE_SUMMARY)
+
+Learned from the first real sample (14-Nov-2026). Layout: 4 preamble rows (generator, address, title, Run Date), header row, then two rows per employee and date.
+
+| File column | Meaning | Internal field |
+|---|---|---|
+| Code | Employee code (prefixes seen: SL, HO, RK, NA) | `source_employee_id` |
+| Name | Employee name (spaces normalised) | `source_employee_name` |
+| Category | Sales / Head Office / Plant / AONE; used as the reporting group | `category` |
+| Date | dd/mm/yyyy | `attendance_date` |
+| Shift Name | "General Shift" or "Shift Not Assigned" | `shift_name` |
+| In-Out Time | HH:MM; first row = in, second row = out | paired into `first_in_time`, `last_out_time`, `punch_count` |
+| Type | Leave or duty code (PL, SL, LD seen) | `leave_type` |
+| Day | e.g. "Full Day" | `day_portion` |
+| Remarks | Free text; **not stored** (data minimisation) | - |
+
+Derived label (`source_status`), facts only: `LEAVE:<Type>` if Type is set; else `PUNCH_IN_OUT` (2+ times), `PUNCH_SINGLE` (1 time), `NO_PUNCH` (no time, shift assigned), `NO_PUNCH_NO_SHIFT` (no time, shift not assigned).

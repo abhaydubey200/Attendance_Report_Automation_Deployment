@@ -21,7 +21,7 @@ from contracts.punch import PunchEvent
 from database.models.attendance import AttendancePunch, LeaveRecordRow, SourceAttendance
 from database.models.hr import DimDepartment, DimEmployee, EmployeeOrgHistory, HolidayCalendar, ReportingHierarchy
 from data_engine.employee_mapper import ensure_mappings, refresh_exact_matches
-from ingestion.adapters.base_adapter import HierarchyLine, HolidayEntry
+from ingestion.adapters.base_adapter import HierarchyLine, HolidayEntry, SummaryLine
 
 
 def _norm(code: str | None) -> str | None:
@@ -155,3 +155,53 @@ def save_punches(session: Session, records: list[PunchEvent], upload_id: int) ->
     system = records[0].source_system.value if records else None
     mapping = ensure_mappings(session, system, {r.employee_code: None for r in records}) if system else {}
     return {"records": len(records), "mappings": mapping}
+
+
+def category_code(category: str | None) -> str | None:
+    """'Head Office' -> 'HEAD_OFFICE'. Category is the only grouping in the Pocket HRMS summary."""
+    if not category or not category.strip():
+        return None
+    return "_".join(category.strip().upper().split())[:50]
+
+
+def save_attendance_summary(session: Session, lines: list[SummaryLine], as_of: date, upload_id: int) -> dict:
+    """Pocket HRMS AttendanceSummary: it is also the employee list (code, name, category)
+    until a separate employee master is provided. Employment dates are never overwritten."""
+    depts = {d.department_code: d for d in session.scalars(select(DimDepartment))}
+    employees = {e.employee_code: e for e in session.scalars(select(DimEmployee))}
+    created = 0
+    for line in lines:
+        dept = category_code(line.category)
+        if dept and dept not in depts:
+            depts[dept] = DimDepartment(department_code=dept, department_name=line.category.strip(), is_active=True,
+                                        source_upload_id=upload_id)
+            session.add(depts[dept])
+        emp = employees.get(line.employee_code)
+        if emp is None:
+            emp = DimEmployee(employee_code=line.employee_code)
+            session.add(emp)
+            employees[line.employee_code] = emp
+            created += 1
+        if line.employee_name:
+            emp.employee_name = line.employee_name
+        if dept:
+            emp.department_code = dept
+        emp.source_upload_id = upload_id
+        session.flush()
+        _apply_org_history(session, emp, emp.department_code, emp.location_code, as_of, upload_id)
+        r = line.attendance
+        session.add(SourceAttendance(
+            upload_id=upload_id, source_system=r.source_system.value, source_record_id=r.source_record_id,
+            source_employee_id=r.employee_code, source_employee_name=line.employee_name, attendance_date=r.attendance_date,
+            source_status=r.source_status, mapped_status=r.attendance_status.value if r.attendance_status else None,
+            first_in=r.first_in_time, last_out=r.last_out_time))
+        for p in line.punches:
+            session.add(AttendancePunch(
+                upload_id=upload_id, source_system=p.source_system.value, source_record_id=p.source_record_id,
+                source_employee_id=p.employee_code, punch_time=p.punch_time, attendance_date=p.attendance_date,
+                direction=p.direction.value, device_or_location=None))
+    session.flush()
+    mapping = ensure_mappings(session, "POCKET_HRMS", {l.employee_code: l.employee_name for l in lines})
+    refresh_exact_matches(session)
+    return {"records": len(lines), "employees_created": created, "categories": len({category_code(l.category) for l in lines}),
+            "mappings": mapping}

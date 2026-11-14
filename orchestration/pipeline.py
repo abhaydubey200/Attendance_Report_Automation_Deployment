@@ -48,6 +48,23 @@ ACTIVE_STATES = {P.CREATED, P.UPLOADING, P.VALIDATING, P.VALIDATED, P.PROCESSING
 STALE_AFTER = timedelta(hours=1)
 
 
+def expected_missing(settings: Settings, uploads: dict[str, list[int]]) -> list[str]:
+    """Daily datasets expected but not uploaded.
+
+    The Pocket HRMS AttendanceSummary carries attendance, leave codes and punches in one
+    file, so it satisfies the day on its own. Otherwise the separate active daily
+    datasets are expected (or, when nothing was uploaded, the summary)."""
+    if uploads.get("HRMS_ATTENDANCE_SUMMARY"):
+        return []
+    from ingestion.dataset_registry import load_dataset_registry
+
+    active = {d.dataset_id for d in load_dataset_registry(settings.config_dir).datasets if d.active and d.frequency == "DAILY"}
+    separate = [d for d in DAILY_DATASETS if d in active]
+    if not any(uploads.get(d) for d in separate) and "HRMS_ATTENDANCE_SUMMARY" in active:
+        return ["HRMS_ATTENDANCE_SUMMARY"]
+    return [d for d in separate if not uploads.get(d)]
+
+
 class PipelineError(Exception):
     pass
 
@@ -201,7 +218,7 @@ def _execute_stages(engine: Engine, settings: Settings, run_id: int, from_stage:
             if not s.scalar(select(func.count()).select_from(DimEmployee)):
                 raise PipelineError("No employee master has been uploaded.")
         with _Stage(engine, run_id, P.VALIDATING) as st:
-            missing = [d for d in DAILY_DATASETS if not uploads.get(d)]
+            missing = expected_missing(settings, uploads)
             stats["missing_datasets"] = missing
             st.message = f"missing daily datasets: {', '.join(missing)}" if missing else "all daily datasets present"
         _transition(engine, run_id, P.VALIDATED)

@@ -28,7 +28,7 @@ from ingestion.adapters.base_adapter import adapter_for
 from ingestion.checksum import sha256_bytes
 from ingestion.dataset_registry import DatasetRegistry
 from ingestion.file_inspector import inspect_file, safe_filename
-from ingestion.file_reader import ReadError, Table, read_table
+from ingestion.file_reader import ReadError, Table, read_for_dataset
 from ingestion.schema_definition import DATASET_KIND
 from ingestion.schema_service import get_active_schema
 from ingestion.validator import MAX_STORED_ISSUES, ValidationResult, ValidationStatus, validate_table
@@ -67,7 +67,7 @@ def _profile(table: Table) -> list[dict]:
     for col in table.columns:
         values = [r.get(col, "") for r in table.rows]
         non_blank = [v for v in values if v]
-        samples = list(dict.fromkeys(non_blank))[:5]
+        samples = list(dict.fromkeys(non_blank))[:12]
         profile.append({"column": col, "blank": len(values) - len(non_blank), "distinct": len(set(non_blank)),
                         "samples": samples})
     return profile
@@ -102,7 +102,7 @@ def inspect_upload(
     if not inspection.ok:
         return {"accepted": False, "errors": inspection.errors}
     try:
-        table = read_table(data, inspection.file_type, sheet, header_row)
+        table = read_for_dataset(data, inspection.file_type, dataset_id, sheet, header_row)
     except ReadError as exc:
         return {"accepted": False, "errors": [str(exc)]}
 
@@ -183,7 +183,7 @@ def confirm_upload(
 
     state = UploadState.FILE_SELECTED
     state = validate_upload_transition(state, UploadState.FILE_INSPECTION)
-    table = read_table(data, meta["file_type"], meta["sheet"], meta["header_row"])
+    table = read_for_dataset(data, meta["file_type"], dataset_id, meta["sheet"], meta["header_row"])
     state = validate_upload_transition(state, UploadState.SCHEMA_VALIDATION)
     schema, result = _validate(session, registry, dataset_id, table, reporting_date)
     if schema is None:
@@ -273,6 +273,8 @@ def standardize(session: Session, upload: UploadRegistry, result: ValidationResu
         stats = normalizer.save_hierarchy(session, output.records, upload.reporting_date, upload.upload_id)
     elif kind == "HOLIDAY":
         stats = normalizer.save_holidays(session, output.records, upload.upload_id)
+    elif kind == "ATTENDANCE_SUMMARY":
+        stats = normalizer.save_attendance_summary(session, output.records, upload.reporting_date, upload.upload_id)
     elif kind == "ATTENDANCE":
         names = {r.values["source_employee_id"]: r.values.get("source_employee_name") for r in result.typed_rows}
         stats = normalizer.save_attendance(session, output.records, names, upload.upload_id)
@@ -303,7 +305,7 @@ def pending_exceptions_csv(settings: Settings, session: Session, registry: Datas
     import io
 
     _, meta, data = _load_pending(settings, token)
-    table = read_table(data, meta["file_type"], meta["sheet"], meta["header_row"])
+    table = read_for_dataset(data, meta["file_type"], meta["dataset_id"], meta["sheet"], meta["header_row"])
     _, result = _validate(session, registry, meta["dataset_id"], table, date.fromisoformat(meta["reporting_date"]))
     buf = io.StringIO()
     writer = csv.writer(buf)

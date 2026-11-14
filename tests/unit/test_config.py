@@ -85,20 +85,38 @@ def test_source_authority_pending_and_validated(config_copy):
         load_source_authority(config_copy)
 
 
-def test_dataset_registry_has_all_categories_pending_discovery():
+def test_dataset_registry_categories_and_only_inspected_schemas():
     registry = load_dataset_registry()
     assert {d.dataset_id for d in registry.datasets} == {
-        "BIZOM_ATTENDANCE", "HRMS_EMPLOYEE_MASTER", "HRMS_ATTENDANCE", "HRMS_LEAVE",
+        "HRMS_ATTENDANCE_SUMMARY", "BIZOM_ATTENDANCE", "HRMS_EMPLOYEE_MASTER", "HRMS_ATTENDANCE", "HRMS_LEAVE",
         "HRMS_PUNCH", "DEPARTMENT_MASTER", "REPORTING_HIERARCHY", "HOLIDAY_CALENDAR",
     }
-    # No invented source columns.
+    # Pocket HRMS only since 14-Nov-2026: Bizom kept but switched off.
+    assert registry.get("BIZOM_ATTENDANCE").active is False
+    # Only the AttendanceSummary has columns, and they come from the inspected real sample.
+    summary = registry.get("HRMS_ATTENDANCE_SUMMARY")
+    assert summary.schema_status is SchemaStatus.DEFINED and summary.seed_schema
+    assert list(summary.required_columns) == ["Code", "Name", "Category", "Date", "Shift Name", "In-Out Time", "Type", "Day", "Remarks"]
     for d in registry.datasets:
-        assert d.schema_status is SchemaStatus.PENDING_DISCOVERY
-        assert d.required_columns == () and not d.ready_for_upload_validation
+        if d.dataset_id != "HRMS_ATTENDANCE_SUMMARY":
+            assert d.schema_status is SchemaStatus.PENDING_DISCOVERY and d.required_columns == ()
+
+
+def test_seed_schema_is_valid_and_leaves_hr_decisions_unmapped():
+    from ingestion.schema_definition import SchemaDefinition
+
+    seed = load_dataset_registry().get("HRMS_ATTENDANCE_SUMMARY").seed_schema
+    definition = SchemaDefinition.model_validate(seed["definition"])
+    assert definition.validate_for("HRMS_ATTENDANCE_SUMMARY") == []
+    status_map = definition.value_maps["source_status"]
+    for open_question in ("NO_PUNCH", "NO_PUNCH_NO_SHIFT", "LEAVE:LD"):
+        assert open_question not in status_map
+    assert "PROPOSAL" in seed["notes"]
 
 
 def test_defined_dataset_requires_columns(config_copy):
-    _edit(config_copy / "datasets.yaml", lambda d: d["datasets"][0].update(schema_status="DEFINED"))
+    _edit(config_copy / "datasets.yaml",
+          lambda d: next(x for x in d["datasets"] if x["dataset_id"] == "HRMS_LEAVE").update(schema_status="DEFINED"))
     with pytest.raises(ConfigurationError, match="required_columns"):
         load_dataset_registry(config_copy)
 

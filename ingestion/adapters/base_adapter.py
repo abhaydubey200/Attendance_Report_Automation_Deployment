@@ -40,6 +40,16 @@ class HolidayEntry:
     location_code: str | None
 
 
+@dataclass(frozen=True)
+class SummaryLine:
+    """One Pocket HRMS AttendanceSummary record: who, which category, the day's status label and punches."""
+    employee_code: str
+    employee_name: str | None
+    category: str | None
+    attendance: AttendanceRecord
+    punches: tuple[PunchEvent, ...]
+
+
 class BaseAdapter:
     kind: str = ""
 
@@ -80,6 +90,28 @@ class AttendanceAdapter(BaseAdapter):
             first_in_time=v.get("first_in"),
             last_out_time=v.get("last_out"),
         )]
+
+
+class AttendanceSummaryAdapter(BaseAdapter):
+    kind = "ATTENDANCE_SUMMARY"
+
+    def convert(self, row: TypedRow) -> list:
+        v = row.values
+        status = v.get("source_status_mapped")
+        base = self._base(row)
+        code = v["source_employee_id"]
+        record = AttendanceRecord(
+            **base, employee_code=code, attendance_date=v["attendance_date"], source_status=v.get("source_status"),
+            attendance_status=AttendanceStatus(status) if status else None,
+            first_in_time=v.get("first_in"), last_out_time=v.get("last_out"),
+        )
+        punches = []
+        for direction, field_name in ((PunchDirection.IN, "first_in"), (PunchDirection.OUT, "last_out")):
+            if v.get(field_name):
+                punches.append(PunchEvent(**{**base, "source_record_id": f"{base['source_record_id']}:{direction.value}"},
+                                          employee_code=code, punch_time=v[field_name], attendance_date=v["attendance_date"],
+                                          direction=direction))
+        return [SummaryLine(code, v.get("source_employee_name"), v.get("category"), record, tuple(punches))]
 
 
 class LeaveAdapter(BaseAdapter):
@@ -160,7 +192,7 @@ class HolidayAdapter(BaseAdapter):
 
 
 ADAPTERS: dict[str, type[BaseAdapter]] = {
-    a.kind: a for a in (AttendanceAdapter, LeaveAdapter, PunchAdapter, EmployeeMasterAdapter,
+    a.kind: a for a in (AttendanceAdapter, AttendanceSummaryAdapter, LeaveAdapter, PunchAdapter, EmployeeMasterAdapter,
                         DepartmentAdapter, HierarchyAdapter, HolidayAdapter)
 }
 

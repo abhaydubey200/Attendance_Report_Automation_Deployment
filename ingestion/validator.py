@@ -14,7 +14,9 @@ from enum import StrEnum
 
 from core.timeutils import IST
 from ingestion.file_reader import Table
-from ingestion.schema_definition import DATASET_KIND, PERIOD_FIELD, TARGET_FIELDS, VALUE_MAP_TARGETS, SchemaDefinition
+import re
+
+from ingestion.schema_definition import DATASET_KIND, ID_FIELDS, PERIOD_FIELD, TARGET_FIELDS, VALUE_MAP_TARGETS, SchemaDefinition
 
 MAX_STORED_ISSUES = 5000
 
@@ -133,6 +135,9 @@ def validate_table(
         return result
 
     period_field = PERIOD_FIELD.get(kind) if (daily and schema.check_reporting_period) else None
+    excludes = [re.compile(p, re.IGNORECASE) for p in schema.exclude_codes]
+    unmapped: dict[tuple[str, str], int] = {}
+    excluded = 0
     seen_rows: set[tuple] = set()
     seen_keys: dict[tuple, int] = {}
 
@@ -141,6 +146,11 @@ def validate_table(
         if not any(raw.values()) or all(not v.strip() for v in raw.values()):
             result.empty_rows += 1
             continue
+        if excludes:
+            code = next((mapped[f] for f in ID_FIELDS if mapped.get(f)), "")
+            if code and any(p.search(code) for p in excludes):
+                excluded += 1
+                continue
         result.total_rows += 1
 
         fingerprint = tuple(raw.get(c, "") for c in table.columns)
@@ -176,12 +186,10 @@ def validate_table(
                 mapped_value = _map_value(value_field, raw_value, schema)
                 typed[f"{value_field}_mapped"] = mapped_value
                 if mapped_value is None:
-                    issues.append(Issue("UNMAPPED_VALUE", Severity.WARNING,
-                                        f"Value '{raw_value}' for '{value_field}' has no mapping; it will be treated as unresolved.",
-                                        row_number, schema.target_to_source.get(value_field)))
+                    unmapped[(value_field, raw_value)] = unmapped.get((value_field, raw_value), 0) + 1
 
         # Composite fields: a time column combined with the record date.
-        if kind == "ATTENDANCE":
+        if kind in ("ATTENDANCE", "ATTENDANCE_SUMMARY"):
             for t_field, dt_field in (("first_in_time", "first_in"), ("last_out_time", "last_out")):
                 if isinstance(typed.get(t_field), time) and typed.get(dt_field) is None and isinstance(typed.get("attendance_date"), date):
                     typed[dt_field] = datetime.combine(typed["attendance_date"], typed[t_field], tzinfo=IST)
@@ -235,12 +243,20 @@ def validate_table(
             result.valid_rows += 1
             result.typed_rows.append(TypedRow(row_number, typed))
 
+    for (value_field, raw_value), n in sorted(unmapped.items(), key=lambda kv: -kv[1]):
+        issues.append(Issue("UNMAPPED_VALUE", Severity.WARNING,
+                            f"Value '{raw_value}' for '{value_field}' has no approved mapping ({n} row(s)); treated as UNRESOLVED.",
+                            None, schema.target_to_source.get(value_field)))
+    if excluded:
+        issues.append(Issue("EXCLUDED_CODE", Severity.WARNING, f"{excluded} row(s) skipped by the exclusion list."))
     if result.empty_rows:
         issues.append(Issue("EMPTY_ROW", Severity.WARNING, f"{result.empty_rows} empty row(s) skipped."))
     result.issues = issues
     result.warning_count = sum(1 for i in issues if i.severity is Severity.WARNING)
+    # Configured exclusions are expected, not something a reviewer must acknowledge.
+    review_warnings = sum(1 for i in issues if i.severity is Severity.WARNING and i.code != "EXCLUDED_CODE")
     if result.valid_rows == 0:
         result.status = ValidationStatus.REJECTED
-    elif result.invalid_rows or result.warning_count:
+    elif result.invalid_rows or review_warnings:
         result.status = ValidationStatus.REQUIRES_REVIEW
     return result

@@ -32,3 +32,7 @@
 | D-028 | 2026-11-14 | Exception resolutions create adjustments applied on the next run; open exceptions of a replaced run become SUPERSEDED | Source values are never edited; history stays complete |
 | D-029 | 2026-11-14 | Charts are small hand-written SVG components | No chart dependency; CSP-safe; works offline |
 | D-030 | 2026-11-14 | Synthetic generator moved to `demo/`; `main.py demo` builds a separate database in `storage/demo` | Demonstrations never mix with real data |
+| D-031 | 2026-11-14 | Pocket HRMS is the only source for now; Bizom dataset set `active: false` (code and tests kept) | Direction from APIS |
+| D-032 | 2026-11-14 | Report-specific reshaper for the AttendanceSummary export: pairs in/out rows and derives factual labels; meaning of labels is a value map, not code | The export has no status column; HR decides what "no punch" or "LD" means |
+| D-033 | 2026-11-14 | The AttendanceSummary also creates/updates employees and uses Category as the department/reporting group; Remarks are not stored | No separate employee master yet; data minimisation |
+| D-034 | 2026-11-14 | Seed schema in `datasets.yaml`, applied by `init-db` only when no schema exists | Real columns from the sample; administrators' later versions are never overwritten |

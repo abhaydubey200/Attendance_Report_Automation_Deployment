@@ -154,7 +154,7 @@ def test_system_config_never_exposes_secrets(client, make_user):
     assert r.status_code == 200
     text = r.text.lower()
     assert "password" not in text and "secret" not in text
-    assert len(r.json()["datasets"]) == 8
+    assert len(r.json()["datasets"]) == 9
 
 
 def test_security_headers(client):

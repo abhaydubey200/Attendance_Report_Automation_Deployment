@@ -6,7 +6,9 @@ Attendance intelligence, reconciliation and MIS **automation** platform for APIS
 
 The automation runs headless (CLI / scheduler). The REST API exposes it to the React UI now and to the **APIS intranet** later. See [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
-**Status (v0.4.0):** Phases 1-12 are built and tested: upload and validation, column-schema discovery, standardization and employee mapping, the attendance engine, reconciliation and exception workflow, SQL Server-ready migrations, HOD/Directors/HR reports, analytics, email distribution (test mode), optional AI summary and the attendance analyst. **All attendance figures are PROVISIONAL** until HR approves the rules, and no real dataset schema exists until real sample files are mapped in the Dataset Registry.
+**Data source (since v0.5.0):** Pocket HRMS only, by manual upload of the AttendanceSummary export (Bizom switched off).
+
+**Status (v0.5.0):** Phases 1-12 are built and tested: upload and validation, column-schema discovery, standardization and employee mapping, the attendance engine, reconciliation and exception workflow, SQL Server-ready migrations, HOD/Directors/HR reports, analytics, email distribution (test mode), optional AI summary and the attendance analyst. **All attendance figures are PROVISIONAL** until HR approves the rules, and no real dataset schema exists until real sample files are mapped in the Dataset Registry.
 
 ## Quick start (Windows, development)
 

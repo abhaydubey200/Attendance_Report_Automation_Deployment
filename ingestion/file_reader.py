@@ -75,21 +75,17 @@ def _build(header: list, body: list[list], first_row_number: int, sheets: list[s
     return Table(columns, rows, numbers, sheets)
 
 
-def read_table(data: bytes, file_type: str, sheet: str | None = None, header_row: int = 1) -> Table:
-    if header_row < 1:
-        raise ReadError("Header row must be 1 or more.")
+def read_raw(data: bytes, file_type: str, sheet: str | None = None) -> tuple[list[list[str]], list[str]]:
+    """All rows as lists of strings (no header interpretation), plus sheet names."""
     if file_type == "csv":
         text = _decode(data)
         try:
-            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;	|")
         except csv.Error:
             dialect = csv.excel
-        lines = list(csv.reader(io.StringIO(text), dialect))
-        if len(lines) < header_row:
-            raise ReadError("The file has no header row.")
-        return _build(lines[header_row - 1], lines[header_row:], header_row + 1, [])
-
-    if file_type == "xlsx":
+        rows = [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect)]
+        sheets: list[str] = []
+    elif file_type == "xlsx":
         try:
             # data_only=True: cached values only, formulas are never evaluated.
             wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
@@ -100,11 +96,31 @@ def read_table(data: bytes, file_type: str, sheet: str | None = None, header_row
             name = sheet or sheets[0]
             if name not in sheets:
                 raise ReadError(f"Sheet '{name}' not found.")
-            all_rows = list(wb[name].iter_rows(values_only=True))
+            rows = [[_cell_to_str(v) for v in r] for r in wb[name].iter_rows(values_only=True)]
         finally:
             wb.close()
-        if len(all_rows) < header_row:
-            raise ReadError("The sheet has no header row.")
-        return _build(list(all_rows[header_row - 1]), [list(r) for r in all_rows[header_row:]], header_row + 1, sheets)
+    else:
+        raise ReadError(f"Unsupported file type {file_type}.")
+    if len(rows) > MAX_ROWS + 50:
+        raise ReadError(f"The file has more than {MAX_ROWS:,} rows.")
+    return rows, sheets
 
-    raise ReadError(f"Unsupported file type {file_type}.")
+
+def read_table(data: bytes, file_type: str, sheet: str | None = None, header_row: int = 1) -> Table:
+    if header_row < 1:
+        raise ReadError("Header row must be 1 or more.")
+    rows, sheets = read_raw(data, file_type, sheet)
+    if len(rows) < header_row:
+        raise ReadError("The file has no header row.")
+    return _build(rows[header_row - 1], rows[header_row:], header_row + 1, sheets)
+
+
+def read_for_dataset(data: bytes, file_type: str, dataset_id: str, sheet: str | None = None, header_row: int = 1) -> Table:
+    """Use the dataset's report-specific reshaper when it has one (header found automatically)."""
+    from ingestion.reshapers import RESHAPERS
+
+    reshaper = RESHAPERS.get(dataset_id)
+    if reshaper is None:
+        return read_table(data, file_type, sheet, header_row)
+    rows, sheets = read_raw(data, file_type, sheet)
+    return reshaper(rows, 1, sheets)

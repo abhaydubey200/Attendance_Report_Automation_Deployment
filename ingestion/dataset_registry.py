@@ -39,6 +39,7 @@ class DatasetDefinition(BaseModel):
     primary_key_columns: tuple[str, ...] = ()
     date_column: str | None = None
     validation_rules: tuple[Any, ...] = ()
+    seed_schema: dict[str, Any] | None = None   # {"notes": str, "definition": SchemaDefinition dict}
 
     @model_validator(mode="after")
     def _defined_schema_is_complete(self) -> "DatasetDefinition":

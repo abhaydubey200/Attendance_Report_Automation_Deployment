@@ -60,3 +60,18 @@ def test_cli_create_user_success(isolated_env, monkeypatch, capsys):
     monkeypatch.setattr("getpass.getpass", lambda prompt="": "Strong-Passw0rd!")
     assert main.main(["create-user", "--username", "Admin.One", "--role", "SYSTEM_ADMIN"]) == 0
     assert "Created user 'admin.one'" in capsys.readouterr().out
+
+
+def test_cli_serve_refuses_no_login_on_network_host(isolated_env, capsys):
+    import main
+
+    assert main.main(["serve", "--host", "0.0.0.0"]) == 2
+    assert "localhost" in capsys.readouterr().out
+
+
+def test_cli_process_reports_failure_without_master(isolated_env, capsys):
+    import main
+
+    main.main(["init-db"])
+    assert main.main(["process", "--date", "2026-11-13"]) == 1
+    assert "RUN-20261113-v1: FAILED" in capsys.readouterr().out

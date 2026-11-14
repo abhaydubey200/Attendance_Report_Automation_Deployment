@@ -20,6 +20,16 @@ const ME: Me = {
   environment: "testing",
   app_name: "APIS Intelligent HR & Attendance MIS",
   idle_timeout_minutes: 30,
+  auth_mode: "local",
+};
+
+const OPERATOR: Me = {
+  ...ME,
+  user_id: 0,
+  username: "local.operator",
+  display_name: "APIS HR Operator",
+  roles: ["HR_ADMIN", "SYSTEM_ADMIN"],
+  auth_mode: "none",
 };
 
 const SUMMARY = {
@@ -56,7 +66,7 @@ function renderApp(path = "/") {
   );
 }
 
-test("shows the login screen when there is no session", async () => {
+test("sign-in mode: shows the login screen when there is no session", async () => {
   mockFetch(() => json(401, { detail: "Not authenticated" }));
   renderApp();
   expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
@@ -106,15 +116,61 @@ test("pages not granted by the API are not routable", async () => {
   expect(await screen.findByRole("heading", { name: "Page not available" })).toBeInTheDocument();
 });
 
-test("planned pages show their phase", async () => {
-  mockFetch((url) => (url.endsWith("/auth/me") ? json(200, ME) : json(200, SUMMARY)));
+test("HOD reports list only what the API returns, with provisional marking and download links", async () => {
+  const reports = [{
+    report_id: 7, run_id: 1, run_ref: "RUN-20261113-v1", reporting_date: "2026-11-13", report_type: "HOD",
+    department_code: "SALES", file_format: "XLSX", report_version: 1, provisional: true, status: "GENERATED",
+    generated_by: "system", generated_at: "2026-11-14T03:00:00Z",
+  }];
+  mockFetch((url) => (url.endsWith("/auth/me") ? json(200, ME) : url.includes("/v1/reports") ? json(200, reports) : json(200, SUMMARY)));
   renderApp("/hod-reports");
-  expect(await screen.findByText(/Planned for Phase 8/)).toBeInTheDocument();
+  expect(await screen.findByText("PROVISIONAL")).toBeInTheDocument();
+  expect(screen.getByText(/SALES/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/v1/reports/7/download");
+  expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();   // HOD lacks REPORT_APPROVE
 });
 
-test("a 401 during use returns to the login screen with a notice", async () => {
+test("analyst shows the answer with its source and period", async () => {
+  const meAi = { ...ME, permissions: [...ME.permissions, "AI_USE"],
+    navigation: [...ME.navigation, { section: "AI Intelligence", title: "Attendance Analyst", slug: "ai-analyst", implemented: true, phase: null }] };
+  mockFetch((url, init) => {
+    if (url.endsWith("/auth/me")) return json(200, meAi);
+    if (url.endsWith("/v1/ai/ask")) {
+      expect(JSON.parse(String(init?.body)).question).toContain("absenteeism");
+      return json(200, { text: "On 13-Nov-2026, FIN recorded the most absences (1 of 2).", table: null, intent: "DEPARTMENT_HIGHEST_ABSENT",
+        source: "Processing run RUN-20261113-v1 (rule version 0.0.0-draft, provisional)", period: "2026-11-13", supported_questions: [] });
+    }
+    return json(200, SUMMARY);
+  });
+  renderApp("/ai-analyst");
+  await userEvent.type(await screen.findByRole("textbox"), "Which department had the highest absenteeism?");
+  await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+  expect(await screen.findByText(/FIN recorded the most absences/)).toBeInTheDocument();
+  expect(screen.getByText(/RUN-20261113-v1/)).toBeInTheDocument();
+});
+
+test("sign-in mode: a 401 during use returns to the login screen with a notice", async () => {
   mockFetch((url) => (url.endsWith("/auth/me") ? json(200, ME) : json(401, { detail: "Not authenticated" })));
   renderApp("/dashboard");
   await waitFor(() => expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument());
   expect(screen.getByText(/session has ended/)).toBeInTheDocument();
+});
+
+test("no-login mode: opens straight on the dashboard with no sign-in or sign-out", async () => {
+  const fetchSpy = mockFetch((url) => (url.endsWith("/auth/me") ? json(200, OPERATOR) : json(200, SUMMARY)));
+  renderApp();
+  expect(await screen.findByRole("heading", { name: "Executive Dashboard" })).toBeInTheDocument();
+  expect(screen.getByText("APIS HR Operator")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "APIS India Limited" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Sign (in|out)/ })).not.toBeInTheDocument();
+  expect(screen.getByText(/no sign-in/)).toBeInTheDocument();
+  expect(fetchSpy.mock.calls.some(([u]) => String(u).endsWith("/auth/login"))).toBe(false);
+});
+
+test("server unreachable shows a retry screen, not a login form", async () => {
+  vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+  renderApp();
+  expect(await screen.findByText(/not reachable/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
 });

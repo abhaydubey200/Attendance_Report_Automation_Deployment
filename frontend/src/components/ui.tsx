@@ -72,3 +72,59 @@ export function DataTable<T>({ rows, columns, rowKey }: { rows: T[]; columns: Co
     </div>
   );
 }
+
+const STATUS_KIND: Record<string, BadgeKind> = {
+  PRESENT: "ok", WORK_FROM_HOME: "ok", VALID: "ok", VERIFIED: "ok", RESOLVED: "ok", APPROVED: "ok", MATCHED: "ok",
+  READY_FOR_REVIEW: "info", COMPLETED: "ok", DISTRIBUTED: "ok", GENERATED: "info", READY_FOR_PROCESSING: "ok", OK: "ok",
+  ABSENT: "fail", FAILED: "fail", REJECTED: "fail", HIGH: "fail", CRITICAL: "fail", DELIVERY_FAILED: "fail", FAIL: "fail",
+  UNRESOLVED: "warn", PENDING: "warn", PENDING_REVIEW: "warn", REQUIRES_REVIEW: "warn", MISSING_PUNCH: "warn",
+  PENDING_APPROVAL: "warn", STATUS_CONFLICT: "warn", LEAVE_CONFLICT: "warn", EMPLOYEE_MAPPING_MISSING: "fail",
+  MEDIUM: "warn", WARN: "warn", PROVISIONAL: "warn", NOT_APPROVED: "warn", PENDING_DISCOVERY: "warn", UNAVAILABLE: "warn",
+};
+
+/** Badge whose colour follows the value (status words from the API). */
+export function StatusBadge({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="muted">—</span>;
+  return <Badge kind={STATUS_KIND[value] ?? "info"}>{value.replace(/_/g, " ")}</Badge>;
+}
+
+export function Toolbar({ children }: { children: ReactNode }) {
+  return <div className="toolbar">{children}</div>;
+}
+
+export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </label>
+  );
+}
+
+export function Card({ title, children, actions }: { title?: string; children: ReactNode; actions?: ReactNode }) {
+  return (
+    <section className="card">
+      {(title || actions) && (
+        <div className="card-head">
+          {title && <h3>{title}</h3>}
+          {actions}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+export function ActionMessages({ error, message }: { error: string | null; message: string | null }) {
+  return (
+    <>
+      {error && <Notice kind="fail">{error}</Notice>}
+      {message && <Notice kind="ok">{message}</Notice>}
+    </>
+  );
+}
+
+export function pct(v: number | null | undefined): string {
+  return v === null || v === undefined ? "Pending HR approval" : `${v.toFixed(2)}%`;
+}

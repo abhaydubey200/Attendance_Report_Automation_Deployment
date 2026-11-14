@@ -2,7 +2,7 @@
 
 Run: `.\.venv\Scripts\python.exe -m pytest` (backend) and `npm --prefix frontend test` (frontend). All fixtures are synthetic (`TEST-0001`-style codes) and isolated in temp directories.
 
-## Phase 1 coverage (90 backend + 8 frontend tests, all passing on 2026-11-14, v0.2.0)
+## Coverage (165 backend + 11 frontend tests, all passing on 2026-11-14, v0.4.0)
 
 | Area | File | Covers |
 |---|---|---|
@@ -14,8 +14,16 @@ Run: `.\.venv\Scripts\python.exe -m pytest` (backend) and `npm --prefix frontend
 | Authentication | `tests/security/test_authentication.py` | Hashing, policy, success and failure audit, lockout and expiry, inactive users |
 | Authorization | `tests/security/test_authorization.py` | HOD isolation, Director aggregate-only, SYSTEM_ADMIN without HR data, anonymous, immediate deactivation, DB-driven permission changes |
 | REST API | `tests/integration/test_api.py` | 401 without session. Login cookie flags. Generic failures. Lockout over HTTP. CSRF header. Logout. Tampered, foreign and expired tokens. Immediate deactivation. HOD/SYSTEM_ADMIN 403s. No secrets in responses. Security headers. Docs off in production. Navigation filtering. SPA fallback and traversal |
-| Frontend | `frontend/src/*.test.ts(x)` | Login screen, failed login message, successful login renders permitted nav and dashboard, CSRF header and credentials sent, unlisted pages not routable, planned pages, 401 returns to login. IST date formatting |
+| No-login mode | `tests/integration/test_api.py`, `tests/unit/test_config.py`, `tests/unit/test_health_and_cli.py` | Acts as the local operator with DB-derived permissions. Login endpoint disabled. Narrower roles still get 403. CSRF still enforced. Refused in production and on non-localhost hosts (config and `serve`). Unknown default roles rejected |
+| Frontend | `frontend/src/*.test.ts(x)` | No-login mode opens on the dashboard with no sign-in or sign-out. Unreachable server shows retry. Login screen, failed login message, successful login renders permitted nav and dashboard, CSRF header and credentials sent, unlisted pages not routable, planned pages, 401 returns to login. IST date formatting |
 | Health / CLI | `tests/unit/test_health_and_cli.py` | Health checks, `init-db`, `check`, `create-user` validation |
+
+| Ingestion (Phases 2-4) | `tests/integration/test_ingestion.py` | File checks, XLSX reading, row-level validation codes, schema versions, discovery-only uploads, raw archive, standardization, duplicates/reprocess, supersede, review acknowledgement, department history, mapping |
+| Engine, reconciliation, reports (5, 6, 8) | `tests/integration/test_engine.py` | Classification table, authority and no-record rules, percentages only when approved, end-to-end run, idempotency, new version on mapping change, exception workflow and adjustment, HOD scope, failure and resume, report content/scope/approval, tamper detection |
+| Analytics, email, AI (9-12) | `tests/integration/test_phases_9_12.py` | Scoped summaries and employee rows, data quality, distribution guards and outbox, Graph transport (mocked), AI grounding/rejection/outage, pipeline survives AI outage, analyst intents, dates, scope and audit |
+| HTTP (2-12) | `tests/integration/test_api_phases.py` | Full flow over HTTP, rejections, HOD scope on every new endpoint |
+
+A browser walk-through of the demo also exercised all 30 pages, the exception workflow, re-processing, approval, report preview, test distribution and an upload with an invalid row.
 
 ## Not yet covered
 - A real SQL Server (`-m mssql` marker is reserved; needs `DB_PROFILE=mssql` and a reachable instance).

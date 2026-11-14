@@ -4,10 +4,16 @@ import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Loading } from "./components/ui";
 import { DashboardPage } from "./pages/DashboardPage";
-import { LoginPage } from "./pages/LoginPage";
+import { LoginPage, UnavailablePage } from "./pages/LoginPage";
 import { NotFoundPage, PlaceholderPage } from "./pages/PlaceholderPage";
 import { ConfigurationPage, HealthPage } from "./pages/SystemPages";
 import { UsersPage } from "./pages/UsersPage";
+import { AppLogsPage, AppSettingsPage, AttendanceRulesPage, DepartmentMappingPage, EmployeeMappingPage, HierarchyPage, ProcessingRunsPage } from "./pages/AdminPages";
+import { AiSummaryPage, AnalystPage } from "./pages/AiPages";
+import { AbsenteeismPage, DailyAttendancePage, DepartmentAnalyticsPage, EmployeeAttendancePage, LeaveAnalyticsPage, MissingPunchesPage } from "./pages/AnalyticsPages";
+import { DataQualityPage, DatasetRegistryPage, UploadHistoryPage, UploadPage } from "./pages/DataPages";
+import { ConflictsPage, ExceptionResolutionPage, SourceComparisonPage, UnmappedEmployeesPage } from "./pages/ReconciliationPages";
+import { ReportsPage } from "./pages/ReportPages";
 
 // Implemented pages by slug. Routes exist only for pages the API lists for this user;
 // the API independently enforces permissions on every data call.
@@ -16,19 +22,49 @@ const IMPLEMENTED: Record<string, ComponentType> = {
   users: UsersPage,
   "system-health": HealthPage,
   "system-config": ConfigurationPage,
+  upload: UploadPage,
+  "dataset-registry": DatasetRegistryPage,
+  "upload-history": UploadHistoryPage,
+  "data-quality": DataQualityPage,
+  "daily-attendance": DailyAttendancePage,
+  "employee-attendance": EmployeeAttendancePage,
+  "department-analytics": DepartmentAnalyticsPage,
+  absenteeism: AbsenteeismPage,
+  "leave-analytics": LeaveAnalyticsPage,
+  "missing-punches": MissingPunchesPage,
+  "source-comparison": SourceComparisonPage,
+  conflicts: ConflictsPage,
+  "unmapped-employees": UnmappedEmployeesPage,
+  "exception-resolution": ExceptionResolutionPage,
+  "hod-reports": () => <ReportsPage mode="hod" />,
+  "directors-reports": () => <ReportsPage mode="directors" />,
+  "report-preview": () => <ReportsPage mode="preview" />,
+  "report-history": () => <ReportsPage mode="history" />,
+  "ai-summary": AiSummaryPage,
+  "ai-analyst": AnalystPage,
+  "department-mapping": DepartmentMappingPage,
+  "employee-mapping": EmployeeMappingPage,
+  "attendance-rules": AttendanceRulesPage,
+  "reporting-hierarchy": HierarchyPage,
+  "app-settings": AppSettingsPage,
+  "processing-runs": ProcessingRunsPage,
+  "app-logs": AppLogsPage,
 };
 
 export function App() {
-  const { me, loading } = useAuth();
+  const { me, loading, needsSignIn, unavailable } = useAuth();
 
   if (loading) {
     return (
-      <div className="login-screen">
+      <div className="splash">
         <Loading />
       </div>
     );
   }
-  if (!me) return <LoginPage />;
+  if (!me) {
+    if (needsSignIn) return <LoginPage />;
+    return <UnavailablePage message={unavailable ?? "The MIS service is not reachable."} />;
+  }
 
   const home = me.navigation[0]?.slug;
 

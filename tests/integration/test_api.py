@@ -13,10 +13,23 @@ from tests.conftest import TEST_PASSWORD
 H = {CSRF_HEADER: "1"}
 
 
+def with_auth_mode(settings, mode: str):
+    return settings.model_copy(update={"auth": settings.auth.model_copy(update={"mode": mode})})
+
+
 @pytest.fixture
 def client(settings, engine, tmp_path):
-    app = create_app(settings, engine, frontend_dist=tmp_path / "no-dist")
+    """Sign-in (auth.mode 'local') client -- exercises the full authentication path."""
+    app = create_app(with_auth_mode(settings, "local"), engine, frontend_dist=tmp_path / "no-dist")
     with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def open_client(settings, engine, tmp_path):
+    """No-login client (auth.mode 'none', the shipped development default)."""
+    assert settings.auth.mode == "none"
+    with TestClient(create_app(settings, engine, frontend_dist=tmp_path / "no-dist")) as c:
         yield c
 
 
@@ -131,7 +144,7 @@ def test_dashboard_is_empty_and_rules_unapproved(client, make_user):
     login(client, "dir")
     body = client.get("/api/v1/dashboard/summary").json()
     assert body["rules_approved"] is False and body["rule_approval_status"] == "NOT_APPROVED"
-    assert len(body["kpis"]) == 9 and all(k["value"] is None for k in body["kpis"])
+    assert body["run"] is None and "No processed attendance" in body["message"]
 
 
 def test_system_config_never_exposes_secrets(client, make_user):
@@ -171,7 +184,7 @@ def test_navigation_is_permission_filtered():
 def test_page_registry_is_consistent():
     slugs = [p.slug for p in PAGES]
     assert len(slugs) == len(set(slugs))
-    assert all(p.implemented or p.phase for p in PAGES)
+    assert all(p.implemented for p in PAGES)
 
 
 def test_spa_served_with_fallback_and_no_traversal(settings, engine, tmp_path):
@@ -186,3 +199,37 @@ def test_spa_served_with_fallback_and_no_traversal(settings, engine, tmp_path):
         assert c.get("/assets/app.js").status_code == 200
         assert "TOP SECRET" not in c.get("/..%2Fsecret.txt").text
         assert c.get("/api/v1/nope").status_code == 404
+
+
+# --------------------------------------------------------------------------- no-login mode
+def test_no_login_mode_acts_as_local_operator(open_client, settings):
+    r = open_client.get("/api/v1/auth/me")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["auth_mode"] == "none"
+    assert body["username"] == settings.auth.default_user.username
+    assert set(body["roles"]) == set(settings.auth.default_user.roles)
+    # Permissions come from the central role store, not from the client.
+    assert "DASHBOARD_VIEW" in body["permissions"] and "ADMIN_USERS" in body["permissions"]
+    assert "set-cookie" not in r.headers
+    for path in ("/api/v1/dashboard/summary", "/api/v1/system/health", "/api/v1/admin/users"):
+        assert open_client.get(path).status_code == 200, path
+
+
+def test_no_login_mode_disables_login_endpoint(open_client):
+    r = open_client.post("/api/v1/auth/login", json={"username": "x", "password": "y"}, headers=H)
+    assert r.status_code == 404
+
+
+def test_no_login_mode_still_enforces_role_permissions(settings, engine, tmp_path):
+    """A narrower default user only gets that role's pages and endpoints."""
+    narrow = settings.model_copy(update={"auth": settings.auth.model_copy(update={
+        "default_user": settings.auth.default_user.model_copy(update={"roles": ("DIRECTOR",)})})})
+    with TestClient(create_app(narrow, engine, frontend_dist=tmp_path)) as c:
+        assert c.get("/api/v1/dashboard/summary").status_code == 200
+        assert c.get("/api/v1/admin/users").status_code == 403
+        assert "users" not in {p["slug"] for p in c.get("/api/v1/auth/me").json()["navigation"]}
+
+
+def test_no_login_mode_still_requires_csrf_header_for_writes(open_client):
+    assert open_client.post("/api/v1/auth/logout").status_code == 403

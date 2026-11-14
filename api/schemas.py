@@ -31,6 +31,7 @@ class Me(BaseModel):
     environment: str
     app_name: str
     idle_timeout_minutes: int
+    auth_mode: str
 
 
 class Kpi(BaseModel):

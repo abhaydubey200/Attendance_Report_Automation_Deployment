@@ -17,9 +17,21 @@ Migration `0001` creates all six schemas on SQL Server so later migrations only 
 
 All timestamps are `DATETIMEOFFSET`/UTC on SQL Server. Constraint names follow a fixed naming convention (`database/models/base.py`).
 
+## Implemented (migration 0002, Phases 2-12)
+
+| Schema | Tables |
+|---|---|
+| `staging` | `dataset_schema` (versioned column schemas), `upload_registry` (file, SHA-256, lineage, current/superseded), `upload_row` (raw rows as read), `validation_issue` |
+| `hr` | `dim_employee`, `dim_department`, `employee_source_mapping` (VERIFIED / PENDING / REJECTED), `employee_org_history` (effective-dated), `reporting_hierarchy` (effective-dated), `holiday_calendar` |
+| `attendance` | `source_attendance`, `attendance_punch`, `leave_record` (standardized, linked to upload), `processing_run` (versioned, input key), `fact_attendance_daily` (one row per run/employee/date), `attendance_reconciliation`, `attendance_exceptions`, `attendance_adjustments` |
+| `reporting` | `report_registry` (file + SHA-256 + version + status), `report_approval`, `ai_summary` |
+| `audit` | `processing_log`, `exception_resolution_log`, `email_delivery_log` (unique report+recipient), `ai_execution_log` |
+
+Migration 0002 was generated once from the ORM models and frozen; it only creates objects. Every table and index compiles for SQL Server (checked with the MS SQL dialect; against SQL Server 2022 dates are `DATE`, text is `VARCHAR(max)`, timestamps `DATETIMEOFFSET`). **Not yet run against a real SQL Server.** Open point for IT: names are `VARCHAR`; use an `_UTF8` collation or switch to `NVARCHAR` if non-Latin names are expected.
+
 ## Planned
 
-The tables in PRD 10.3 for staging, hr, attendance, reporting and the remaining audit tables arrive in their phases. Each one comes as a new, non-destructive migration.
+Further changes arrive as new, non-destructive migrations.
 
 ## Development backend
 

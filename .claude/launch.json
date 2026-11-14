@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "demo",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["main.py", "serve", "--demo", "--port", "8010"],
+      "port": 8010
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],

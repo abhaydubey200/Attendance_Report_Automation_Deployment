@@ -27,6 +27,28 @@ Every value below is `null` until HR decides. A calculation that depends on a nu
 | 16 | What employee details can Directors see? | `security.yaml` (DIRECTOR role) | default: aggregates only | |
 | 17 | Exception approval workflow | Phase 6 | pending | |
 
+## Additional rule settings added in v0.4.0
+
+| Setting | Meaning | Value |
+|---|---|---|
+| `calculation.weekly_off_days` | Which weekdays are weekly offs (work schedule) | pending |
+| `calculation.no_record_status` | Status for an eligible employee with no record at all (e.g. ABSENT) | pending |
+| `calculation.time_conflict_tolerance_minutes` | First-in difference between Bizom and Pocket HRMS that counts as a time conflict | pending |
+
+## Provisional classification order (mechanism, not policy)
+
+The engine (`data_engine/attendance_processor.py`) applies this order. HR should confirm or change it:
+
+1. An approved exception adjustment.
+2. Approved leave: full day -> APPROVED_LEAVE, half day -> HALF_DAY. Pending or unknown leave never counts as approved.
+3. Holiday or weekly off, unless a source reports work that day.
+4. Source statuses: agreeing sources -> that status. Conflict -> the approved authority (`OFFICE_ATTENDANCE`) decides; with none approved -> UNRESOLVED.
+5. Pending leave -> PENDING_APPROVAL.
+6. Incomplete punch sequence -> MISSING_PUNCH. Complete punches without a status -> UNRESOLVED.
+7. No record -> `no_record_status`, else UNRESOLVED.
+
+Eligibility uses only the objective employment window (joined on or before the date, not exited before it). Attendance % and absenteeism % stay blank until every rule they use is approved.
+
 ## Change procedure
 
 1. HR records the decision in writing.

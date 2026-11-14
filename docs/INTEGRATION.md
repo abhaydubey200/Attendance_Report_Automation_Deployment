@@ -22,7 +22,7 @@ The intranet's web server proxies `/attendance-mis/` to this server. It's same-o
 
 ## Authentication (open decision)
 
-Today: local accounts with an httpOnly session cookie. For intranet single sign-on, the pluggable points are:
+Today: no login page on the local machine (`auth.mode: none`, localhost only), or local accounts with an httpOnly session cookie (`auth.mode: local`). Production must use a real identity. The intended route is the intranet's own sign-in. For intranet single sign-on, the pluggable points are:
 - `AppUser.auth_provider` (reserved, default `LOCAL`) and a nullable `password_hash`.
 - `api/deps.py → current_principal` is the one place that turns a request into a `Principal`. An SSO variant (Entra ID / OIDC token, or a trusted header set by the intranet proxy) maps the identity to `security.app_user` and keeps the same RBAC.
 

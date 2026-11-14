@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { BrandMark } from "../components/Brand";
 import { Notice } from "../components/ui";
 
+/** Shown only when the server runs with auth.mode "local". */
 export function LoginPage() {
   const { login, notice } = useAuth();
   const [username, setUsername] = useState("");
@@ -25,28 +27,37 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login-screen">
-      <form className="login-card" onSubmit={onSubmit} aria-label="Sign in">
-        <div className="login-accent" aria-hidden="true" />
-        <h1>APIS Intelligent HR &amp; Attendance MIS</h1>
-        <p className="muted">Sign in to continue</p>
+    <div className="splash">
+      <form className="splash-card" onSubmit={onSubmit} aria-label="Sign in">
+        <BrandMark size="lg" />
+        <h1>Intelligent HR &amp; Attendance MIS</h1>
+        <p className="muted">APIS India Limited · Sign in to continue</p>
         {notice && <Notice>{notice}</Notice>}
         {error && <Notice kind="fail">{error}</Notice>}
         <label htmlFor="username">Username</label>
         <input id="username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <input id="password" type="password" autoComplete="current-password" value={password}
+          onChange={(e) => setPassword(e.target.value)} required />
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
+    </div>
+  );
+}
+
+export function UnavailablePage({ message }: { message: string }) {
+  return (
+    <div className="splash">
+      <div className="splash-card">
+        <BrandMark size="lg" />
+        <h1>Intelligent HR &amp; Attendance MIS</h1>
+        <Notice kind="fail">{message}</Notice>
+        <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

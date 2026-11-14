@@ -17,12 +17,24 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
   return () => unauthorizedListeners.delete(listener);
 }
 
+/** URL for a plain GET (downloads, links). GETs need no CSRF header; the cookie rides along. */
+export function apiUrl(path: string, params?: Record<string, string | number | boolean | null | undefined>): string {
+  const query = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null && v !== "")
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+  return `${API_BASE}/api${path}${query ? `?${query}` : ""}`;
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
   const response = await fetch(`${API_BASE}/api${path}`, {
     ...init,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
       "X-APIS-Request": "1",
       ...(init.headers ?? {}),
     },
@@ -49,4 +61,5 @@ export const api = {
   get: <T>(path: string) => apiFetch<T>(path),
   post: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+  upload: <T>(path: string, form: FormData) => apiFetch<T>(path, { method: "POST", body: form }),
 };

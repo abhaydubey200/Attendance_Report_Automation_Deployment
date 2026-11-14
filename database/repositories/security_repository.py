@@ -110,6 +110,15 @@ class SecurityRepository:
         self.s.flush()
         return user
 
+    def permissions_for_roles(self, role_codes: list[str] | tuple[str, ...]) -> frozenset[str]:
+        rows = self.s.scalars(
+            select(Permission.permission_code)
+            .join(RolePermission, RolePermission.permission_id == Permission.permission_id)
+            .join(AppRole, AppRole.role_id == RolePermission.role_id)
+            .where(AppRole.role_code.in_(list(role_codes)))
+        )
+        return frozenset(rows)
+
     def load_principal(self, user_id: int) -> Principal | None:
         """Effective rights for an ACTIVE user, or None. Called on every request."""
         user = self.s.get(AppUser, user_id)

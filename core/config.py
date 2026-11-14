@@ -81,6 +81,16 @@ class SessionSection(_Strict):
     min_password_length: int = Field(ge=8)
 
 
+class EmailSection(_Strict):
+    transport: Literal["outbox", "smtp", "graph"] = "outbox"
+    sender: str | None = None
+    test_recipients: tuple[str, ...] = ()
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, gt=0, lt=65536)
+    smtp_starttls: bool = True
+    max_attempts: int = Field(default=3, ge=1, le=10)
+
+
 class FeatureSection(_Strict):
     email_enabled: bool = False
     ai_enabled: bool = False
@@ -103,6 +113,26 @@ class ApiSection(_Strict):
         if "*" in v:
             raise ValueError("wildcard CORS origin is not allowed with cookie authentication")
         return v
+
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+class DefaultUser(_Strict):
+    username: str = Field(min_length=1, max_length=100)
+    display_name: str
+    roles: tuple[str, ...] = Field(min_length=1)
+
+
+class AuthSection(_Strict):
+    mode: Literal["none", "local"] = "local"
+    default_user: DefaultUser | None = None
+
+    @model_validator(mode="after")
+    def _default_user_for_none(self) -> "AuthSection":
+        if self.mode == "none" and self.default_user is None:
+            raise ValueError("auth.mode 'none' requires auth.default_user")
+        return self
 
 
 # --------------------------------------------------------------------------- database.yaml
@@ -174,6 +204,9 @@ class AttendanceCalculationRules(_Strict):
     exit_treatment: str | None = None
     overnight_shift_policy: str | None = None
     reporting_period_d_minus_1: Literal["CALENDAR_DAY", "WORKING_DAY"] | None = None
+    weekly_off_days: tuple[Literal["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"], ...] | None = None
+    no_record_status: AttendanceStatus | None = None
+    time_conflict_tolerance_minutes: int | None = Field(default=None, ge=0)
 
     def unresolved_rules(self) -> list[str]:
         return [name for name, value in self.model_dump().items() if value is None]
@@ -218,7 +251,9 @@ class Settings(_Strict):
     uploads: UploadSection
     session: SessionSection
     features: FeatureSection
+    email: EmailSection = EmailSection()
     api: ApiSection
+    auth: AuthSection
     database: DatabaseProfile
     security: SecurityConfig
     ai: AIConfig
@@ -240,6 +275,20 @@ class Settings(_Strict):
                 raise ValueError("APP_SECRET_KEY (>= 32 characters) is required in production")
             if not self.api.cookie_secure:
                 raise ValueError("api.cookie_secure must be true in production (HTTPS)")
+        if self.auth.mode == "none":
+            if self.environment == "production":
+                raise ValueError("auth.mode 'none' (no login) is not permitted in production")
+            if self.api.host not in LOOPBACK_HOSTS:
+                raise ValueError("auth.mode 'none' requires api.host to be localhost (127.0.0.1); "
+                                 "use auth.mode 'local' to serve other machines")
+            assert self.auth.default_user is not None
+            unknown = set(self.auth.default_user.roles) - set(self.security.roles)
+            if unknown:
+                raise ValueError(f"auth.default_user has unknown roles: {sorted(unknown)}")
+        if self.features.email_enabled and self.email.transport == "outbox":
+            raise ValueError("features.email_enabled needs a real transport (smtp or graph)")
+        if self.email.transport != "outbox" and not self.features.email_enabled:
+            raise ValueError("email.transport smtp/graph requires features.email_enabled (production only)")
         if self.features.ai_enabled and not self.ai.enabled:
             raise ValueError("features.ai_enabled is true but ai_config.enabled is false")
         return self
@@ -314,6 +363,10 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
     if env.get("API_PORT"):
         api_cfg["port"] = env["API_PORT"]
 
+    auth_cfg = dict(raw.get("auth", {}))
+    if env.get("AUTH_MODE"):
+        auth_cfg["mode"] = env["AUTH_MODE"].strip().lower()
+
     ai_raw = _read_yaml(config_dir / "ai_config.yaml")
     if env.get("AI_ENDPOINT"):
         ai_raw["endpoint"] = env["AI_ENDPOINT"]
@@ -325,7 +378,9 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
         "uploads": raw.get("uploads", {}),
         "session": raw.get("session", {}),
         "features": raw.get("features", {}),
+        "email": raw.get("email", {}),
         "api": api_cfg,
+        "auth": auth_cfg,
         "database": profile,
         "security": _read_yaml(config_dir / "security.yaml"),
         "ai": ai_raw,

@@ -63,3 +63,17 @@ def configuration(
             for k, v in authority.domains.items()
         ],
     )
+
+
+@router.get("/logs")
+def logs(lines: int = 200, _: Principal = Depends(require(Perm.SYSTEM_MONITOR)),
+         settings: Settings = Depends(get_settings)) -> dict:
+    """Tail of the structured application log (already redacted at write time)."""
+    from collections import deque
+
+    path = settings.logging.dir / settings.logging.file_name
+    if not path.is_file():
+        return {"lines": []}
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        tail = deque(fh, maxlen=min(max(lines, 1), 2000))
+    return {"lines": [line.rstrip("\n") for line in tail]}

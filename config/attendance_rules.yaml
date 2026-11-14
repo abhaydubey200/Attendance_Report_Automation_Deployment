@@ -35,3 +35,6 @@ calculation:
   exit_treatment: null                       # HR decision
   overnight_shift_policy: null               # HR decision
   reporting_period_d_minus_1: null           # CALENDAR_DAY | WORKING_DAY -- HR decision
+  weekly_off_days: null                      # e.g. [SUNDAY] -- HR decision (work schedule)
+  no_record_status: null                     # status for an eligible employee with no record (e.g. ABSENT) -- HR decision
+  time_conflict_tolerance_minutes: null      # Bizom vs HRMS first-in difference that counts as a conflict -- HR decision

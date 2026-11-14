@@ -1,49 +1,33 @@
-"""Executive dashboard (PRD 4.4). Phase 1: explicit empty state. KPI values must only
-ever come from validated, approved processing results."""
+"""Executive dashboard (PRD 4.4): KPIs come only from the current processing run of the
+chosen date, scoped to the caller's departments."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from datetime import date
 
-from api.deps import get_settings, require
-from api.schemas import DashboardSummary, Kpi
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from api.deps import get_db, get_settings, require
 from core.config import Settings, load_attendance_rules
 from core.timeutils import today_ist
+from reporting import analytics
 from security.permissions import Perm, Principal
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-KPIS = (
-    ("active_employees", "Active Employees"),
-    ("eligible_employees", "Eligible Employees"),
-    ("present", "Present"),
-    ("absent", "Absent"),
-    ("approved_leave", "Approved Leave"),
-    ("wfh", "WFH"),
-    ("half_day", "Half Day"),
-    ("missing_punch", "Missing Punch"),
-    ("pending_review", "Pending Review"),
-)
 
-
-@router.get("/summary", response_model=DashboardSummary)
-def summary(
-    _: Principal = Depends(require(Perm.DASHBOARD_VIEW)),
-    settings: Settings = Depends(get_settings),
-) -> DashboardSummary:
+@router.get("/summary")
+def summary(day: date | None = Query(None, alias="date"), principal: Principal = Depends(require(Perm.DASHBOARD_VIEW)),
+            settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
     rules = load_attendance_rules(settings.config_dir)
-    return DashboardSummary(
-        today_ist=today_ist(),
-        reporting_date=None,
-        last_successful_run=None,
-        latest_run_status=None,
-        uploaded_dataset_count=0,
-        rule_version=rules.rule_version,
-        rule_approval_status=rules.approval_status,
-        rules_approved=rules.is_approved,
-        kpis=[Kpi(key=k, label=label) for k, label in KPIS],
-        message=(
-            "No processed attendance data yet. KPIs appear once datasets have been uploaded, "
-            "validated and processed under HR-approved rules (Phases 2-5)."
-        ),
-    )
+    data = analytics.summary(db, principal, rules, day)
+    return {
+        "today_ist": today_ist().isoformat(),
+        "rule_version": rules.rule_version,
+        "rule_approval_status": rules.approval_status,
+        "rules_approved": rules.is_approved,
+        "message": None if data.get("run") else
+        "No processed attendance yet. Upload datasets and start a processing run to see KPIs here.",
+        **data,
+    }

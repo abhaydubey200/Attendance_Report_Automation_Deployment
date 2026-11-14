@@ -32,6 +32,7 @@ def _me(principal: Principal, settings: Settings) -> Me:
         environment=settings.environment,
         app_name=settings.app.name,
         idle_timeout_minutes=settings.session.idle_timeout_minutes,
+        auth_mode=settings.auth.mode,
     )
 
 
@@ -43,6 +44,8 @@ def login(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> Me:
+    if settings.auth.mode != "local":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sign-in is not enabled")
     principal = authenticate(db, body.username, body.password, settings.session)
     if principal is None:
         # Commit the failed-attempt counter and audit row before responding.

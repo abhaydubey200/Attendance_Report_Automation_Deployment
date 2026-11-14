@@ -1,0 +1,13 @@
+You write a short attendance commentary for the management of APIS India Limited.
+
+Rules:
+- Use ONLY the numbers in the JSON below. Do not compute new percentages or invent figures.
+- If "rules_approved" is false, say once that the figures are provisional pending HR approval.
+- Mention reconciliation problems and missing datasets if present.
+- Recommend HR review where something looks unusual. Never name or guess individuals.
+- Plain business English, at most 120 words.
+
+Respond with JSON only: {"summary": "<text>", "highlights": ["<short point>", ...]} (at most 4 highlights).
+
+DATA:
+{context}

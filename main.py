@@ -101,13 +101,51 @@ def cmd_create_user(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
-    api = get_settings().api
+    from core.config import LOOPBACK_HOSTS
+
+    settings = get_settings()
+    api = settings.api
+    host = args.host or api.host
+    if settings.auth.mode == "none" and host not in LOOPBACK_HOSTS:
+        print("Refusing to start: auth.mode 'none' (no login) may only listen on localhost. "
+              "Use auth.mode 'local' (or AUTH_MODE=local) to serve other machines.")
+        return 2
+    if settings.auth.mode == "none":
+        print("No-login mode: every request acts as the configured local operator (localhost only).")
     uvicorn.run(
         "api.main:create_app", factory=True,
-        host=args.host or api.host, port=args.port or api.port,
+        host=host, port=args.port or api.port,
         reload=args.reload, reload_dirs=[str(PROJECT_ROOT)] if args.reload else None,
         log_config=None,  # keep the application's structured logging
     )
+    return 0
+
+
+def cmd_process(args: argparse.Namespace) -> int:
+    """Headless processing for one reporting date (for Windows Task Scheduler / automation)."""
+    from datetime import date, timedelta
+
+    from database.connection import create_db_engine
+    from orchestration.pipeline import PipelineError, start_run
+    from core.timeutils import today_ist
+
+    day = date.fromisoformat(args.date) if args.date else today_ist() - timedelta(days=1)
+    settings = get_settings()
+    try:
+        res = start_run(create_db_engine(settings), settings, day, f"cli:{getpass.getuser()}")
+    except PipelineError as exc:
+        print(f"Not started: {exc}")
+        return 3
+    print(f"{res.run_ref}: {res.state}{'' if res.created else ' (inputs unchanged; existing run kept)'}")
+    return 1 if res.state == "FAILED" else 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    from demo.builder import DEMO_DB, build
+
+    print(f"Building SYNTHETIC demo data ({args.days} days) in {DEMO_DB.parent} ...")
+    build(get_settings(), days=args.days)
+    print("Done. Start the demo with:  python main.py serve --demo")
     return 0
 
 
@@ -130,12 +168,28 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
     serve.add_argument("--reload", action="store_true", help="development auto-reload")
+    serve.add_argument("--demo", action="store_true", help="use the synthetic demo database (storage/demo)")
     serve.set_defaults(func=cmd_serve)
+
+    proc = sub.add_parser("process", help="process one reporting date headlessly (default: yesterday IST)")
+    proc.add_argument("--date", help="YYYY-MM-DD")
+    proc.set_defaults(func=cmd_process)
+
+    demo = sub.add_parser("demo", help="build a SYNTHETIC demo database in storage/demo (never touches real data)")
+    demo.add_argument("--days", type=int, default=10)
+    demo.set_defaults(func=cmd_demo, demo=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "demo", False):
+        import os
+
+        from demo.builder import demo_env
+
+        os.environ.update(demo_env())       # must happen before settings are first loaded
+        get_settings.cache_clear()
     try:
         configure_logging(get_settings())
         return args.func(args)

@@ -29,12 +29,33 @@ def get_db(engine: Engine = Depends(get_engine)) -> Iterator[Session]:
         yield session
 
 
+LOCAL_OPERATOR_ID = 0   # synthetic id for auth.mode 'none' (no app_user row)
+
+
+def default_principal(settings: Settings, db: Session) -> Principal:
+    """auth.mode 'none': the configured local operator. Permissions still come from the
+    central role->permission store, so RBAC rules are identical to signed-in users."""
+    user = settings.auth.default_user
+    assert user is not None
+    return Principal(
+        user_id=LOCAL_OPERATOR_ID,
+        username=user.username,
+        display_name=user.display_name,
+        roles=frozenset(user.roles),
+        permissions=SecurityRepository(db).permissions_for_roles(user.roles),
+        departments=frozenset(),
+    )
+
+
 def current_principal(
     request: Request,
     response: Response,
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> Principal:
+    if settings.auth.mode == "none":
+        return default_principal(settings, db)
+
     token = request.cookies.get(settings.api.cookie_name)
     secret: str = request.app.state.session_secret
     user_id = read_token(token, secret) if token else None

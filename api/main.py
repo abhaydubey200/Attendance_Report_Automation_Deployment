@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
-from api.routers import admin, auth, dashboard, system
+from api.routers import admin, ai, attendance, auth, dashboard, data, org, reports, runs, system
 from api.sessions import resolve_secret
 from core.config import Settings, get_settings
 from core.exceptions import AppError, AuthorizationError
@@ -42,7 +42,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
 
     app = FastAPI(
         title=settings.app.name,
-        version="0.2.0",
+        version="0.4.0",
         docs_url="/api/docs" if settings.environment != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if settings.environment != "production" else None,
@@ -68,9 +68,11 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-            f"frame-ancestors {' '.join(settings.api.frame_ancestors)}"
+        # A route may set a stricter policy (e.g. sandboxed HTML report downloads); keep it.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; "
+            f"frame-ancestors {' '.join(settings.api.frame_ancestors)}",
         )
         if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"   # HR data must not be cached
@@ -93,7 +95,8 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
         ready = db.reachable and db.schema_revision is not None
         return {"status": "ok" if ready else "not_ready"}
 
-    for router in (auth.router, dashboard.router, system.router, admin.router):
+    for router in (auth.router, dashboard.router, system.router, admin.router, data.router, org.router,
+                   runs.router, attendance.router, reports.router, ai.router):
         app.include_router(router, prefix=API_PREFIX)
 
     dist = frontend_dist if frontend_dist is not None else FRONTEND_DIST

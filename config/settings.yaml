@@ -45,6 +45,30 @@ api:
   serve_frontend: true              # serve frontend/dist from the API (single-origin deployment)
   # Session signing key comes ONLY from env APP_SECRET_KEY (>= 32 chars; required in production).
 
+auth:
+  # none  -> no login page; every request acts as `default_user`. Allowed ONLY when the
+  #          server binds to localhost and NEVER in production (enforced).
+  # local -> username/password login (security.app_user).
+  # A future `intranet` mode will trust the APIS intranet's sign-in (see docs/INTEGRATION.md).
+  mode: none                        # override: AUTH_MODE
+  default_user:
+    username: local.operator
+    display_name: APIS HR Operator
+    roles: [HR_ADMIN, SYSTEM_ADMIN]
+
+email:
+  # outbox -> writes .eml files to storage/archive/outbox (test mode; nothing is sent).
+  # smtp / graph -> real delivery; only allowed when features.email_enabled is true
+  # (production only) AND recipients.yaml is APPROVED. Secrets come from env:
+  # SMTP_USER, SMTP_PASSWORD, GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET.
+  transport: outbox
+  sender: null                      # e.g. hr-mis@<apis domain>, set by IT
+  test_recipients: []               # in test mode every message goes only to these (or the outbox)
+  smtp_host: null
+  smtp_port: 587
+  smtp_starttls: true
+  max_attempts: 3
+
 features:
   email_enabled: false              # must stay false outside production (PRD 24.3)
   ai_enabled: false                 # AI is optional (PRD 14)

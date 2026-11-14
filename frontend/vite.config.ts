@@ -16,7 +16,8 @@ export default defineConfig(({ mode }) => {
         "/api": { target: env.VITE_API_TARGET || "http://127.0.0.1:8000", changeOrigin: false },
       },
     },
-    build: { outDir: "dist", sourcemap: false },
+    // assetsInlineLimit 0: never inline fonts/images as data: URLs (blocked by the API's CSP).
+    build: { outDir: "dist", sourcemap: false, assetsInlineLimit: 0 },
     test: {
       environment: "jsdom",
       globals: true,

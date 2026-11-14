@@ -118,6 +118,7 @@ def test_production_requires_secret_key_and_secure_cookie(isolated_env, monkeypa
     db.write_text(_yaml.safe_dump(data))
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("DB_PROFILE", "mssql")
+    monkeypatch.setenv("AUTH_MODE", "local")
     with pytest.raises(ConfigurationError, match="APP_SECRET_KEY"):
         load_settings(config_copy)
     monkeypatch.setenv("APP_SECRET_KEY", "k" * 40)
@@ -137,3 +138,31 @@ def test_wildcard_cors_rejected(isolated_env, config_copy):
     _edit(config_copy / "settings.yaml", lambda d: d["api"].update(cors_origins=["*"]))
     with pytest.raises(ConfigurationError, match="wildcard"):
         load_settings(config_copy)
+
+
+def test_no_login_mode_forbidden_in_production(isolated_env, monkeypatch, config_copy):
+    _edit(config_copy / "database.yaml", lambda d: d.update(default_profile="mssql"))
+    _edit(config_copy / "settings.yaml", lambda d: d["api"].update(cookie_secure=True))
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_SECRET_KEY", "k" * 40)
+    monkeypatch.delenv("DB_PROFILE", raising=False)
+    with pytest.raises(ConfigurationError, match="not permitted in production"):
+        load_settings(config_copy)
+
+
+def test_no_login_mode_requires_localhost(isolated_env, monkeypatch):
+    monkeypatch.setenv("API_HOST", "0.0.0.0")
+    with pytest.raises(ConfigurationError, match="localhost"):
+        load_settings()
+    monkeypatch.setenv("AUTH_MODE", "local")
+    assert load_settings().api.host == "0.0.0.0"
+
+
+def test_no_login_default_user_roles_validated(isolated_env, config_copy):
+    _edit(config_copy / "settings.yaml", lambda d: d["auth"]["default_user"].update(roles=["GOD_MODE"]))
+    with pytest.raises(ConfigurationError, match="unknown roles"):
+        load_settings(config_copy)
+
+
+def test_shipped_default_is_no_login_on_localhost(settings):
+    assert settings.auth.mode == "none" and settings.api.host == "127.0.0.1"

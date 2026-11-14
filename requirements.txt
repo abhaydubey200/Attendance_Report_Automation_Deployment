@@ -1,0 +1,27 @@
+# Pinned, tested together on Python 3.12.10 / Windows 11 (2026-11-14).
+# Do not bulk-upgrade: change one pin at a time and rerun the full test suite.
+
+# UI
+streamlit==1.67.0
+plotly==7.1.0
+
+# Data
+pandas==3.1.1
+pydantic==2.14.3
+openpyxl==3.1.5
+XlsxWriter==3.3.1
+Jinja2==3.1.6
+
+# Database
+SQLAlchemy==2.1.8
+alembic==1.20.1
+pyodbc==5.5.0
+
+# Security / config
+bcrypt==5.0.0
+PyYAML==6.0.3
+python-dotenv==1.2.4
+tzdata==2026.6          # IANA timezone data for zoneinfo on Windows
+
+# Testing
+pytest==9.2.0

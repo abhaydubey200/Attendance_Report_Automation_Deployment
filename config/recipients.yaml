@@ -1,0 +1,7 @@
+# Report distribution lists (PRD 13). Empty until HR approves recipients.
+# Do not commit real addresses until approved; email is disabled by default.
+
+approval_status: NOT_APPROVED
+hod_reports: {}          # department_code -> [email, ...]
+directors_reports: []
+hr_operational: []

@@ -1,0 +1,35 @@
+# Attendance Rules
+
+**Status: NOT APPROVED. Rule version `0.0.0-draft`.**
+
+The engine (Phase 5) will read `config/attendance_rules.yaml` and `config/source_authority.yaml`.
+Every value below is `null` until HR decides. A calculation that depends on a null rule is reported as PROVISIONAL or UNRESOLVED.
+
+## Decisions required from HR
+
+| # | Question | Config key | Decision | Approved by / date |
+|---|---|---|---|---|
+| 1 | Authoritative source for office attendance | `source_authority.domains.OFFICE_ATTENDANCE` | pending | |
+| 2 | Authoritative source for field attendance | `…FIELD_ATTENDANCE` (proposed: Bizom) | pending | |
+| 3 | Authoritative source for employee master | `…EMPLOYEE_MASTER` (proposed: Pocket HRMS) | pending | |
+| 4 | Authoritative source for approved leave | `…APPROVED_LEAVE` (proposed: Pocket HRMS) | pending | |
+| 5 | Half-day value | `calculation.half_day_equivalent` | pending | |
+| 6 | Is WFH counted as present? | `calculation.wfh_counts_as_present` | pending | |
+| 7 | Approved leave in the denominator? | `calculation.approved_leave_in_denominator` | pending | |
+| 8 | Weekly offs excluded? | `calculation.include_weekly_off_in_denominator` | pending | |
+| 9 | Holidays excluded? | `calculation.include_holidays_in_denominator` | pending | |
+| 10 | Contractor treatment | `calculation.contractor_treatment` | pending | |
+| 11 | New joiner treatment | `calculation.new_joiner_treatment` | pending | |
+| 12 | Exit treatment | `calculation.exit_treatment` | pending | |
+| 13 | Overnight shifts | `calculation.overnight_shift_policy` | pending | |
+| 14 | D-1 = previous calendar day or previous working day? | `calculation.reporting_period_d_minus_1` | pending | |
+| 15 | Who receives HOD reports? | `recipients.yaml` | pending | |
+| 16 | What employee details can Directors see? | `security.yaml` (DIRECTOR role) | default: aggregates only | |
+| 17 | Exception approval workflow | Phase 6 | pending | |
+
+## Change procedure
+
+1. HR records the decision in writing.
+2. Update the YAML value, bump `rule_version`, and set `approved_by` and `approved_on`.
+3. Add a regression test case for the decision.
+4. Earlier processing results keep their original rule version (PRD 22).

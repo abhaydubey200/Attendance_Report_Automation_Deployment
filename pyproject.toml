@@ -1,0 +1,13 @@
+[project]
+name = "apis-intelligent-hr-mis"
+version = "0.1.0"
+description = "APIS Intelligent HR & Attendance MIS Automation Platform"
+requires-python = ">=3.12,<3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "mssql: requires a reachable SQL Server (set DB_PROFILE=mssql and DB_* env vars)",
+]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]

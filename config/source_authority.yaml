@@ -1,0 +1,25 @@
+# Source-authority matrix (PRD 8.7). PENDING HR APPROVAL.
+# authoritative_source must be one of the source_systems in datasets.yaml, or null.
+# The PRD's suggested values are recorded as `proposed_source` only.
+
+approval_status: NOT_APPROVED
+
+domains:
+  EMPLOYEE_MASTER:
+    proposed_source: POCKET_HRMS
+    authoritative_source: null
+  APPROVED_LEAVE:
+    proposed_source: POCKET_HRMS
+    authoritative_source: null
+  FIELD_ATTENDANCE:
+    proposed_source: BIZOM
+    authoritative_source: null
+  OFFICE_ATTENDANCE:
+    proposed_source: null
+    authoritative_source: null
+  DEPARTMENT:
+    proposed_source: HR
+    authoritative_source: null
+  REPORTING_HIERARCHY:
+    proposed_source: HR
+    authoritative_source: null

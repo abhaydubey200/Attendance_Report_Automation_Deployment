@@ -1,0 +1,26 @@
+# Database connection profiles. Secrets (user, password, host) come ONLY from
+# environment variables -- never put them in this file.
+#
+# Select the active profile with DB_PROFILE (default below).
+
+default_profile: dev_sqlite
+
+profiles:
+  # Temporary development database. NOT a production substitute (PRD 10.1).
+  # Rejected automatically when APP_ENV=production.
+  dev_sqlite:
+    backend: sqlite
+    path: storage/dev/apis_mis_dev.db     # override: DB_SQLITE_PATH
+
+  # Primary target: Microsoft SQL Server.
+  # Required env vars: DB_HOST, DB_NAME and either DB_TRUSTED_CONNECTION=yes
+  # or DB_USER + DB_PASSWORD. Optional: DB_PORT, DB_DRIVER.
+  mssql:
+    backend: mssql
+    driver: "ODBC Driver 18 for SQL Server"   # override: DB_DRIVER
+    port: 1433
+    encrypt: true
+    trust_server_certificate: false           # override: DB_TRUST_SERVER_CERT
+    connect_timeout_seconds: 15
+    pool_size: 5
+    max_overflow: 5

@@ -1,0 +1,19 @@
+[theme]
+primaryColor = "#C8102E"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F9"
+textColor = "#1B2A4A"
+font = "sans serif"
+
+[server]
+address = "localhost"            # dev default: not reachable from the network. Production sets this explicitly.
+maxUploadSize = 25              # MB; keep in step with config/settings.yaml uploads.max_file_size_mb
+enableXsrfProtection = true
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "none"        # never leak stack traces to the browser

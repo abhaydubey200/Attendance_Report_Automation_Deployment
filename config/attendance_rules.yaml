@@ -1,0 +1,37 @@
+# Attendance rules (PRD 8.3 / section 15).
+#
+# STATUS: DRAFT -- NOT APPROVED BY HR. Every policy value below is deliberately
+# null. Any calculation depending on a null rule must be marked PROVISIONAL or
+# UNRESOLVED. Do not fill these in without written HR approval; on approval,
+# bump rule_version and record the decision in docs/ATTENDANCE_RULES.md.
+
+rule_version: "0.0.0-draft"
+approval_status: NOT_APPROVED       # NOT_APPROVED | APPROVED
+approved_by: null
+approved_on: null
+
+timezone: Asia/Kolkata
+
+statuses:
+  - PRESENT
+  - ABSENT
+  - APPROVED_LEAVE
+  - HALF_DAY
+  - WORK_FROM_HOME
+  - WEEKLY_OFF
+  - HOLIDAY
+  - MISSING_PUNCH
+  - PENDING_APPROVAL
+  - UNRESOLVED
+
+calculation:
+  half_day_equivalent: null                  # HR decision
+  wfh_counts_as_present: null                # HR decision
+  approved_leave_in_denominator: null        # HR decision
+  include_weekly_off_in_denominator: null    # HR decision
+  include_holidays_in_denominator: null      # HR decision
+  contractor_treatment: null                 # HR decision
+  new_joiner_treatment: null                 # HR decision
+  exit_treatment: null                       # HR decision
+  overnight_shift_policy: null               # HR decision
+  reporting_period_d_minus_1: null           # CALENDAR_DAY | WORKING_DAY -- HR decision

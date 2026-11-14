@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
 
 from contracts.attendance import AttendanceStatus
 from core.exceptions import ConfigurationError
@@ -84,6 +84,25 @@ class SessionSection(_Strict):
 class FeatureSection(_Strict):
     email_enabled: bool = False
     ai_enabled: bool = False
+
+
+class ApiSection(_Strict):
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, gt=0, lt=65536)
+    cookie_name: str = "apis_mis_session"
+    cookie_secure: bool = False
+    cors_origins: tuple[str, ...] = ()
+    frame_ancestors: tuple[str, ...] = ("'self'",)
+    serve_frontend: bool = True
+    # Never from YAML: populated from env APP_SECRET_KEY by load_settings().
+    secret_key: SecretStr | None = None
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _no_wildcard(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        if "*" in v:
+            raise ValueError("wildcard CORS origin is not allowed with cookie authentication")
+        return v
 
 
 # --------------------------------------------------------------------------- database.yaml
@@ -199,6 +218,7 @@ class Settings(_Strict):
     uploads: UploadSection
     session: SessionSection
     features: FeatureSection
+    api: ApiSection
     database: DatabaseProfile
     security: SecurityConfig
     ai: AIConfig
@@ -214,6 +234,12 @@ class Settings(_Strict):
             raise ValueError("SQLite is not permitted in production (PRD 10.1); select an mssql profile")
         if self.environment != "production" and self.features.email_enabled:
             raise ValueError("email_enabled must be false outside production (PRD 24.3)")
+        if self.environment == "production":
+            key = self.api.secret_key.get_secret_value() if self.api.secret_key else ""
+            if len(key) < 32:
+                raise ValueError("APP_SECRET_KEY (>= 32 characters) is required in production")
+            if not self.api.cookie_secure:
+                raise ValueError("api.cookie_secure must be true in production (HTTPS)")
         if self.features.ai_enabled and not self.ai.enabled:
             raise ValueError("features.ai_enabled is true but ai_config.enabled is false")
         return self
@@ -278,6 +304,16 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
     if env.get("DB_TRUST_SERVER_CERT"):
         profile["trust_server_certificate"] = env["DB_TRUST_SERVER_CERT"].strip().lower() in {"1", "yes", "true"}
 
+    api_cfg = dict(raw.get("api", {}))
+    if "secret_key" in api_cfg:
+        raise ConfigurationError("settings.yaml must not contain api.secret_key; use env APP_SECRET_KEY")
+    if env.get("APP_SECRET_KEY"):
+        api_cfg["secret_key"] = env["APP_SECRET_KEY"]
+    if env.get("API_HOST"):
+        api_cfg["host"] = env["API_HOST"]
+    if env.get("API_PORT"):
+        api_cfg["port"] = env["API_PORT"]
+
     ai_raw = _read_yaml(config_dir / "ai_config.yaml")
     if env.get("AI_ENDPOINT"):
         ai_raw["endpoint"] = env["AI_ENDPOINT"]
@@ -289,6 +325,7 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
         "uploads": raw.get("uploads", {}),
         "session": raw.get("session", {}),
         "features": raw.get("features", {}),
+        "api": api_cfg,
         "database": profile,
         "security": _read_yaml(config_dir / "security.yaml"),
         "ai": ai_raw,

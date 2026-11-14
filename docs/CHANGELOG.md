@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-11-14 — Re-platform to FastAPI + React
+- Streamlit UI removed. Added the FastAPI REST API (`api/`, `/api/v1`) and the React + TypeScript UI (`frontend/`, Vite).
+- httpOnly cookie sessions (signed, sliding idle expiry), CSRF header guard, security headers, configurable CORS and iframe allowlists for intranet integration.
+- Endpoints: auth (login/logout/me with permitted navigation), dashboard summary, system health/config, admin users/roles, public liveness.
+- `main.py serve` replaces `run`. The API serves the built UI (single origin).
+- New settings `api.*` and env vars `APP_SECRET_KEY`, `API_HOST`, `API_PORT`. Production guards for secret key and secure cookie.
+- Tests: 90 backend (19 new API tests) + 8 frontend (Vitest). See docs/INTEGRATION.md for intranet options.
+
 ## 0.1.0 — 2026-11-14 — Phase 0 (partial) + Phase 1 Foundation
 - Environment assessment ([PHASE0_DISCOVERY.md](PHASE0_DISCOVERY.md)).
 - Project structure, pinned `requirements.txt`, `.env.example`, `.gitignore`.

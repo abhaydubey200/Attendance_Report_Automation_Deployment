@@ -3,15 +3,13 @@
     python main.py check                 Validate config, storage and database
     python main.py init-db               Apply migrations and sync roles/permissions
     python main.py create-user ...       Create a local user (password prompted, never echoed)
-    python main.py run                   Start the Streamlit application
+    python main.py serve                 Start the API (+ built React UI) with uvicorn
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
-import subprocess
-import sys
 
 from core.config import get_settings
 from core.exceptions import AppError
@@ -100,9 +98,17 @@ def cmd_create_user(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    cmd = [sys.executable, "-m", "streamlit", "run", str(PROJECT_ROOT / "app.py"), "--server.port", str(args.port)]
-    return subprocess.call(cmd, cwd=PROJECT_ROOT)
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    api = get_settings().api
+    uvicorn.run(
+        "api.main:create_app", factory=True,
+        host=args.host or api.host, port=args.port or api.port,
+        reload=args.reload, reload_dirs=[str(PROJECT_ROOT)] if args.reload else None,
+        log_config=None,  # keep the application's structured logging
+    )
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -120,9 +126,11 @@ def build_parser() -> argparse.ArgumentParser:
     cu.add_argument("--department", action="append", help="department code scope (repeatable)")
     cu.set_defaults(func=cmd_create_user)
 
-    run = sub.add_parser("run", help="start the Streamlit app")
-    run.add_argument("--port", type=int, default=8501)
-    run.set_defaults(func=cmd_run)
+    serve = sub.add_parser("serve", help="start the API server (serves frontend/dist when built)")
+    serve.add_argument("--host")
+    serve.add_argument("--port", type=int)
+    serve.add_argument("--reload", action="store_true", help="development auto-reload")
+    serve.set_defaults(func=cmd_serve)
     return parser
 
 

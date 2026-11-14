@@ -33,4 +33,9 @@ logs/**
 # Tooling
 .vscode/
 .idea/
-.streamlit/secrets.toml
+
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

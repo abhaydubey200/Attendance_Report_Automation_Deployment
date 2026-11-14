@@ -77,7 +77,7 @@ _HANDLER_TAG = "_apis_mis_handler"
 
 
 def configure_logging(settings) -> None:
-    """Configure the root logger once. Safe to call repeatedly (e.g. on Streamlit reruns)."""
+    """Configure the root logger once. Safe to call repeatedly (e.g. app factory called repeatedly)."""
     root = logging.getLogger()
     if any(getattr(h, _HANDLER_TAG, False) for h in root.handlers):
         return
@@ -102,5 +102,5 @@ def configure_logging(settings) -> None:
         root.addHandler(handler)
     root.setLevel(level)
     # Keep third-party noise down.
-    for noisy in ("sqlalchemy.engine", "alembic", "urllib3", "watchdog"):
+    for noisy in ("sqlalchemy.engine", "alembic", "urllib3", "watchfiles", "uvicorn.access"):
         logging.getLogger(noisy).setLevel(max(level, logging.WARNING))

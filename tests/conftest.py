@@ -40,7 +40,7 @@ def isolated_env(tmp_path, monkeypatch) -> dict[str, str]:
     }
     for key, value in env.items():
         monkeypatch.setenv(key, value)
-    for key in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_TRUSTED_CONNECTION", "DB_DRIVER", "AI_ENDPOINT"):
+    for key in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_TRUSTED_CONNECTION", "DB_DRIVER", "AI_ENDPOINT", "APP_SECRET_KEY", "API_HOST", "API_PORT"):
         monkeypatch.delenv(key, raising=False)
     get_settings.cache_clear()
     yield env

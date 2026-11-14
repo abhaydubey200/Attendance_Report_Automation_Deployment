@@ -107,3 +107,33 @@ def test_missing_config_file_reported(config_copy):
     (config_copy / "recipients.yaml").unlink()
     errors = validate_all_configs(config_copy)
     assert any("recipients" in e for e in errors)
+
+
+def test_production_requires_secret_key_and_secure_cookie(isolated_env, monkeypatch, config_copy):
+    import yaml as _yaml
+
+    db = config_copy / "database.yaml"
+    data = _yaml.safe_load(db.read_text())
+    data["profiles"]["mssql"]["driver"] = "x"
+    db.write_text(_yaml.safe_dump(data))
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DB_PROFILE", "mssql")
+    with pytest.raises(ConfigurationError, match="APP_SECRET_KEY"):
+        load_settings(config_copy)
+    monkeypatch.setenv("APP_SECRET_KEY", "k" * 40)
+    with pytest.raises(ConfigurationError, match="cookie_secure"):
+        load_settings(config_copy)
+    _edit(config_copy / "settings.yaml", lambda d: d["api"].update(cookie_secure=True))
+    assert load_settings(config_copy).environment == "production"
+
+
+def test_secret_key_cannot_live_in_yaml(isolated_env, config_copy):
+    _edit(config_copy / "settings.yaml", lambda d: d["api"].update(secret_key="oops"))
+    with pytest.raises(ConfigurationError, match="APP_SECRET_KEY"):
+        load_settings(config_copy)
+
+
+def test_wildcard_cors_rejected(isolated_env, config_copy):
+    _edit(config_copy / "settings.yaml", lambda d: d["api"].update(cors_origins=["*"]))
+    with pytest.raises(ConfigurationError, match="wildcard"):
+        load_settings(config_copy)

@@ -35,6 +35,16 @@ session:
   lockout_minutes: 15
   min_password_length: 12
 
+api:
+  host: 127.0.0.1                   # bind address; production sets the server interface explicitly
+  port: 8000
+  cookie_name: apis_mis_session
+  cookie_secure: false              # must be true in production (HTTPS) -- enforced
+  cors_origins: []                  # e.g. intranet origin(s) when the UI is hosted there
+  frame_ancestors: ["'self'"]       # add the intranet origin here to allow embedding in an iframe
+  serve_frontend: true              # serve frontend/dist from the API (single-origin deployment)
+  # Session signing key comes ONLY from env APP_SECRET_KEY (>= 32 chars; required in production).
+
 features:
   email_enabled: false              # must stay false outside production (PRD 24.3)
   ai_enabled: false                 # AI is optional (PRD 14)

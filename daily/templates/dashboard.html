@@ -30,7 +30,7 @@
   .card h3 { margin:0 0 6px; font-size:14px; color:var(--brown-dark); }
   svg text { font-family:"Segoe UI",sans-serif; }
   .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
-  .controls input { padding:8px 10px; border:1px solid var(--line); border-radius:7px; min-width:220px; font-size:14px; }
+  .controls input, .controls select { padding:8px 10px; border:1px solid var(--line); border-radius:7px; min-width:220px; font-size:14px; }
   .chip { border:1px solid var(--gold); background:var(--cream2); color:var(--brown-dark); border-radius:999px; padding:5px 11px; font-size:12px; cursor:pointer; }
   .chip.on { background:var(--brown); color:#fff; border-color:var(--brown); }
   table { width:100%; border-collapse:collapse; background:#fff; font-size:13px; }
@@ -59,11 +59,12 @@
   <div class="grid" style="margin-top:14px">
     <div class="card"><h3>Status breakdown</h3><div id="statusChart"></div></div>
     <div class="card"><h3>Arrival times</h3><div id="arrivalChart"></div></div>
-    <div class="card" id="catCard"><h3>Attendance % by category</h3><div id="catChart"></div></div>
+    <div class="card" id="catCard"><h3 id="catTitle">Attendance % by category</h3><div id="catChart"></div></div>
   </div>
   <h2>Employees</h2>
   <div class="controls">
-    <input id="search" placeholder="Search name or code…" aria-label="Search employees">
+    <input id="search" placeholder="Search name, code, team or manager…" aria-label="Search employees">
+    <select id="group" aria-label="Filter by department"></select>
     <span id="filters"></span>
     <span class="count" id="count"></span>
   </div>
@@ -72,21 +73,21 @@
 </main>
 <script>
 const D = {{ data_json | safe }};
-const COLORS = {PRESENT:"#2e7d4f", MISSING_PUNCH:"#c88a00", ON_DUTY:"#3b6fb6", HALF_DAY:"#d7ad5f", LEAVE:"#9f7b49", ABSENT:"#a52a1a", NOT_TRACKED:"#9a9a9a"};
-const LABELS = {PRESENT:"Present", MISSING_PUNCH:"Missing punch", ON_DUTY:"On duty", HALF_DAY:"Half day", LEAVE:"Leave", ABSENT:"Absent", NOT_TRACKED:"Not tracked"};
+const COLORS = {PRESENT:"#2e7d4f", MISSING_PUNCH:"#c88a00", ON_DUTY:"#3b6fb6", HALF_DAY:"#d7ad5f", LEAVE:"#9f7b49", ABSENT:"#a52a1a", WEEK_OFF:"#6c8ea4", NOT_TRACKED:"#9a9a9a"};
+const LABELS = {PRESENT:"Present", MISSING_PUNCH:"Missing punch", ON_DUTY:"On duty", HALF_DAY:"Half day", LEAVE:"Leave", ABSENT:"Absent", WEEK_OFF:"Week off", NOT_TRACKED:"Not tracked"};
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const S = D.summary, C = S.counts;
 document.getElementById("title").textContent = D.title;
 document.getElementById("subtitle").textContent = D.subtitle;
 const kpis = [["Attendance %", S.attendance_pct === null ? "–" : S.attendance_pct + "%", true], ["Employees", S.employees], ["Present", C.PRESENT],
   ["Absent", C.ABSENT], ["Late", S.late], ["Missing punch", C.MISSING_PUNCH], ["Leave", C.LEAVE + C.HALF_DAY], ["On duty", C.ON_DUTY],
-  ["Left early", S.left_early], ["Avg arrival", S.avg_in_time || "–"], ["Avg hours", S.avg_work_hours ?? "–"], ["Not tracked", C.NOT_TRACKED]];
+  ["Left early", S.left_early], ["Avg arrival", S.avg_in_time || "–"], ["Avg hours", S.avg_work_hours ?? "–"], ["Week off", C.WEEK_OFF || 0], ["Not tracked", C.NOT_TRACKED]];
 document.getElementById("kpis").innerHTML = kpis.map(([l, v, m]) => `<div class="kpi${m ? " main" : ""}"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join("");
 document.getElementById("highlights").innerHTML = D.highlights.map((h) => `<li class="${esc(h.kind)}">${esc(h.text)}</li>`).join("");
 
 function hbars(el, items, max, unit) {
   if (!items.length) { el.innerHTML = '<p class="count">No data.</p>'; return; }
-  const W = 480, rowH = 26, lw = 120, bw = W - lw - 50;
+  const W = 520, rowH = 26, lw = 170, bw = W - lw - 50;
   const svg = items.map((it, i) => {
     const w = max ? Math.max(2, (it.value / max) * bw) : 0, y = i * rowH + 4;
     return `<text x="${lw - 6}" y="${y + 15}" text-anchor="end" font-size="12" fill="#2b2118">${esc(it.label)}</text>
@@ -99,20 +100,32 @@ const statusItems = Object.keys(LABELS).filter((k) => C[k]).map((k) => ({label: 
 hbars(document.getElementById("statusChart"), statusItems, Math.max(...statusItems.map((x) => x.value), 1), "");
 hbars(document.getElementById("arrivalChart"), D.arrivals.map((a) => ({label: a.label, value: a.count, color: "#d7ad5f"})),
       Math.max(...D.arrivals.map((a) => a.count), 1), "");
-if (D.categories && D.categories.length > 1) {
-  hbars(document.getElementById("catChart"), D.categories.filter((c) => c.attendance_pct !== null)
-        .map((c) => ({label: c.name, value: c.attendance_pct, color: c.attendance_pct < 75 ? "#a52a1a" : c.attendance_pct < 90 ? "#c88a00" : "#2e7d4f"})), 100, "%");
+const BD = D.breakdown || {by: "Category", rows: []};
+if (BD.rows.length > 1) {
+  document.getElementById("catTitle").textContent = `Attendance % by ${BD.by.toLowerCase()}`;
+  const short = (s) => s.length > 26 ? s.slice(0, 25) + "…" : s;
+  hbars(document.getElementById("catChart"), BD.rows.filter((c) => c.attendance_pct !== null)
+        .map((c) => ({label: short(c.name), value: c.attendance_pct, color: c.attendance_pct < 75 ? "#a52a1a" : c.attendance_pct < 90 ? "#c88a00" : "#2e7d4f"})), 100, "%");
 } else { document.getElementById("catCard").style.display = "none"; }
 
-const cols = [["code","Code"],["name","Name"],["category","Category"],["status_label","Status"],["in_time","In"],["out_time","Out"],
-              ["work_hours","Hours"],["late_minutes","Late min"],["early_minutes","Early min"],["leave_type","Leave"]];
+const hasMaster = D.rows.some((r) => r.department || r.hod);
+const cols = [["code","Code"],["name","Name"], ...(hasMaster ? [["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]] : [["category","Category"]]),
+              ["status_label","Status"],["in_time","In"],["out_time","Out"],
+              ["work_hours","Hours"],["late_minutes","Late min"],["early_minutes","Early min"],["leave_type","Leave"],["source","Source"]];
+const groupKey = hasMaster ? "department" : "category";
+const groups = [...new Set(D.rows.map((r) => r[groupKey]).filter(Boolean))].sort();
+const groupSel = document.getElementById("group");
+if (groups.length > 1) {
+  groupSel.innerHTML = `<option value="">All ${hasMaster ? "departments" : "categories"}</option>` + groups.map((g) => `<option>${esc(g)}</option>`).join("");
+  groupSel.addEventListener("change", render);
+} else { groupSel.style.display = "none"; }
 let sortKey = "name", sortDir = 1, statusFilter = "ALL";
 document.getElementById("thead").innerHTML = cols.map(([k, l]) => `<th data-k="${k}">${esc(l)}</th>`).join("");
 document.querySelectorAll("#thead th").forEach((th) => th.addEventListener("click", () => {
   const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : 1; sortKey = k; render();
 }));
 const filters = [["ALL", "All"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"], ["LEFT_EARLY", "Left early"],
-                 ["LEAVE", "Leave / on duty"], ["SHORT_HOURS", "Short hours"], ["NOT_TRACKED", "Not tracked"]];
+                 ["LEAVE", "Leave / on duty / week off"], ["SHORT_HOURS", "Short hours"], ["NOT_TRACKED", "Not tracked"]];
 document.getElementById("filters").innerHTML = filters.map(([k, l]) => `<button class="chip${k === "ALL" ? " on" : ""}" data-f="${k}">${esc(l)}</button>`).join(" ");
 document.querySelectorAll("#filters .chip").forEach((b) => b.addEventListener("click", () => {
   statusFilter = b.dataset.f; document.querySelectorAll("#filters .chip").forEach((x) => x.classList.toggle("on", x === b)); render();
@@ -121,13 +134,15 @@ document.getElementById("search").addEventListener("input", render);
 function matches(r) {
   const f = statusFilter;
   if (f === "ALL") return true;
-  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY"].includes(r.status);
+  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF"].includes(r.status);
   if (["LATE", "LEFT_EARLY", "SHORT_HOURS"].includes(f)) return r.flags.includes(f);
   return r.status === f;
 }
 function render() {
   const q = document.getElementById("search").value.trim().toLowerCase();
-  const rows = D.rows.filter((r) => matches(r) && (!q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)))
+  const g = groupSel.value;
+  const rows = D.rows.filter((r) => matches(r) && (!g || r[groupKey] === g) && (!q || [r.name, r.code, r.team, r.manager]
+      .some((v) => String(v || "").toLowerCase().includes(q))))
     .sort((a, b) => { const x = a[sortKey] ?? "", y = b[sortKey] ?? ""; return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
   document.getElementById("tbody").innerHTML = rows.map((r) => `<tr>${cols.map(([k]) => k === "status_label"
     ? `<td><span class="st" style="background:${COLORS[r.status]}22;color:${COLORS[r.status]}">${esc(r.status_label)}</span></td>`

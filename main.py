@@ -123,28 +123,29 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_upload(args: argparse.Namespace) -> int:
-    """Upload one day's Pocket HRMS Attendance Summary from the command line (for scheduling)
-    and email the reports if auto-send is on."""
+    """Upload one day's Pocket HRMS Attendance Summary and/or Bizom attendance report from the command
+    line (for scheduling) and email the reports if auto-send is on."""
     from pathlib import Path
 
     from daily.analysis import FileError
-    from daily.service import AlreadyUploaded, upload_and_send
+    from daily.service import AlreadyUploaded, upload_files_and_send
     from database.connection import session_scope
 
-    path = Path(args.file)
-    if not path.is_file():
-        print(f"File not found: {path}")
+    paths = [Path(f) for f in args.files]
+    missing = [p for p in paths if not p.is_file()]
+    if missing:
+        print(f"File not found: {missing[0]}")
         return 2
     settings = get_settings()
     try:
         with session_scope(_engine()) as session:
-            upload, outcomes = upload_and_send(session, settings, path.name, path.read_bytes(), f"cli:{getpass.getuser()}",
-                                               replace=args.replace)
+            upload, outcomes, note = upload_files_and_send(session, settings, [(p.name, p.read_bytes()) for p in paths],
+                                                           f"cli:{getpass.getuser()}", replace=args.replace)
             print(f"{upload.report_date:%d-%b-%Y}: {upload.employees} employees processed.")
             for o in outcomes or []:
                 print(f"  email {o.scope}: {o.status} {', '.join(o.recipients)} {o.detail or ''}".rstrip())
-            if outcomes is None:
-                print("  auto-send is off; send from the Emails screen.")
+            if note:
+                print(f"  {note}")
             failed = any(o.status == "FAILED" for o in outcomes or [])
     except (FileError, AlreadyUploaded) as exc:
         print(f"Not processed: {exc}")
@@ -183,8 +184,8 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--demo", action="store_true", help="use the synthetic demo database (storage/demo)")
     serve.set_defaults(func=cmd_serve)
 
-    up = sub.add_parser("upload", help="process one day's Attendance Summary file and email the reports")
-    up.add_argument("file", help="path to the Pocket HRMS AttendanceSummary .xlsx/.csv")
+    up = sub.add_parser("upload", help="process one day's Pocket HRMS and/or Bizom file and email the reports")
+    up.add_argument("files", nargs="+", help="Pocket HRMS AttendanceSummary and/or Bizom attendance report (.xlsx/.csv)")
     up.add_argument("--replace", action="store_true", help="replace an existing upload for the same date")
     up.set_defaults(func=cmd_upload)
 

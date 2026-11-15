@@ -1,4 +1,4 @@
-"""The four screens of the tool, shown only to users with the permission."""
+"""The screens of the tool, shown only to users with the permission."""
 
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ PAGES: tuple[PageSpec, ...] = (
     PageSpec("Daily attendance", "Upload", "upload", Perm.UPLOAD_AND_SEND),
     PageSpec("Daily attendance", "Insights", "insights", Perm.VIEW_INSIGHTS),
     PageSpec("Daily attendance", "Emails", "emails", Perm.VIEW_INSIGHTS),
+    PageSpec("Reports", "Attendance report", "reports", Perm.VIEW_INSIGHTS),
+    PageSpec("Reports", "Employee report", "employee-report", Perm.VIEW_INSIGHTS),
+    PageSpec("Setup", "Employees", "employees", Perm.VIEW_INSIGHTS),
     PageSpec("Setup", "Settings", "settings", Perm.MANAGE_SETTINGS),
 )
 

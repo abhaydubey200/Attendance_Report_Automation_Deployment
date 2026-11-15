@@ -67,3 +67,52 @@ def build_summary_xlsx(day: date, seed: int | None = None) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# Synthetic hierarchy: HOD -> department -> team lead -> reporting manager (example.com addresses only).
+HODS = {
+    "Head Office": [("Accounts", "Kiran Synth", "kiran.hod@example.com"), ("Information Technology", "Kiran Synth", "kiran.hod@example.com"),
+                    ("Human Resources", "Lata Synth", "lata.hod@example.com")],
+    "Plant": [("Production", "Mohan Synth", "mohan.hod@example.com")],
+    "Sales": [("General Trade", "Nisha Synth", "nisha.hod@example.com"), ("Modern Trade", "Nisha Synth", "nisha.hod@example.com")],
+}
+
+
+def build_master_xlsx() -> bytes:
+    """SYNTHETIC employee master in the layout of HR's Employee Amendment file (blank row, header on row 2).
+    The last Sales employee is left out on purpose, so the demo shows the 'not in employee master' highlight."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Employees"
+    ws.append([])
+    ws.append(["", "EMPLOYEE CODE", "Employee Name", "Department", "DOJ", "HOD", "Email ID - HOD", "Sub split ID", "Reporting Manager"])
+    real = [e for e in EMPLOYEES if e[0] not in ("test", "SL0DUMMY")][:-1]
+    for i, (code, name, cat, _shift) in enumerate(real):
+        dept, hod, hod_mail = HODS[cat][i % len(HODS[cat])]
+        lead = "" if i % 4 == 0 else f"{dept.split()[0].lower()}.lead@example.com"
+        ws.append([i + 1, code, name, dept, f"{2015 + i % 10}-0{1 + i % 9}-15", hod, hod_mail, lead, f"{FIRST[(i + 3) % len(FIRST)]} Lead Synth"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_bizom_csv(day: date, seed: int | None = None) -> bytes:
+    """SYNTHETIC Bizom attendance report for one day (same columns as the real export; no IMEI values).
+    Covers the Sales staff, two AP promoters, a vacant position and a test user."""
+    rng = random.Random((seed if seed is not None else day.toordinal()) + 7)
+    head = ["Zone", "SubzoneName", "Name", "User_Name", "User_Id", "Employee_Id", "Role_id", "DOJ", "HQ", "Designation",
+            "User_Status", "Inactive_Date", "Imei", f"Date_{day:%d-%m-%Y}_Attendance_Status", "P", "SL", "PL", "Leave", "WO",
+            "Total_Month_Days", "Presence%", "Total_Leave"]
+    people = [(code, name, "SO") for code, name, cat, _ in EMPLOYEES if cat == "Sales" and code.startswith("SL9")]
+    people += [("AP90001", "Promoter One Synth", "Promoter"), ("AP90002", "Promoter Two Synth", "Promoter")]
+    lines = [",".join(head)]
+    for i, (code, name, desig) in enumerate(people):
+        roll = rng.random()
+        status = "P" if roll < 0.78 else "A" if roll < 0.9 else "WO" if roll < 0.95 else rng.choice(["PL", "SL", "CL"])
+        lines.append(",".join(["GTR01", "SYNTH ZONE", name.upper(), code, str(100 + i), code, "7", "2024-01-15", "Synth HQ", desig,
+                               "Active", "", "", status, "1" if status == "P" else "0", "0", "", "0", "0", "30", "3.33", "0"]))
+    lines.append(",".join(["GTR01", "SYNTH ZONE", "VACANT", "Vacant_TSM_Synth", "900", "", "4", "", "", "TSM", "Active", "", "", "A",
+                           "", "", "", "", "", "30", "0", ""]))
+    lines.append(",".join(["GTR01", "SYNTH ZONE", "TEST USER", "TestMT_Synth", "901", "TEST", "7", "", "", "SO", "Active", "", "", "P",
+                           "1", "0", "", "0", "0", "30", "3.33", "0"]))
+    return ("﻿" + "\n".join(lines) + "\n").encode("utf-8")

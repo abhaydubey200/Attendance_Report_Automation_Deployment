@@ -4,6 +4,8 @@ import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Loading, Notice, PageHeader } from "./components/ui";
 import { EmailsPage } from "./pages/EmailsPage";
+import { EmployeesPage } from "./pages/EmployeesPage";
+import { EmployeeReportPage, ReportsPage } from "./pages/ReportsPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage, UnavailablePage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -14,6 +16,9 @@ const SCREENS: Record<string, ComponentType> = {
   upload: UploadPage,
   insights: InsightsPage,
   emails: EmailsPage,
+  employees: EmployeesPage,
+  reports: ReportsPage,
+  "employee-report": EmployeeReportPage,
   settings: SettingsPage,
 };
 

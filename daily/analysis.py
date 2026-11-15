@@ -8,6 +8,10 @@ Statuses (how each is decided is in Settings -> Counting rules):
   LEAVE          any other Type code (PL, SL, ...)
   ABSENT         no punch (per rule)
   NOT_TRACKED    no punch and "Shift Not Assigned" (per rule) -- left out of attendance %
+  WEEK_OFF       Bizom says week off -- left out of attendance %
+
+Bizom (field sales app) is merged by EMP_CODE: a biometric punch or HRMS leave wins; without one,
+Bizom's status is used (P = present, A = absent, WO = week off, other codes = leave).
 """
 
 from __future__ import annotations
@@ -19,10 +23,26 @@ from datetime import date, datetime
 
 from core.config import Rules
 
-STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "HALF_DAY", "LEAVE", "ABSENT", "NOT_TRACKED"]
+STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "HALF_DAY", "LEAVE", "ABSENT", "WEEK_OFF", "NOT_TRACKED"]
 STATUS_LABEL = {"PRESENT": "Present", "MISSING_PUNCH": "Missing punch", "ON_DUTY": "On duty", "HALF_DAY": "Half day",
-                "LEAVE": "Leave", "ABSENT": "Absent", "NOT_TRACKED": "Not tracked"}
+                "LEAVE": "Leave", "ABSENT": "Absent", "WEEK_OFF": "Week off", "NOT_TRACKED": "Not tracked"}
+UNCOUNTED = ("NOT_TRACKED", "WEEK_OFF")       # left out of attendance %
+HRMS, BIZOM, BOTH = "HRMS", "BIZOM", "HRMS+BIZOM"
 NO_SHIFT = "shift not assigned"
+HOD_PREFIX = "HOD:"
+NOT_IN_MASTER = "Not in employee master"
+
+
+def hod_scope(name: str) -> str:
+    return f"{HOD_PREFIX}{name}"
+
+
+def in_scope(scope: str, category: str, hod: str | None) -> bool:
+    if scope == "ALL":
+        return True
+    if scope.startswith(HOD_PREFIX):
+        return hod == scope[len(HOD_PREFIX):]
+    return category == scope
 
 
 class FileError(ValueError):
@@ -45,6 +65,14 @@ class EmployeeResult:
     late_minutes: int = 0
     early_minutes: int = 0
     flags: list[str] = field(default_factory=list)
+    department: str | None = None      # from the employee master (None = not in master)
+    hod: str | None = None
+    team: str | None = None
+    manager: str | None = None
+    source: str = "HRMS"               # HRMS | BIZOM | HRMS+BIZOM (which file decided the status)
+    bizom_status: str | None = None    # raw Bizom code (P, A, WO, PL...)
+    designation: str | None = None
+    hq: str | None = None
 
 
 def _minutes(hhmm: str | None) -> int | None:
@@ -70,8 +98,72 @@ def parse_date(value: str) -> date:
     raise FileError(f"Unrecognised date '{value}'.")
 
 
-def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult], int]:
-    """Rows from the reshaped AttendanceSummary -> (report date, results, excluded count)."""
+def bizom_result(code: str, status: str, rules: Rules) -> tuple[str, str | None]:
+    """Bizom code -> (status, leave type)."""
+    status = (status or "").strip().upper()
+    if status == "P":
+        return "PRESENT", None
+    if status in ("A", ""):
+        return "ABSENT", None
+    if status == "WO":
+        return "WEEK_OFF", None
+    if status in {c.strip().upper() for c in rules.on_duty_codes}:
+        return "ON_DUTY", status
+    if status in ("HD", "HALF", "HALF DAY"):
+        return "HALF_DAY", status
+    return "LEAVE", status
+
+
+def merge_bizom(results: list[EmployeeResult], bizom, report_date: date, rules: Rules,
+                known_codes: set[str]) -> tuple[list[EmployeeResult], dict]:
+    """Combine HRMS results with a Bizom day (``daily.bizom.BizomDay``) by EMP_CODE.
+
+    * A punch (present / missing punch / half day / on duty) in HRMS wins.
+    * HRMS leave stays leave unless Bizom says present ("present in either counts as present").
+    * HRMS absent or not tracked -> Bizom's status.
+    * People only in Bizom are added when they are in the employee master (``known_codes``) or their
+      code matches ``rules.bizom_include_codes`` (e.g. AP promoters). Others are counted as skipped.
+    """
+    excludes = [re.compile(p, re.IGNORECASE) for p in rules.exclude_codes]
+    include = [re.compile(p, re.IGNORECASE) for p in rules.bizom_include_codes]
+    records = {code: r for code, r in bizom.records.items()
+               if not any(p.search(code) for p in excludes)
+               and (r.active or r.inactive_date is None or r.inactive_date >= report_date)}
+    stats = {"rows": len(bizom.records), "matched": 0, "decided": 0, "added": 0, "skipped": bizom.skipped_no_id,
+             "excluded": len(bizom.records) - len(records)}
+    seen = set()
+    for res in results:
+        rec = records.get(res.code.upper())
+        if rec is None:
+            continue
+        seen.add(rec.code)
+        stats["matched"] += 1
+        res.bizom_status, res.designation, res.hq = rec.status or None, rec.designation, rec.hq
+        bz_status, bz_leave = bizom_result(rec.code, rec.status, rules)
+        if res.status in ("PRESENT", "MISSING_PUNCH", "HALF_DAY", "ON_DUTY"):
+            res.source = BOTH
+            continue
+        if res.status == "LEAVE" and bz_status != "PRESENT":
+            res.source = BOTH
+            continue
+        res.status, res.leave_type, res.source = bz_status, bz_leave or res.leave_type, BIZOM
+        res.flags = [f for f in res.flags if f != "MISSING_PUNCH"]
+        stats["decided"] += 1
+    for code, rec in records.items():
+        if code in seen:
+            continue
+        if code not in known_codes and not any(p.search(code) for p in include):
+            stats["skipped"] += 1
+            continue
+        status, leave = bizom_result(code, rec.status, rules)
+        results.append(EmployeeResult(code=code, name=rec.name, category="Sales", shift="", in_time=None, out_time=None,
+                                      punches=0, work_minutes=None, leave_type=leave, day_portion=None, status=status,
+                                      source=BIZOM, bizom_status=rec.status or None, designation=rec.designation, hq=rec.hq))
+        stats["added"] += 1
+    return results, stats
+
+
+def report_date_of(rows: list[dict]) -> date:
     if not rows:
         raise FileError("The file has no employee rows.")
     dates = Counter(r["Date"] for r in rows if r.get("Date"))
@@ -79,7 +171,12 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
         raise FileError("No dates found in the file.")
     if len(dates) > 1:
         raise FileError(f"The file contains {len(dates)} different dates; upload one day at a time.")
-    report_date = parse_date(next(iter(dates)))
+    return parse_date(next(iter(dates)))
+
+
+def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult], int]:
+    """Rows from the reshaped AttendanceSummary -> (report date, results, excluded count)."""
+    report_date = report_date_of(rows)
 
     excludes = [re.compile(p, re.IGNORECASE) for p in rules.exclude_codes]
     on_duty = {c.strip().upper() for c in rules.on_duty_codes}
@@ -144,7 +241,7 @@ def _present_equivalent(c: Counter, rules: Rules) -> float:
 
 def summarize(results: list[EmployeeResult], rules: Rules) -> dict:
     c = Counter(r.status for r in results)
-    tracked = len(results) - c["NOT_TRACKED"]
+    tracked = len(results) - sum(c[s] for s in UNCOUNTED)
     present_eq = _present_equivalent(c, rules)
     came_in = [r for r in results if r.in_time and r.status in ("PRESENT", "MISSING_PUNCH")]
     ins = [_minutes(r.in_time) for r in came_in]
@@ -229,6 +326,8 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
                                             f"{rules.min_work_hours:g} h, {s['long_hours']} more than {rules.long_work_hours:g} h."})
     if c["LEAVE"] or c["ON_DUTY"] or c["HALF_DAY"]:
         out.append({"kind": "info", "text": f"{c['LEAVE']} on leave, {c['HALF_DAY']} half day, {c['ON_DUTY']} on duty."})
+    if c["WEEK_OFF"]:
+        out.append({"kind": "info", "text": f"{c['WEEK_OFF']} on week off (per Bizom); not counted in attendance %."})
     if c["NOT_TRACKED"]:
         biggest = max(by_category.items(), key=lambda kv: kv[1]["counts"]["NOT_TRACKED"])[0] if by_category else ""
         out.append({"kind": "info", "text": f"{c['NOT_TRACKED']} employee(s) not tracked (no punch, no shift assigned)"
@@ -236,26 +335,91 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
     return out
 
 
-def build_insights(report_date: date, results: list[EmployeeResult], rules: Rules, excluded: int,
-                   previous: dict | None = None) -> dict:
-    """All numbers for one day, for ALL and for every category. `previous` = the prior day's insights."""
-    by_cat_rows: dict[str, list[EmployeeResult]] = defaultdict(list)
+def _breakdown_row(name: str, s: dict, hod: str | None = None) -> dict:
+    c = s["counts"]
+    return {"name": name, "hod": hod, "employees": s["employees"], "tracked": s["tracked"],
+            "attendance_pct": s["attendance_pct"], "present": c["PRESENT"] + c["ON_DUTY"] + c["MISSING_PUNCH"],
+            "absent": c["ABSENT"], "late": s["late"], "leave": c["LEAVE"] + c["HALF_DAY"],
+            "not_tracked": c["NOT_TRACKED"] + c["WEEK_OFF"]}
+
+
+def _group(results: list[EmployeeResult], key) -> dict[str, list[EmployeeResult]]:
+    out: dict[str, list[EmployeeResult]] = defaultdict(list)
     for r in results:
-        by_cat_rows[r.category].append(r)
-    by_category = {cat: summarize(rows, rules) for cat, rows in sorted(by_cat_rows.items())}
-    overall = summarize(results, rules)
-    scopes = {"ALL": {"summary": overall, "highlights": highlights(overall, by_category, rules,
-                                                                   (previous or {}).get("scopes", {}).get("ALL", {}).get("summary"), "All"),
-                      "arrivals": in_time_buckets(results)}}
+        out[key(r)].append(r)
+    return dict(sorted(out.items()))
+
+
+def _scope_data(rows: list[EmployeeResult], rules: Rules, previous: dict | None, label: str, use_master: bool,
+                prefer: str) -> dict:
+    """Summary, highlights, arrivals and a breakdown table for one audience."""
+    s = summarize(rows, rules)
+    if use_master and prefer == "department":
+        groups, by = _group(rows, lambda r: r.department or NOT_IN_MASTER), "Department"
+        if len(groups) == 1:          # a HOD with one department: show their teams instead
+            groups, by = _group(rows, lambda r: r.team or NOT_IN_MASTER), "Team"
+    else:
+        groups, by = _group(rows, lambda r: r.category), "Category"
+    sums = {k: summarize(v, rules) for k, v in groups.items()}
+    hod_of = {k: Counter(r.hod for r in v if r.hod).most_common(1)[0][0] if any(r.hod for r in v) else None
+              for k, v in groups.items()} if by == "Department" else {}
+    return {"summary": s,
+            "highlights": highlights(s, sums if len(sums) > 1 else {}, rules, previous, label),
+            "arrivals": in_time_buckets(rows),
+            "breakdown": {"by": by, "rows": [_breakdown_row(k, v, hod_of.get(k)) for k, v in sums.items()] if len(sums) > 1 else []}}
+
+
+def build_insights(report_date: date, results: list[EmployeeResult], rules: Rules, excluded: int,
+                   previous: dict | None = None, master: dict | None = None, sources: dict | None = None) -> dict:
+    """All numbers for one day: ALL, every Category and every HOD. `previous` = the prior day's insights.
+    `master` = counts from matching the employee master (None when no master is loaded)."""
+    prev_scopes = (previous or {}).get("scopes", {})
+    use_master = bool(master and master.get("matched"))
+    by_cat_rows = _group(results, lambda r: r.category)
+    by_category = {cat: summarize(rows, rules) for cat, rows in by_cat_rows.items()}
+
+    def prev_of(scope: str) -> dict | None:
+        return prev_scopes.get(scope, {}).get("summary")
+
+    scopes = {"ALL": _scope_data(results, rules, prev_of("ALL"), "All", use_master, "department")}
+    if master:
+        extra = []
+        if master.get("not_in_master"):
+            extra.append({"kind": "warn", "text": f"{master['not_in_master']} employee(s) in the attendance file are not in the "
+                                                  f"employee master - add them on the Employees screen so their HOD gets them."})
+        if master.get("missing_from_file"):
+            extra.append({"kind": "info", "text": f"{master['missing_from_file']} active employee(s) in the master are not in "
+                                                  f"today's attendance file."})
+        scopes["ALL"]["highlights"] += extra
+    bz = (sources or {}).get("bizom")
+    if bz:
+        scopes["ALL"]["highlights"].append({"kind": "info", "text": (
+            f"Bizom: {bz['matched']} matched in Pocket HRMS, {bz['decided']} of them decided by Bizom (no punch), "
+            f"{bz['added']} added from Bizom only" + (f", {bz['skipped']} skipped (vacant / not in employee master)" if bz["skipped"] else "") + ".")})
+    elif sources is not None and sources.get("hrms") and not sources.get("bizom_file"):
+        scopes["ALL"]["highlights"].append({"kind": "warn", "text": "Bizom file not uploaded yet for this day - field sales staff show as not tracked."})
     for cat, rows in by_cat_rows.items():
-        prev_cat = (previous or {}).get("scopes", {}).get(cat, {}).get("summary")
-        scopes[cat] = {"summary": by_category[cat], "highlights": highlights(by_category[cat], {}, rules, prev_cat, cat),
-                       "arrivals": in_time_buckets(rows)}
+        scopes[cat] = _scope_data(rows, rules, prev_of(cat), cat, use_master, "department")
+    hods = []
+    if use_master:
+        for hod, rows in _group([r for r in results if r.hod], lambda r: r.hod).items():
+            key = hod_scope(hod)
+            scopes[key] = _scope_data(rows, rules, prev_of(key), hod, True, "department")
+            hods.append({"name": hod, "scope": key, "employees": len(rows),
+                         "departments": sorted({r.department for r in rows if r.department}),
+                         "attendance_pct": scopes[key]["summary"]["attendance_pct"]})
+    by_department = ({k: summarize(v, rules) for k, v in _group(results, lambda r: r.department or NOT_IN_MASTER).items()}
+                     if use_master else {})
     return {
         "report_date": report_date.isoformat(),
         "excluded": excluded,
         "categories": sorted(by_cat_rows),
         "by_category": by_category,
+        "departments": sorted(by_department),
+        "by_department": by_department,
+        "hods": hods,
+        "master": master,
+        "sources": sources or {"hrms": True},
         "scopes": scopes,
         "previous_date": (previous or {}).get("report_date"),
         "rules": rules.model_dump(),

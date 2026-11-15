@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
-from api.routers import auth, daily, settings as settings_router
+from api.routers import auth, daily, employees as employees_router, reports as reports_router, settings as settings_router
 from api.sessions import resolve_secret
 from core.config import Settings, get_settings
 from core.exceptions import AppError, AuthorizationError
@@ -95,7 +95,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
         ready = db.reachable and db.schema_revision is not None
         return {"status": "ok" if ready else "not_ready"}
 
-    for router in (auth.router, daily.router, settings_router.router):
+    for router in (auth.router, daily.router, reports_router.router, employees_router.router, settings_router.router):
         app.include_router(router, prefix=API_PREFIX)
 
     dist = frontend_dist if frontend_dist is not None else FRONTEND_DIST

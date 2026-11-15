@@ -38,6 +38,7 @@ def _day_payload(db: Session, up: DayUpload, include_rows: bool = True) -> dict:
                "sent_at": e.sent_at.isoformat(), "sent_by": e.sent_by}
               for e in db.scalars(select(EmailLog).where(EmailLog.upload_id == up.upload_id).order_by(EmailLog.id))]
     out = {"upload_id": up.upload_id, "report_date": up.report_date.isoformat(), "file": up.original_filename,
+           "bizom_file": up.bizom_filename,
            "uploaded_by": up.uploaded_by, "uploaded_at": up.uploaded_at.isoformat(), "employees": up.employees,
            "insights": insights, "emails": emails}
     if include_rows:
@@ -46,18 +47,25 @@ def _day_payload(db: Session, up: DayUpload, include_rows: bool = True) -> dict:
 
 
 @router.post("/days/upload")
-async def upload(file: UploadFile = File(...), replace: bool = Form(False),
+async def upload(files: list[UploadFile] | None = File(None), file: UploadFile | None = File(None), replace: bool = Form(False),
                  principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), settings: Settings = Depends(get_settings),
                  db: Session = Depends(get_db)) -> dict:
-    data = await file.read(settings.uploads.max_file_size_mb * 1024 * 1024 + 1)
+    """One day's Pocket HRMS Attendance Summary and/or Bizom attendance report (detected by their columns)."""
+    chosen = [f for f in (files or []) + ([file] if file else []) if f is not None]
+    if not chosen:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choose a file to upload.")
+    if len(chosen) > 2:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Upload at most two files: Pocket HRMS and Bizom.")
+    limit = settings.uploads.max_file_size_mb * 1024 * 1024 + 1
+    payload = [(f.filename or "upload.xlsx", await f.read(limit)) for f in chosen]
     try:
-        up, outcomes = service.upload_and_send(db, settings, file.filename or "upload.xlsx", data, principal.username, replace)
+        up, outcomes, note = service.upload_files_and_send(db, settings, payload, principal.username, replace)
     except FileError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     except service.AlreadyUploaded as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     return {**_day_payload(db, up, include_rows=False),
-            "auto_sent": outcomes is not None, "email_results": [o.as_dict() for o in outcomes or []]}
+            "auto_sent": outcomes is not None, "send_note": note, "email_results": [o.as_dict() for o in outcomes or []]}
 
 
 @router.get("/days")
@@ -67,6 +75,7 @@ def days(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depe
         s = json.loads(up.insights)["scopes"]["ALL"]["summary"]
         sent = db.scalars(select(EmailLog.status).where(EmailLog.upload_id == up.upload_id)).all()
         out.append({"report_date": up.report_date.isoformat(), "employees": up.employees, "attendance_pct": s["attendance_pct"],
+                    "has_hrms": bool(up.stored_path), "has_bizom": bool(up.bizom_path),
                     "absent": s["counts"]["ABSENT"], "late": s["late"], "emails": len(sent),
                     "email_failed": sum(1 for x in sent if x == "FAILED"), "uploaded_at": up.uploaded_at.isoformat()})
     return out

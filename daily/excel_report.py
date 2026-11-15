@@ -1,4 +1,4 @@
-"""Excel report for one day and one scope (ALL or a category)."""
+"""Excel report for one day and one audience (ALL, a Category or an HOD)."""
 
 from __future__ import annotations
 
@@ -8,22 +8,24 @@ from datetime import date
 import xlsxwriter
 
 from daily.analysis import STATUS_LABEL
+from daily.render import breakdown, scope_label, scoped_rows, sources_label
 
 BROWN, HONEY, CREAM, INK = "#835415", "#F5B800", "#FFF4E3", "#2B2118"
 STATUS_FILL = {"PRESENT": "#E4F1E8", "MISSING_PUNCH": "#FFF1D6", "ON_DUTY": "#E8F0FB", "HALF_DAY": "#FFF8E1",
-               "LEAVE": "#F3E8D9", "ABSENT": "#FBE4E1", "NOT_TRACKED": "#EEEEEE"}
+               "LEAVE": "#F3E8D9", "ABSENT": "#FBE4E1", "WEEK_OFF": "#EAF2F7", "NOT_TRACKED": "#EEEEEE"}
 
-DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "category", 14), ("Status", "status_label", 15),
+DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "category", 12), ("Department", "department", 18),
+               ("HOD", "hod", 18), ("Team", "team", 14), ("Reporting manager", "manager", 20), ("Status", "status_label", 15),
                ("In", "in_time", 8), ("Out", "out_time", 8), ("Hours", "work_hours", 8), ("Late (min)", "late_minutes", 10),
-               ("Left early (min)", "early_minutes", 14), ("Leave type", "leave_type", 10), ("Shift", "shift", 18)]
+               ("Left early (min)", "early_minutes", 14), ("Leave type", "leave_type", 10), ("Source", "source", 12),
+               ("Bizom", "bizom_status", 8), ("Designation", "designation", 12), ("Shift", "shift", 18)]
 
 
 def build_excel(company: str, report_date: date, scope: str, insights: dict, rows: list[dict], date_format: str) -> bytes:
     data = insights["scopes"][scope]
     s, c = data["summary"], data["summary"]["counts"]
-    rows = rows if scope == "ALL" else [r for r in rows if r["category"] == scope]
-    rows = sorted(rows, key=lambda r: (r["category"], r["code"]))
-    title = f"{company} - Daily Attendance - {'All employees' if scope == 'ALL' else scope}"
+    rows = sorted(scoped_rows(rows, scope), key=lambda r: (r.get("department") or r["category"], r["code"]))
+    title = f"{company} - Daily Attendance - {scope_label(scope)}"
 
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
@@ -45,11 +47,11 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
     ws.set_column(0, 0, 30)
     ws.set_column(1, 6, 16)
     ws.write(0, 0, title, f_title)
-    ws.write(1, 0, f"Date: {report_date.strftime(date_format)}   |   Generated automatically from Pocket HRMS", f_sub)
+    ws.write(1, 0, f"Date: {report_date.strftime(date_format)}   |   Generated automatically from {sources_label(insights)}", f_sub)
     kpis = [("Employees", s["employees"]), ("Tracked", s["tracked"]), ("Attendance %", "" if s["attendance_pct"] is None else s["attendance_pct"]),
             ("Present", c["PRESENT"]), ("Absent", c["ABSENT"]), ("Late arrivals", s["late"]), ("Missing punch", c["MISSING_PUNCH"]),
             ("Leave", c["LEAVE"]), ("Half day", c["HALF_DAY"]), ("On duty", c["ON_DUTY"]), ("Left early", s["left_early"]),
-            ("Not tracked", c["NOT_TRACKED"]), ("Average arrival", s["avg_in_time"] or "-"),
+            ("Week off", c.get("WEEK_OFF", 0)), ("Not tracked", c["NOT_TRACKED"]), ("Average arrival", s["avg_in_time"] or "-"),
             ("Average working hours", s["avg_work_hours"] if s["avg_work_hours"] is not None else "-")]
     ws.write(3, 0, "Key figures", f_section)
     for i, (k, v) in enumerate(kpis):
@@ -61,23 +63,27 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
         ws.merge_range(r + 1 + i, 0, r + 1 + i, 6, h["text"], kind_fmt[h["kind"]])
         ws.set_row(r + 1 + i, 30)
     r = r + 2 + len(data["highlights"])
-    if scope == "ALL" and insights["by_category"]:
-        ws.write(r, 0, "By category", f_section)
-        head = ["Category", "Employees", "Attendance %", "Present", "Absent", "Late", "Not tracked"]
+    bd = breakdown(insights, scope)
+    if bd["rows"]:
+        ws.set_column(7, 8, 14)
+        ws.write(r, 0, f"By {bd['by'].lower()}", f_section)
+        head = [bd["by"], "HOD", "Employees", "Attendance %", "Present", "Absent", "Late", "Leave", "Not tracked"]
         for j, h in enumerate(head):
             ws.write(r + 1, j, h, f_head)
-        for i, (cat, cs) in enumerate(insights["by_category"].items()):
-            vals = [cat, cs["employees"], "" if cs["attendance_pct"] is None else cs["attendance_pct"], cs["counts"]["PRESENT"],
-                    cs["counts"]["ABSENT"], cs["late"], cs["counts"]["NOT_TRACKED"]]
+        for i, x in enumerate(bd["rows"]):
+            vals = [x["name"], x.get("hod") or "", x["employees"], "" if x["attendance_pct"] is None else x["attendance_pct"],
+                    x["present"], x["absent"], x["late"], x["leave"], x["not_tracked"]]
             for j, v in enumerate(vals):
                 ws.write(r + 2 + i, j, v, f_cell)
-        r = r + 3 + len(insights["by_category"])
+        r = r + 3 + len(bd["rows"])
     rules = insights["rules"]
     ws.write(r, 0, "How this is counted", f_section)
     notes = [f"Late = first punch after {rules['late_after']}; left early = last punch before {rules['early_before']}.",
              f"Attendance % = (present + on duty + {'missing punch + ' if rules['single_punch_counts_present'] else ''}half of half-days) / tracked employees.",
              "Not tracked = no punch and no shift assigned (not counted in attendance %)." if rules["no_punch_no_shift"] == "NOT_TRACKED"
              else "No punch counts as absent.",
+             "Sources: Pocket HRMS punches and leave first; with no punch, the Bizom status is used (P present, A absent, WO week off "
+             "- not counted in attendance %, other codes leave). Present in either source counts as present.",
              f"On-duty codes: {', '.join(rules['on_duty_codes']) or 'none'}; other leave codes count as leave."]
     for i, n in enumerate(notes):
         ws.write(r + 1 + i, 0, n, f_sub)
@@ -105,7 +111,7 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
     sheet("Late Arrivals", [x for x in rows if "LATE" in x["flags"]], lambda x: -x["late_minutes"])
     sheet("Left Early", [x for x in rows if "LEFT_EARLY" in x["flags"]], lambda x: -x["early_minutes"])
     sheet("Missing Punch", [x for x in rows if x["status"] == "MISSING_PUNCH"])
-    sheet("Leave & On Duty", [x for x in rows if x["status"] in ("LEAVE", "HALF_DAY", "ON_DUTY")])
+    sheet("Leave, On Duty, Week Off", [x for x in rows if x["status"] in ("LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF")])
     sheet("Short Hours", [x for x in rows if "SHORT_HOURS" in x["flags"]], lambda x: x["work_hours"] or 0)
     sheet("Not Tracked", [x for x in rows if x["status"] == "NOT_TRACKED"])
     wb.close()

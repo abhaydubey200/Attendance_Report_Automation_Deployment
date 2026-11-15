@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, apiUrl } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
-import type { DayDetail, DayListItem, EmailResult, EmployeeRow, Highlight } from "../api/types";
+import type { BreakdownRow, DayDetail, DayListItem, EmailResult, EmployeeRow, Highlight, Insights } from "../api/types";
+import { SOURCE_LABELS, scopeLabel } from "../api/types";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { HBars, LineChart, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
@@ -17,11 +19,32 @@ export function HighlightList({ items }: { items: Highlight[] }) {
 }
 
 const FILTERS: [string, string][] = [["ALL", "All"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"],
-  ["LEFT_EARLY", "Left early"], ["LEAVE", "Leave / on duty"], ["SHORT_HOURS", "Short hours"], ["NOT_TRACKED", "Not tracked"]];
+  ["LEFT_EARLY", "Left early"], ["LEAVE", "Leave / on duty / week off"], ["SHORT_HOURS", "Short hours"], ["NOT_TRACKED", "Not tracked"],
+  ["BIZOM", "From Bizom"]];
+
+function inScope(r: EmployeeRow, scope: string): boolean {
+  if (scope === "ALL") return true;
+  if (scope.startsWith("HOD:")) return r.hod === scope.slice(4);
+  return r.category === scope;
+}
+
+/** Breakdown table for a scope; older days (before the employee master) fall back to categories. */
+function breakdownOf(ins: Insights, scope: string): { by: string; rows: BreakdownRow[] } {
+  const saved = ins.scopes[scope]?.breakdown;
+  if (saved) return saved;
+  if (scope !== "ALL" || ins.categories.length < 2) return { by: "Category", rows: [] };
+  return { by: "Category", rows: Object.entries(ins.by_category).map(([name, c]) => ({
+    name, hod: null, employees: c.employees, tracked: c.tracked, attendance_pct: c.attendance_pct,
+    present: c.counts.PRESENT + c.counts.ON_DUTY + c.counts.MISSING_PUNCH, absent: c.counts.ABSENT, late: c.late,
+    leave: c.counts.LEAVE + c.counts.HALF_DAY, not_tracked: c.counts.NOT_TRACKED })) };
+}
+
+const pctColor = (v: number) => (v < 75 ? "#a52a1a" : v < 90 ? "#c88a00" : "#2e7d4f");
 
 function matches(r: EmployeeRow, f: string): boolean {
   if (f === "ALL") return true;
-  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY"].includes(r.status);
+  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF"].includes(r.status);
+  if (f === "BIZOM") return r.source === "BIZOM";
   if (["LATE", "LEFT_EARLY", "SHORT_HOURS"].includes(f)) return r.flags.includes(f);
   return r.status === f;
 }
@@ -33,21 +56,27 @@ export function InsightsPage() {
   const [scope, setScope] = useState("ALL");
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [dept, setDept] = useState("");
   const [preview, setPreview] = useState(false);
   const day = useApi<DayDetail>(date ? `/v1/days/${date}` : null);
   const send = useAction();
   const { hasPermission } = useAuth();
 
   useEffect(() => setScope("ALL"), [date]);
+  useEffect(() => setDept(""), [scope]);
 
   const ins = day.data?.insights;
   const data = ins?.scopes[scope];
   const s = data?.summary;
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (day.data?.rows ?? []).filter((r) => (scope === "ALL" || r.category === scope) && matches(r, filter)
-      && (!q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)));
-  }, [day.data, scope, filter, search]);
+    return (day.data?.rows ?? []).filter((r) => inScope(r, scope) && matches(r, filter) && (!dept || (r.department || r.category) === dept)
+      && (!q || [r.name, r.code, r.team, r.manager].some((v) => (v ?? "").toLowerCase().includes(q))));
+  }, [day.data, scope, filter, search, dept]);
+  const hasMaster = useMemo(() => (day.data?.rows ?? []).some((r) => r.department || r.hod), [day.data]);
+  const deptOptions = useMemo(() => [...new Set((day.data?.rows ?? []).filter((r) => inScope(r, scope))
+    .map((r) => r.department || r.category))].sort(), [day.data, scope]);
+  const bd = ins ? breakdownOf(ins, scope) : { by: "Category", rows: [] };
   const trend = useMemo(() => [...(days.data ?? [])].reverse().slice(-30), [days.data]);
 
   async function sendNow() {
@@ -63,17 +92,24 @@ export function InsightsPage() {
 
   return (
     <>
-      <PageHeader title="Insights" subtitle={date ? `${formatDate(date)} · ${scope === "ALL" ? "All employees" : scope}` : undefined} />
+      <PageHeader title="Insights" subtitle={date ? `${formatDate(date)} · ${scopeLabel(scope)}` : undefined} />
       <Toolbar>
         <Field label="Day">
           <select value={date} onChange={(e) => setParams({ date: e.target.value })}>
             {days.data?.map((d) => <option key={d.report_date} value={d.report_date}>{formatDate(d.report_date)}</option>)}
           </select>
         </Field>
-        <Field label="Team">
+        <Field label="Report for">
           <select value={scope} onChange={(e) => setScope(e.target.value)}>
             <option value="ALL">All employees</option>
-            {ins?.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            {ins?.hods && ins.hods.length > 0 && (
+              <optgroup label="HOD (their own people)">
+                {ins.hods.map((h) => <option key={h.scope} value={h.scope}>{h.name} ({h.employees})</option>)}
+              </optgroup>
+            )}
+            <optgroup label="Pocket HRMS category">
+              {ins?.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </optgroup>
           </select>
         </Field>
         <div className="toolbar-actions">
@@ -109,8 +145,14 @@ export function InsightsPage() {
             <KpiCard label="Left early" value={s.left_early} />
             <KpiCard label="Avg arrival" value={s.avg_in_time ?? "—"} />
             <KpiCard label="Avg hours" value={s.avg_work_hours ?? "—"} />
+            <KpiCard label="Week off" value={s.counts.WEEK_OFF ?? 0} />
             <KpiCard label="Not tracked" value={s.counts.NOT_TRACKED} />
           </div>
+          {day.data && (
+            <p className="muted small">
+              Files: {day.data.file ? `Pocket HRMS (${day.data.file})` : "Pocket HRMS not uploaded"} · {day.data.bizom_file ? `Bizom (${day.data.bizom_file})` : "Bizom not uploaded"}
+            </p>
+          )}
 
           <Card title="Highlights"><HighlightList items={data.highlights} /></Card>
 
@@ -122,12 +164,11 @@ export function InsightsPage() {
             <Card title="Arrival times">
               <HBars title="Employees arriving in each 30-minute window" bars={data.arrivals.map((a) => ({ label: a.label, value: a.count, color: "#d7ad5f" }))} />
             </Card>
-            {scope === "ALL" && ins.categories.length > 1 && (
-              <Card title="Attendance by team">
-                <HBars title="Attendance % (tracked employees)" max={100} unit="%" bars={Object.entries(ins.by_category)
-                  .filter(([, c]) => c.attendance_pct !== null)
-                  .map(([name, c]) => ({ label: name, value: c.attendance_pct as number,
-                    color: (c.attendance_pct as number) < 75 ? "#a52a1a" : (c.attendance_pct as number) < 90 ? "#c88a00" : "#2e7d4f" }))} />
+            {bd.rows.length > 1 && (
+              <Card title={`Attendance by ${bd.by.toLowerCase()}`}>
+                <HBars title="Attendance % (tracked employees)" max={100} unit="%" bars={bd.rows
+                  .filter((c) => c.attendance_pct !== null)
+                  .map((c) => ({ label: c.name, value: c.attendance_pct as number, color: pctColor(c.attendance_pct as number) }))} />
               </Card>
             )}
             {scope === "ALL" && (
@@ -138,25 +179,44 @@ export function InsightsPage() {
             )}
           </div>
 
-          {scope === "ALL" && ins.categories.length > 1 && (
-            <Card title="Teams">
-              <DataTable rows={Object.entries(ins.by_category)} rowKey={([n]) => n} columns={[
-                { header: "Team", render: ([n]) => <strong>{n}</strong> },
-                { header: "Employees", render: ([, c]) => c.employees },
-                { header: "Attendance", render: ([, c]) => (c.attendance_pct === null ? "—" : `${c.attendance_pct}%`) },
-                { header: "Present", render: ([, c]) => c.counts.PRESENT },
-                { header: "Absent", render: ([, c]) => c.counts.ABSENT },
-                { header: "Late", render: ([, c]) => c.late },
-                { header: "Missing punch", render: ([, c]) => c.counts.MISSING_PUNCH },
-                { header: "Avg arrival", render: ([, c]) => c.avg_in_time ?? "—" },
-                { header: "Not tracked", render: ([, c]) => c.counts.NOT_TRACKED },
+          {bd.rows.length > 1 && (
+            <Card title={`By ${bd.by.toLowerCase()}`}>
+              <DataTable rows={bd.rows} rowKey={(x) => x.name} columns={[
+                { header: bd.by, render: (x) => <strong>{x.name}</strong> },
+                ...(bd.rows.some((x) => x.hod) ? [{ header: "HOD", render: (x: BreakdownRow) => x.hod ?? "" }] : []),
+                { header: "Employees", render: (x) => x.employees },
+                { header: "Attendance", render: (x) => (x.attendance_pct === null ? "—" : `${x.attendance_pct}%`) },
+                { header: "Present", render: (x) => x.present },
+                { header: "Absent", render: (x) => x.absent },
+                { header: "Late", render: (x) => x.late },
+                { header: "Leave", render: (x) => x.leave },
+                { header: "Not tracked", render: (x) => x.not_tracked },
+              ]} />
+            </Card>
+          )}
+
+          {scope === "ALL" && ins.hods && ins.hods.length > 0 && (
+            <Card title="By HOD">
+              <DataTable rows={ins.hods} rowKey={(h) => h.scope} columns={[
+                { header: "HOD", render: (h) => <button className="link" onClick={() => setScope(h.scope)}>{h.name}</button> },
+                { header: "Departments", render: (h) => h.departments.join(", ") },
+                { header: "Employees", render: (h) => h.employees },
+                { header: "Attendance", render: (h) => (h.attendance_pct === null ? "—" : `${h.attendance_pct}%`) },
+                { header: "Absent", render: (h) => ins.scopes[h.scope]?.summary.counts.ABSENT ?? "" },
+                { header: "Late", render: (h) => ins.scopes[h.scope]?.summary.late ?? "" },
               ]} />
             </Card>
           )}
 
           <Card title="Employees">
             <div className="controls">
-              <input className="search" placeholder="Search name or code…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search employees" />
+              <input className="search" placeholder="Search name, code, team, manager…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search employees" />
+              {deptOptions.length > 1 && (
+                <select value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Filter by department">
+                  <option value="">{hasMaster ? "All departments" : "All categories"}</option>
+                  {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              )}
               <div className="chips">
                 {FILTERS.map(([k, l]) => <button key={k} className={`chip${filter === k ? " on" : ""}`} onClick={() => setFilter(k)}>{l}</button>)}
               </div>
@@ -164,8 +224,13 @@ export function InsightsPage() {
             </div>
             <DataTable rows={rows.slice(0, 1000)} rowKey={(r) => r.code} columns={[
               { header: "Code", render: (r) => r.code },
-              { header: "Name", render: (r) => r.name },
-              { header: "Team", render: (r) => r.category },
+              { header: "Name", render: (r) => <Link className="link" to={`/employee-report?code=${encodeURIComponent(r.code)}`}>{r.name}</Link> },
+              ...(hasMaster ? [
+                { header: "Department", render: (r: EmployeeRow) => r.department ?? "" },
+                { header: "HOD", render: (r: EmployeeRow) => r.hod ?? "" },
+                { header: "Team", render: (r: EmployeeRow) => r.team ?? "" },
+                { header: "Manager", render: (r: EmployeeRow) => r.manager ?? "" },
+              ] : [{ header: "Category", render: (r: EmployeeRow) => r.category }]),
               { header: "Status", render: (r) => <span className="st" style={{ background: `${STATUS_COLORS[r.status]}22`, color: STATUS_COLORS[r.status] }}>{r.status_label}</span> },
               { header: "In", render: (r) => r.in_time ?? "" },
               { header: "Out", render: (r) => r.out_time ?? "" },
@@ -173,13 +238,14 @@ export function InsightsPage() {
               { header: "Late", render: (r) => (r.late_minutes ? `${r.late_minutes} min` : "") },
               { header: "Left early", render: (r) => (r.early_minutes ? `${r.early_minutes} min` : "") },
               { header: "Leave", render: (r) => r.leave_type ?? "" },
+              { header: "Source", render: (r) => SOURCE_LABELS[r.source ?? "HRMS"] ?? r.source },
             ]} />
           </Card>
 
           {day.data && day.data.emails.length > 0 && (
             <Card title="Emails for this day">
               <DataTable rows={day.data.emails} rowKey={(e) => `${e.scope}-${e.sent_at}`} columns={[
-                { header: "Report", render: (e) => (e.scope === "ALL" ? "All employees" : e.scope) },
+                { header: "Report", render: (e) => scopeLabel(e.scope) },
                 { header: "To", render: (e) => e.recipients },
                 { header: "Status", render: (e) => <StatusBadge value={e.status} /> },
                 { header: "Mode", render: (e) => e.mode },

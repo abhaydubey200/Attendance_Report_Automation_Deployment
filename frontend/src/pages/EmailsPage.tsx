@@ -3,6 +3,7 @@ import { useApi } from "../api/useApi";
 import type { EmailLogRow } from "../api/types";
 import { DataTable, ErrorNotice, Loading, Notice, PageHeader, StatusBadge } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
+import { scopeLabel } from "../api/types";
 
 export function EmailsPage() {
   const log = useApi<EmailLogRow[]>("/v1/emails");
@@ -18,7 +19,7 @@ export function EmailsPage() {
       {log.data && log.data.length > 0 && (
         <DataTable rows={log.data} rowKey={(e) => String(e.id)} columns={[
           { header: "Day", render: (e) => <Link to={`/insights?date=${e.report_date}`}>{formatDate(e.report_date)}</Link> },
-          { header: "Report", render: (e) => (e.scope === "ALL" ? "All employees" : e.scope) },
+          { header: "Report", render: (e) => scopeLabel(e.scope) },
           { header: "To", render: (e) => e.recipients },
           { header: "Subject", render: (e) => <span className="small">{e.subject}</span> },
           { header: "Status", render: (e) => <StatusBadge value={e.status} /> },

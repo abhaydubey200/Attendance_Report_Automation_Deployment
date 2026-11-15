@@ -9,10 +9,10 @@ function Recipients({ initial, categories, onSaved }: { initial: RecipientRow[];
   const act = useAction();
   const scopes = ["ALL", ...categories];
   const set = (i: number, patch: Partial<RecipientRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const missing = categories.filter((c) => !rows.some((r) => r.scope === c && r.email));
   return (
     <Card title="Who gets the reports">
-      <p className="muted small">Each team's manager gets that team's report. “All employees” is the full company report (HR, Directors).</p>
+      <p className="muted small">Each HOD automatically gets the report for their own people, using the HOD email on the Employees screen.
+        Add HR and Directors here under “All employees” (full company report). A Pocket HRMS category (Sales, Plant…) only needs a row here if someone should get that unit's report too.</p>
       <table className="edit-table">
         <thead><tr><th>Name</th><th>Email</th><th>Receives report for</th><th>Active</th><th /></tr></thead>
         <tbody>
@@ -31,10 +31,9 @@ function Recipients({ initial, categories, onSaved }: { initial: RecipientRow[];
           ))}
         </tbody>
       </table>
-      {missing.length > 0 && <p className="muted small">No manager yet for: {missing.join(", ")}.</p>}
       <ActionMessages error={act.error} message={act.message} />
       <div className="form-actions">
-        <button className="btn btn-ghost btn-inline" onClick={() => setRows([...rows, { name: "", email: "", scope: missing[0] ?? "ALL", active: true }])}>Add person</button>
+        <button className="btn btn-ghost btn-inline" onClick={() => setRows([...rows, { name: "", email: "", scope: "ALL", active: true }])}>Add person</button>
         <button className="btn btn-primary btn-inline" disabled={act.busy}
           onClick={() => void act.run(() => api.put("/v1/settings/recipients", { recipients: rows }), "Recipients saved.").then((r) => r && onSaved())}>Save recipients</button>
       </div>
@@ -64,6 +63,9 @@ function RulesForm({ initial }: { initial: Rules }) {
         </Field>
         <Field label="Leave codes that mean on duty" hint="Comma separated, e.g. LD. Other codes count as leave.">
           <input value={r.on_duty_codes.join(", ")} onChange={(e) => setR({ ...r, on_duty_codes: e.target.value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean) })} />
+        </Field>
+        <Field label="Bizom-only users to include" hint="Besides the employee master. One per line (regular expressions); ^AP = promoters.">
+          <textarea rows={2} value={(r.bizom_include_codes ?? []).join("\n")} onChange={(e) => setR({ ...r, bizom_include_codes: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} />
         </Field>
         <Field label="Skip these employee codes" hint="Test/dummy records. One per line (regular expressions).">
           <textarea rows={4} value={r.exclude_codes.join("\n")} onChange={(e) => setR({ ...r, exclude_codes: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} />
@@ -99,6 +101,8 @@ function EmailForm({ initial, passwordSet }: { initial: EmailSettings; passwordS
         <Field label="Subject starts with"><input value={e.subject_prefix} onChange={(x) => setE({ ...e, subject_prefix: x.target.value })} /></Field>
       </div>
       <label className="check"><input type="checkbox" checked={e.auto_send} onChange={(x) => setE({ ...e, auto_send: x.target.checked })} /> Send automatically after each upload</label>
+      <label className="check"><input type="checkbox" checked={e.wait_for_bizom} onChange={(x) => setE({ ...e, wait_for_bizom: x.target.checked })} /> Wait until both the Pocket HRMS and the Bizom file of the day are uploaded before sending</label>
+      <label className="check"><input type="checkbox" checked={e.send_to_hods} onChange={(x) => setE({ ...e, send_to_hods: x.target.checked })} /> Send each HOD the report for their own people (HOD email from the Employees screen)</label>
       <label className="check"><input type="checkbox" checked={e.smtp_starttls} onChange={(x) => setE({ ...e, smtp_starttls: x.target.checked })} /> Use STARTTLS (encrypted connection)</label>
       <label className="check"><input type="checkbox" checked={e.attach_excel} onChange={(x) => setE({ ...e, attach_excel: x.target.checked })} /> Attach Excel report</label>
       <label className="check"><input type="checkbox" checked={e.attach_dashboard} onChange={(x) => setE({ ...e, attach_dashboard: x.target.checked })} /> Attach HTML dashboard</label>

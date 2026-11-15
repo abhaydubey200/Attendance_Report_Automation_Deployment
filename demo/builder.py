@@ -15,22 +15,20 @@ from pathlib import Path
 
 from core.config import Settings
 from core.paths import PROJECT_ROOT
-from daily.service import upload_and_send
+from daily import employees
+from daily.service import upload_files_and_send
 from daily.settings_store import replace_recipients
 from database.connection import create_db_engine, session_scope
 from database.migrate import upgrade_to_head
 from database.repositories.security_repository import SecurityRepository
-from demo.synthetic import build_summary_xlsx
+from demo.synthetic import build_bizom_csv, build_master_xlsx, build_summary_xlsx
 
 DEMO_DIR = PROJECT_ROOT / "storage" / "demo"
 DEMO_DB = DEMO_DIR / "apis_attendance_demo.db"
 DEMO_STORAGE = DEMO_DIR / "files"
 ACTOR = "demo"
 
-EXAMPLE_RECIPIENTS = [  # example.com addresses: test mode only, never delivered
-    {"name": "Sales Manager (demo)", "email": "sales.manager@example.com", "scope": "Sales"},
-    {"name": "Plant Head (demo)", "email": "plant.head@example.com", "scope": "Plant"},
-    {"name": "HO Admin Head (demo)", "email": "ho.head@example.com", "scope": "Head Office"},
+EXAMPLE_RECIPIENTS = [  # example.com addresses: test mode only, never delivered. HODs come from the employee master.
     {"name": "HR Team (demo)", "email": "hr@example.com", "scope": "ALL"},
     {"name": "Director (demo)", "email": "director@example.com", "scope": "ALL"},
 ]
@@ -55,12 +53,15 @@ def build(settings: Settings, days: int = 10, end: date | None = None, log=print
     with session_scope(engine) as s:
         SecurityRepository(s).sync_roles_and_permissions(settings.security)
         replace_recipients(s, EXAMPLE_RECIPIENTS)
+        imported = employees.import_rows(s, employees.read_master_file("employees.xlsx", build_master_xlsx()), ACTOR)
+        log(f"  employee master: {imported.added} synthetic employees")
     end = end or date.today() - timedelta(days=1)
     for i in range(days):
         day = end - timedelta(days=days - 1 - i)
         with session_scope(engine) as s:
-            up, outcomes = upload_and_send(s, settings, f"AttendanceSummary_{day:%Y%m%d}_SYNTHETIC.xlsx",
-                                           build_summary_xlsx(day), ACTOR)
+            up, outcomes, _ = upload_files_and_send(s, settings, [
+                (f"AttendanceSummary_{day:%Y%m%d}_SYNTHETIC.xlsx", build_summary_xlsx(day)),
+                (f"BizomAttendance_{day:%Y%m%d}_SYNTHETIC.csv", build_bizom_csv(day))], ACTOR)
             sent = sum(1 for o in outcomes or [] if o.status in ("SAVED", "SENT"))
             log(f"  {day:%d-%b-%Y}: {up.employees} employees, {sent} emails saved to the outbox (test mode)")
     engine.dispose()

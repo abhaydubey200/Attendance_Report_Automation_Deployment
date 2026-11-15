@@ -90,8 +90,9 @@ class Rules(BaseModel):
     no_punch_no_shift: Literal["ABSENT", "NOT_TRACKED"] = "NOT_TRACKED"
     single_punch_counts_present: bool = True
     exclude_codes: list[str] = Field(default_factory=list)
+    bizom_include_codes: list[str] = Field(default_factory=lambda: ["^AP"])   # Bizom-only users to report besides the master
 
-    @field_validator("exclude_codes")
+    @field_validator("exclude_codes", "bizom_include_codes")
     @classmethod
     def _valid_patterns(cls, v: list[str]) -> list[str]:
         import re
@@ -111,6 +112,8 @@ class EmailSettings(BaseModel):
 
     mode: Literal["test", "live"] = "test"
     auto_send: bool = True
+    send_to_hods: bool = True
+    wait_for_bizom: bool = True        # auto-send only once both the Pocket HRMS and Bizom files of the day are in          # each HOD gets their own people's report (email from the employee master)
     sender: str | None = None
     smtp_host: str | None = None
     smtp_port: int = Field(default=587, gt=0, lt=65536)

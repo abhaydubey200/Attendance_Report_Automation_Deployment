@@ -43,11 +43,14 @@ rules:
   no_punch_with_shift: ABSENT       # no punch, shift assigned
   no_punch_no_shift: NOT_TRACKED    # no punch, "Shift Not Assigned" (mostly field Sales)
   single_punch_counts_present: true # one punch = present, flagged as missing punch
-  exclude_codes: ["^test$", "DUMMY", "^CAND-", "^A001$"]   # test/dummy records (regular expressions)
+  exclude_codes: ["^test$", "DUMMY", "^CAND-", "^A001$", "^VACANT"]   # test/dummy records (regular expressions)
+  bizom_include_codes: ["^AP"]      # Bizom-only users reported besides the employee master (AP = promoters)
 
 email:
   mode: test                        # test = save to outbox and show in app; live = send via SMTP
   auto_send: true                   # send right after a successful upload
+  send_to_hods: true                # each HOD gets their own people's report (email from the employee master)
+  wait_for_bizom: true              # auto-send only when both Pocket HRMS and Bizom files for the day are in
   sender: null                      # e.g. hr-reports@<apis domain>
   smtp_host: null                   # Microsoft 365: smtp.office365.com
   smtp_port: 587

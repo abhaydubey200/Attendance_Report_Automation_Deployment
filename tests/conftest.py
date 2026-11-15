@@ -49,7 +49,10 @@ def isolated_env(tmp_path, monkeypatch) -> dict[str, str]:
 
 @pytest.fixture
 def settings(isolated_env) -> Settings:
-    return load_settings()
+    """Most tests upload only a Pocket HRMS file, so auto-send does not wait for Bizom here
+    (tests of the waiting behaviour save their own email settings)."""
+    s = load_settings()
+    return s.model_copy(update={"email": s.email.model_copy(update={"wait_for_bizom": False})})
 
 
 @pytest.fixture

@@ -8,20 +8,20 @@ import { formatDate } from "../format";
 
 export function UploadPage() {
   const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [drag, setDrag] = useState(false);
 
-  async function upload(f: File, replace = false) {
+  async function upload(chosen: File[], replace = false) {
     setBusy(true);
     setError(null);
     setConflict(null);
     setResult(null);
     const form = new FormData();
-    form.append("file", f);
+    chosen.forEach((f) => form.append("files", f));
     form.append("replace", replace ? "true" : "false");
     try {
       setResult(await api.upload<UploadResult>("/v1/days/upload", form));
@@ -33,48 +33,62 @@ export function UploadPage() {
     }
   }
 
-  function choose(f: File | undefined) {
-    if (!f) return;
-    setFile(f);
-    void upload(f);
+  function choose(list: FileList | null | undefined) {
+    const chosen = Array.from(list ?? []).slice(0, 2);
+    if (!chosen.length) return;
+    setFiles(chosen);
+    void upload(chosen);
+    if (input.current) input.current.value = "";
   }
 
   function onDrop(e: DragEvent) {
     e.preventDefault();
     setDrag(false);
-    choose(e.dataTransfer.files?.[0]);
+    choose(e.dataTransfer.files);
   }
 
   const s = result?.insights.scopes.ALL.summary;
   const sentCount = result?.email_results.filter((r) => r.status === "SENT" || r.status === "SAVED").length ?? 0;
+  const bz = result?.insights.sources?.bizom;
 
   return (
     <>
-      <PageHeader title="Upload today's attendance" subtitle="Pocket HRMS → Attendance Summary export (.xlsx). One day per file." />
+      <PageHeader title="Upload today's attendance" subtitle="Pocket HRMS Attendance Summary and the Bizom attendance report of the same day. Drop both together, or one at a time." />
       <div className={`dropzone${drag ? " drag" : ""}${busy ? " busy" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}
         onClick={() => !busy && input.current?.click()} role="button" tabIndex={0}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}>
-        <input ref={input} type="file" accept=".xlsx,.csv" hidden onChange={(e) => choose(e.target.files?.[0])} />
+        <input ref={input} type="file" accept=".xlsx,.csv" multiple hidden onChange={(e) => choose(e.target.files)} />
         <div className="dropzone-icon" aria-hidden="true">⬆</div>
-        <strong>{busy ? "Analysing and preparing reports…" : "Drop the Attendance Summary file here, or click to choose"}</strong>
-        <span className="muted">{file ? file.name : "Excel (.xlsx) or CSV, up to 25 MB"}</span>
+        <strong>{busy ? "Analysing and preparing reports…" : "Drop the Pocket HRMS and/or Bizom file here, or click to choose"}</strong>
+        <span className="muted">{files.length ? files.map((f) => f.name).join(" + ") : "Excel (.xlsx) or CSV, up to 25 MB each. The file type is recognised automatically."}</span>
       </div>
 
       {error && <Notice kind="fail">{error}</Notice>}
-      {conflict && file && (
+      {conflict && files.length > 0 && (
         <Notice kind="warn">
           {conflict}{" "}
-          <button className="btn btn-primary btn-small" onClick={() => void upload(file, true)}>Replace and send again</button>
+          <button className="btn btn-primary btn-small" onClick={() => void upload(files, true)}>Replace and send again</button>
         </Notice>
       )}
 
       {result && s && (
         <>
-          <Notice kind="ok">
+          <div className="upload-slots">
+            <div className={`upload-slot${result.file ? " done" : ""}`}>
+              <strong>Pocket HRMS</strong><br />{result.file ?? "Not uploaded yet for this day"}
+            </div>
+            <div className={`upload-slot${result.bizom_file ? " done" : ""}`}>
+              <strong>Bizom</strong><br />{result.bizom_file ?? "Not uploaded yet for this day"}
+              {bz && <span className="muted small"><br />{bz.matched} matched · {bz.decided} decided by Bizom · {bz.added} added · {bz.skipped} skipped</span>}
+            </div>
+          </div>
+          <Notice kind={result.auto_sent ? "ok" : "info"}>
             {formatDate(result.report_date)} processed: {result.employees} employees
-            {result.insights.excluded ? ` (${result.insights.excluded} test record(s) skipped)` : ""}.{" "}
-            {result.auto_sent ? `${sentCount} email(s) ${result.email_results.some((r) => r.status === "SAVED") ? "prepared (test mode)" : "sent"}.` : "Auto-send is off."}{" "}
+            {result.insights.excluded ? ` (${result.insights.excluded} test / inactive record(s) skipped)` : ""}.{" "}
+            {result.auto_sent
+              ? `${sentCount} email(s) ${result.email_results.some((r) => r.status === "SAVED") ? "prepared (test mode)" : "sent"}.`
+              : result.send_note ?? "Auto-send is off."}{" "}
             <Link to={`/insights?date=${result.report_date}`}>Open insights →</Link>
           </Notice>
           <div className="kpi-grid">
@@ -83,22 +97,25 @@ export function UploadPage() {
             <KpiCard label="Absent" value={s.counts.ABSENT} />
             <KpiCard label="Late" value={s.late} />
             <KpiCard label="Leave" value={s.counts.LEAVE + s.counts.HALF_DAY} />
+            <KpiCard label="Week off" value={s.counts.WEEK_OFF ?? 0} />
             <KpiCard label="Not tracked" value={s.counts.NOT_TRACKED} />
           </div>
           <Card title="Highlights">
             <HighlightList items={result.insights.scopes.ALL.highlights} />
           </Card>
-          <Card title="Emails">
-            <DataTable rows={result.email_results} rowKey={(r) => r.scope} columns={[
-              { header: "Report", render: (r) => r.scope_label },
-              { header: "To", render: (r) => r.recipients.join(", ") || "—" },
-              { header: "Status", render: (r) => <StatusBadge value={r.status} /> },
-              { header: "Note", render: (r) => (r.status === "SAVED" ? "Test mode: saved, not sent" : r.detail ?? "") },
-            ]} />
-            {result.email_results.some((r) => r.status === "NO_RECIPIENTS") && (
-              <p className="muted small">Add managers in <Link to="/settings">Settings</Link>, then use “Send emails” on the Insights page.</p>
-            )}
-          </Card>
+          {result.email_results.length > 0 && (
+            <Card title="Emails">
+              <DataTable rows={result.email_results} rowKey={(r) => r.scope} columns={[
+                { header: "Report", render: (r) => r.scope_label },
+                { header: "To", render: (r) => r.recipients.join(", ") || "—" },
+                { header: "Status", render: (r) => <StatusBadge value={r.status} /> },
+                { header: "Note", render: (r) => (r.status === "SAVED" ? "Test mode: saved, not sent" : r.detail ?? "") },
+              ]} />
+              {result.email_results.some((r) => r.status === "NO_RECIPIENTS") && (
+                <p className="muted small">Add HR/Directors in <Link to="/settings">Settings</Link> and HOD emails on <Link to="/employees">Employees</Link>, then use “Send emails” on the Insights page.</p>
+              )}
+            </Card>
+          )}
         </>
       )}
     </>

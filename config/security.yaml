@@ -4,15 +4,16 @@ permissions:
   VIEW_INSIGHTS: See daily insights, dashboards and reports
   UPLOAD_AND_SEND: Upload attendance files and send report emails
   MANAGE_SETTINGS: Change counting rules, recipients and email settings
+  MANAGE_EMPLOYEES: Add, edit, mark Left / restore and import employees
   ADMIN_USERS: Manage users (sign-in mode only)
 
 roles:
   ADMIN:
     description: Everything, including settings.
-    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND, MANAGE_SETTINGS, ADMIN_USERS]
+    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND, MANAGE_SETTINGS, MANAGE_EMPLOYEES, ADMIN_USERS]
   HR:
-    description: Upload files, see insights, send reports.
-    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND]
+    description: Upload files, see insights, send reports, maintain employees.
+    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND, MANAGE_EMPLOYEES]
   VIEWER:
     description: See insights only.
     permissions: [VIEW_INSIGHTS]

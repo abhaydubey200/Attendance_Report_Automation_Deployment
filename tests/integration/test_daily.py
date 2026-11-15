@@ -135,7 +135,7 @@ def test_excel_report_sheets_and_scope():
     ins = analysis.build_insights(day, results, Rules(), excluded)
     wb = load_workbook(io.BytesIO(build_excel("APIS India Limited", day, "Plant", ins, _rows(results), "%d-%b-%Y")))
     assert wb.sheetnames == ["Summary", "All Employees", "Absent", "Late Arrivals", "Left Early", "Missing Punch",
-                             "Leave & On Duty", "Short Hours", "Not Tracked"]
+                             "Leave, On Duty, Week Off", "Short Hours", "Not Tracked"]
     codes = {row[0].value for row in wb["All Employees"].iter_rows(min_row=2)}
     assert codes == {"E3", "E4", "E5"}                                     # Plant only
     assert wb["Absent"]["A2"].value == "E5"
@@ -168,7 +168,7 @@ def test_upload_replace_recalculate_and_send(engine, settings):
                                {"name": "HR", "email": "hr@example.com", "scope": "ALL"}])
         up, outcomes = service.upload_and_send(s, settings, "summary.xlsx", data, "tester")
         status = {o.scope: o.status for o in outcomes}
-    assert status == {"ALL": "SAVED", "Head Office": "NO_RECIPIENTS", "Plant": "SAVED", "Sales": "NO_RECIPIENTS"}
+    assert status == {"ALL": "SAVED", "Plant": "SAVED"}   # categories without recipients are skipped
     outbox = list((settings.storage.area("outbox") / "2026-11-13").glob("*.eml"))
     assert len(outbox) == 2
     msg = email.message_from_bytes(outbox[0].read_bytes())
@@ -189,7 +189,7 @@ def test_live_mode_failure_is_logged_not_raised(engine, settings, monkeypatch):
 
     with session_scope(engine) as s:
         replace_recipients(s, [{"name": "HR", "email": "hr@example.com", "scope": "ALL"}])
-        save_email_settings(s, EmailSettings(mode="live", smtp_host="127.0.0.1", smtp_port=9, sender="hr@example.com",
+        save_email_settings(s, EmailSettings(mode="live", wait_for_bizom=False, smtp_host="127.0.0.1", smtp_port=9, sender="hr@example.com",
                                              smtp_starttls=False), "tester")
         up, outcomes = service.upload_and_send(s, settings, "summary.xlsx", summary_file(CASES), "tester")
     failed = [o for o in outcomes if o.scope == "ALL"][0]

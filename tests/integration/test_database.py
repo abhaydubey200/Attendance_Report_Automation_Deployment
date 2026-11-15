@@ -30,16 +30,16 @@ def test_role_sync_is_idempotent(engine, settings):
 def test_session_scope_rolls_back_on_error(engine, make_user):
     with pytest.raises(RuntimeError):
         with session_scope(engine) as s:
-            SecurityRepository(s).create_user("ghost", "Ghost", None, ["READ_ONLY"])
+            SecurityRepository(s).create_user("ghost", "Ghost", None, ["VIEWER"])
             raise RuntimeError("boom")
     with session_scope(engine) as s:
         assert SecurityRepository(s).get_user_by_username("ghost") is None
 
 
 def test_duplicate_username_rejected_case_insensitively(engine, make_user):
-    make_user("alice", ["READ_ONLY"])
+    make_user("alice", ["VIEWER"])
     with pytest.raises(ValueError, match="already exists"):
-        make_user("ALICE", ["READ_ONLY"])
+        make_user("ALICE", ["VIEWER"])
 
 
 def test_unknown_role_rejected(engine, make_user):

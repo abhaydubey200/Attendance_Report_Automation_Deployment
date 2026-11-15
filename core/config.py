@@ -1,7 +1,9 @@
 """Configuration loading and validation.
 
-All YAML files in ``config/`` are parsed into validated Pydantic models.
-Secrets are read only from environment variables (optionally via a local ``.env``).
+`config/settings.yaml` holds defaults; the counting rules, recipients and email
+options a user changes in the Settings screen are stored in the database and
+override the defaults (see `daily/settings_store.py`). Secrets come only from
+environment variables (optionally a local `.env`).
 """
 
 from __future__ import annotations
@@ -14,40 +16,33 @@ from typing import Any, Literal, Mapping
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
 
-from contracts.attendance import AttendanceStatus
 from core.exceptions import ConfigurationError
-from core.paths import CONFIG_DIR, PROJECT_ROOT, resolve_path
+from core.paths import CONFIG_DIR, resolve_path
 
 Environment = Literal["development", "testing", "production"]
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-# --------------------------------------------------------------------------- settings.yaml
 class AppSection(_Strict):
     name: str
     short_name: str
+    company: str = "APIS India Limited"
     timezone: str = "Asia/Kolkata"
     date_format: str = "%d-%b-%Y"
     datetime_format: str = "%d-%b-%Y %H:%M"
     environment: Environment = "development"
+    public_url: str | None = None          # link to this app in emails (intranet URL)
 
 
 class StorageSection(_Strict):
     base_dir: Path
-    uploads: str = "uploads"
-    raw: str = "raw"
-    processed: str = "processed"
-    reports: str = "reports"
-    archive: str = "archive"
 
     def area(self, name: str) -> Path:
-        return self.base_dir / getattr(self, name)
-
-    def all_areas(self) -> dict[str, Path]:
-        return {n: self.area(n) for n in ("uploads", "raw", "processed", "reports", "archive")}
+        return self.base_dir / name
 
 
 class LoggingSection(_Strict):
@@ -81,19 +76,49 @@ class SessionSection(_Strict):
     min_password_length: int = Field(ge=8)
 
 
-class EmailSection(_Strict):
-    transport: Literal["outbox", "smtp", "graph"] = "outbox"
+class Rules(BaseModel):
+    """How a day is counted. Defaults here; edited in Settings (stored in the database)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    late_after: str = Field(default="09:30", pattern=r"^\d{2}:\d{2}$")
+    early_before: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
+    min_work_hours: float = Field(default=8.0, ge=0, le=24)
+    long_work_hours: float = Field(default=11.0, ge=0, le=24)
+    on_duty_codes: list[str] = Field(default_factory=lambda: ["LD"])
+    no_punch_with_shift: Literal["ABSENT", "NOT_TRACKED"] = "ABSENT"
+    no_punch_no_shift: Literal["ABSENT", "NOT_TRACKED"] = "NOT_TRACKED"
+    single_punch_counts_present: bool = True
+    exclude_codes: list[str] = Field(default_factory=list)
+
+    @field_validator("exclude_codes")
+    @classmethod
+    def _valid_patterns(cls, v: list[str]) -> list[str]:
+        import re
+
+        for pattern in v:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"invalid exclusion pattern {pattern!r}: {exc}") from None
+        return v
+
+
+class EmailSettings(BaseModel):
+    """Email options. The SMTP password is never stored here: env SMTP_PASSWORD."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["test", "live"] = "test"
+    auto_send: bool = True
     sender: str | None = None
-    test_recipients: tuple[str, ...] = ()
     smtp_host: str | None = None
     smtp_port: int = Field(default=587, gt=0, lt=65536)
     smtp_starttls: bool = True
-    max_attempts: int = Field(default=3, ge=1, le=10)
-
-
-class FeatureSection(_Strict):
-    email_enabled: bool = False
-    ai_enabled: bool = False
+    smtp_username: str | None = None
+    subject_prefix: str = "APIS Daily Attendance"
+    attach_excel: bool = True
+    attach_dashboard: bool = True
 
 
 class ApiSection(_Strict):
@@ -104,8 +129,7 @@ class ApiSection(_Strict):
     cors_origins: tuple[str, ...] = ()
     frame_ancestors: tuple[str, ...] = ("'self'",)
     serve_frontend: bool = True
-    # Never from YAML: populated from env APP_SECRET_KEY by load_settings().
-    secret_key: SecretStr | None = None
+    secret_key: SecretStr | None = None            # only from env APP_SECRET_KEY
 
     @field_validator("cors_origins")
     @classmethod
@@ -113,9 +137,6 @@ class ApiSection(_Strict):
         if "*" in v:
             raise ValueError("wildcard CORS origin is not allowed with cookie authentication")
         return v
-
-
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 class DefaultUser(_Strict):
@@ -135,13 +156,10 @@ class AuthSection(_Strict):
         return self
 
 
-# --------------------------------------------------------------------------- database.yaml
 class DatabaseProfile(_Strict):
     name: str
     backend: Literal["sqlite", "mssql"]
-    # sqlite
     path: Path | None = None
-    # mssql (non-secret defaults; secrets come from env)
     driver: str | None = None
     port: int | None = None
     encrypt: bool = True
@@ -151,23 +169,17 @@ class DatabaseProfile(_Strict):
     max_overflow: int = 5
 
 
-# --------------------------------------------------------------------------- security.yaml
 class RoleDefinition(_Strict):
     description: str
     permissions: tuple[str, ...]
 
 
 class SecurityConfig(_Strict):
-    approval_status: str
     permissions: dict[str, str]
     roles: dict[str, RoleDefinition]
 
     @model_validator(mode="after")
     def _roles_reference_known_permissions(self) -> "SecurityConfig":
-        required_roles = {"SYSTEM_ADMIN", "HR_ADMIN", "HR_MANAGER", "HOD", "DIRECTOR", "READ_ONLY"}
-        missing = required_roles - set(self.roles)
-        if missing:
-            raise ValueError(f"missing mandatory roles: {sorted(missing)}")
         for role, definition in self.roles.items():
             unknown = set(definition.permissions) - set(self.permissions)
             if unknown:
@@ -175,88 +187,18 @@ class SecurityConfig(_Strict):
         return self
 
 
-# --------------------------------------------------------------------------- ai_config.yaml
-class AIConfig(_Strict):
-    enabled: bool = False
-    provider: Literal["ollama"] = "ollama"
-    endpoint: str
-    model: str | None = None
-    timeout_seconds: int = Field(default=30, gt=0)
-    max_retries: int = Field(default=1, ge=0, le=5)
-    prompt_version: str
-
-    @model_validator(mode="after")
-    def _model_required_when_enabled(self) -> "AIConfig":
-        if self.enabled and not self.model:
-            raise ValueError("ai_config: 'model' must be set when AI is enabled")
-        return self
-
-
-# --------------------------------------------------------------------------- attendance_rules.yaml
-class AttendanceCalculationRules(_Strict):
-    half_day_equivalent: float | None = None
-    wfh_counts_as_present: bool | None = None
-    approved_leave_in_denominator: bool | None = None
-    include_weekly_off_in_denominator: bool | None = None
-    include_holidays_in_denominator: bool | None = None
-    contractor_treatment: str | None = None
-    new_joiner_treatment: str | None = None
-    exit_treatment: str | None = None
-    overnight_shift_policy: str | None = None
-    reporting_period_d_minus_1: Literal["CALENDAR_DAY", "WORKING_DAY"] | None = None
-    weekly_off_days: tuple[Literal["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"], ...] | None = None
-    no_record_status: AttendanceStatus | None = None
-    time_conflict_tolerance_minutes: int | None = Field(default=None, ge=0)
-
-    def unresolved_rules(self) -> list[str]:
-        return [name for name, value in self.model_dump().items() if value is None]
-
-
-class AttendanceRules(_Strict):
-    rule_version: str
-    approval_status: Literal["NOT_APPROVED", "APPROVED"]
-    approved_by: str | None = None
-    approved_on: str | None = None
-    timezone: str
-    statuses: tuple[AttendanceStatus, ...]
-    calculation: AttendanceCalculationRules
-
-    @model_validator(mode="after")
-    def _approval_requires_attribution(self) -> "AttendanceRules":
-        if self.approval_status == "APPROVED" and not (self.approved_by and self.approved_on):
-            raise ValueError("APPROVED rules must record approved_by and approved_on")
-        return self
-
-    @property
-    def is_approved(self) -> bool:
-        return self.approval_status == "APPROVED" and not self.calculation.unresolved_rules()
-
-
-# --------------------------------------------------------------------------- source_authority.yaml
-class SourceDomain(_Strict):
-    proposed_source: str | None = None
-    authoritative_source: str | None = None
-
-
-class SourceAuthority(_Strict):
-    approval_status: Literal["NOT_APPROVED", "APPROVED"]
-    domains: dict[str, SourceDomain]
-
-
-# --------------------------------------------------------------------------- aggregate
 class Settings(_Strict):
     app: AppSection
     storage: StorageSection
     logging: LoggingSection
     uploads: UploadSection
     session: SessionSection
-    features: FeatureSection
-    email: EmailSection = EmailSection()
+    rules: Rules
+    email: EmailSettings
     api: ApiSection
     auth: AuthSection
     database: DatabaseProfile
     security: SecurityConfig
-    ai: AIConfig
     config_dir: Path
 
     @property
@@ -265,11 +207,9 @@ class Settings(_Strict):
 
     @model_validator(mode="after")
     def _environment_rules(self) -> "Settings":
-        if self.environment == "production" and self.database.backend == "sqlite":
-            raise ValueError("SQLite is not permitted in production (PRD 10.1); select an mssql profile")
-        if self.environment != "production" and self.features.email_enabled:
-            raise ValueError("email_enabled must be false outside production (PRD 24.3)")
         if self.environment == "production":
+            if self.database.backend == "sqlite":
+                raise ValueError("SQLite is not permitted in production; select an mssql profile")
             key = self.api.secret_key.get_secret_value() if self.api.secret_key else ""
             if len(key) < 32:
                 raise ValueError("APP_SECRET_KEY (>= 32 characters) is required in production")
@@ -285,16 +225,9 @@ class Settings(_Strict):
             unknown = set(self.auth.default_user.roles) - set(self.security.roles)
             if unknown:
                 raise ValueError(f"auth.default_user has unknown roles: {sorted(unknown)}")
-        if self.features.email_enabled and self.email.transport == "outbox":
-            raise ValueError("features.email_enabled needs a real transport (smtp or graph)")
-        if self.email.transport != "outbox" and not self.features.email_enabled:
-            raise ValueError("email.transport smtp/graph requires features.email_enabled (production only)")
-        if self.features.ai_enabled and not self.ai.enabled:
-            raise ValueError("features.ai_enabled is true but ai_config.enabled is false")
         return self
 
 
-# --------------------------------------------------------------------------- loaders
 def _read_yaml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ConfigurationError(f"Configuration file not found: {path}")
@@ -307,24 +240,17 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
-def _validate(model: type[BaseModel], data: Mapping[str, Any], source: str):
-    try:
-        return model.model_validate(data)
-    except ValidationError as exc:
-        raise ConfigurationError(f"{source}: {exc}") from exc
-
-
 def load_dotenv_if_present() -> None:
-    """Load a local .env (development convenience). Real environment variables win."""
     try:
         from dotenv import load_dotenv
     except ImportError:  # pragma: no cover
         return
+    from core.paths import PROJECT_ROOT
+
     load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None = None) -> Settings:
-    """Build validated Settings from YAML files plus environment overrides."""
     config_dir = Path(config_dir or CONFIG_DIR)
     env = os.environ if env is None else env
 
@@ -332,9 +258,10 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
     app = dict(raw.get("app", {}))
     storage = dict(raw.get("storage", {}))
     logging_cfg = dict(raw.get("logging", {}))
-
     if env.get("APP_ENV"):
         app["environment"] = env["APP_ENV"]
+    if env.get("APP_PUBLIC_URL"):
+        app["public_url"] = env["APP_PUBLIC_URL"]
     storage["base_dir"] = resolve_path(env.get("APP_STORAGE_DIR") or storage.get("base_dir", "storage"))
     logging_cfg["dir"] = resolve_path(env.get("APP_LOG_DIR") or logging_cfg.get("dir", "logs"))
     if env.get("APP_LOG_LEVEL"):
@@ -362,72 +289,29 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
         api_cfg["host"] = env["API_HOST"]
     if env.get("API_PORT"):
         api_cfg["port"] = env["API_PORT"]
-
     auth_cfg = dict(raw.get("auth", {}))
     if env.get("AUTH_MODE"):
         auth_cfg["mode"] = env["AUTH_MODE"].strip().lower()
 
-    ai_raw = _read_yaml(config_dir / "ai_config.yaml")
-    if env.get("AI_ENDPOINT"):
-        ai_raw["endpoint"] = env["AI_ENDPOINT"]
-
     data = {
-        "app": app,
-        "storage": storage,
-        "logging": logging_cfg,
-        "uploads": raw.get("uploads", {}),
-        "session": raw.get("session", {}),
-        "features": raw.get("features", {}),
-        "email": raw.get("email", {}),
-        "api": api_cfg,
-        "auth": auth_cfg,
-        "database": profile,
-        "security": _read_yaml(config_dir / "security.yaml"),
-        "ai": ai_raw,
-        "config_dir": config_dir,
+        "app": app, "storage": storage, "logging": logging_cfg,
+        "uploads": raw.get("uploads", {}), "session": raw.get("session", {}),
+        "rules": raw.get("rules", {}), "email": raw.get("email", {}),
+        "api": api_cfg, "auth": auth_cfg, "database": profile,
+        "security": _read_yaml(config_dir / "security.yaml"), "config_dir": config_dir,
     }
-    return _validate(Settings, data, "settings")
-
-
-def load_attendance_rules(config_dir: Path | None = None) -> AttendanceRules:
-    path = Path(config_dir or CONFIG_DIR) / "attendance_rules.yaml"
-    return _validate(AttendanceRules, _read_yaml(path), path.name)
-
-
-def load_source_authority(config_dir: Path | None = None) -> SourceAuthority:
-    config_dir = Path(config_dir or CONFIG_DIR)
-    authority = _validate(SourceAuthority, _read_yaml(config_dir / "source_authority.yaml"), "source_authority.yaml")
-    known = set(_read_yaml(config_dir / "datasets.yaml").get("source_systems", {}))
-    for domain, value in authority.domains.items():
-        for field in ("proposed_source", "authoritative_source"):
-            src = getattr(value, field)
-            if src is not None and src not in known:
-                raise ConfigurationError(f"source_authority.yaml: {domain}.{field}={src!r} is not a known source system")
-    return authority
-
-
-def load_recipients(config_dir: Path | None = None) -> dict[str, Any]:
-    return _read_yaml(Path(config_dir or CONFIG_DIR) / "recipients.yaml")
+    try:
+        return Settings.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigurationError(f"settings: {exc}") from exc
 
 
 def validate_all_configs(config_dir: Path | None = None, env: Mapping[str, str] | None = None) -> list[str]:
-    """Validate every configuration file. Returns a list of error messages (empty = valid)."""
-    from ingestion.dataset_registry import load_dataset_registry
-
-    errors: list[str] = []
-    checks = (
-        ("settings", lambda: load_settings(config_dir, env)),
-        ("datasets", lambda: load_dataset_registry(config_dir)),
-        ("attendance_rules", lambda: load_attendance_rules(config_dir)),
-        ("source_authority", lambda: load_source_authority(config_dir)),
-        ("recipients", lambda: load_recipients(config_dir)),
-    )
-    for name, check in checks:
-        try:
-            check()
-        except ConfigurationError as exc:
-            errors.append(f"[{name}] {exc}")
-    return errors
+    try:
+        load_settings(config_dir, env)
+    except ConfigurationError as exc:
+        return [str(exc)]
+    return []
 
 
 @lru_cache(maxsize=1)

@@ -39,15 +39,15 @@ def test_password_policy():
 
 
 def test_successful_login_returns_principal_and_audits(engine, settings, make_user):
-    make_user("hr.admin", ["HR_ADMIN"])
+    make_user("hr.admin", ["HR"])
     principal = _login(engine, settings, "  HR.Admin ", TEST_PASSWORD)
     assert principal is not None and principal.username == "hr.admin"
-    assert "HR_ADMIN" in principal.roles and "REPORT_APPROVE" in principal.permissions
+    assert "HR" in principal.roles and "UPLOAD_AND_SEND" in principal.permissions
     assert _audit(engine)[-1][:2] == ("LOGIN", "SUCCESS")
 
 
 def test_wrong_password_and_unknown_user_fail_and_are_audited(engine, settings, make_user):
-    make_user("user1", ["READ_ONLY"])
+    make_user("user1", ["VIEWER"])
     assert _login(engine, settings, "user1", "bad") is None
     assert _login(engine, settings, "nobody", "bad") is None
     events = _audit(engine)
@@ -57,7 +57,7 @@ def test_wrong_password_and_unknown_user_fail_and_are_audited(engine, settings, 
 
 
 def test_lockout_after_max_failures(engine, settings, make_user):
-    make_user("user2", ["READ_ONLY"])
+    make_user("user2", ["VIEWER"])
     for _ in range(settings.session.max_failed_logins):
         assert _login(engine, settings, "user2", "wrong") is None
     # Correct password is now refused while locked.
@@ -73,5 +73,5 @@ def test_lockout_after_max_failures(engine, settings, make_user):
 
 
 def test_inactive_user_cannot_log_in(engine, settings, make_user):
-    make_user("leaver", ["READ_ONLY"], active=False)
+    make_user("leaver", ["VIEWER"], active=False)
     assert _login(engine, settings, "leaver", TEST_PASSWORD) is None

@@ -3,7 +3,8 @@
     python main.py check                 Validate config, storage and database
     python main.py init-db               Apply migrations and sync roles/permissions
     python main.py create-user ...       Create a local user (password prompted, never echoed)
-    python main.py serve                 Start the API (+ built React UI) with uvicorn
+    python main.py upload FILE           Process one day's file and email the reports
+    python main.py serve                 Start the app (UI + API)
 """
 
 from __future__ import annotations
@@ -39,22 +40,6 @@ def cmd_check(_: argparse.Namespace) -> int:
     return 1 if any(r.status is Status.FAIL for r in results) else 0
 
 
-def seed_schemas(session, settings) -> list[str]:
-    """Create a dataset's first schema version from datasets.yaml `seed_schema` if it has none.
-    Never overwrites a schema an administrator already saved."""
-    from ingestion.dataset_registry import load_dataset_registry
-    from ingestion.schema_definition import SchemaDefinition
-    from ingestion.schema_service import get_active_schema, save_schema
-
-    seeded = []
-    for d in load_dataset_registry(settings.config_dir).datasets:
-        if d.seed_schema and get_active_schema(session, d.dataset_id) is None:
-            save_schema(session, d.dataset_id, SchemaDefinition.model_validate(d.seed_schema["definition"]),
-                        "seed:datasets.yaml", d.seed_schema.get("notes"))
-            seeded.append(d.dataset_id)
-    return seeded
-
-
 def cmd_init_db(_: argparse.Namespace) -> int:
     from database.connection import session_scope
     from database.migrate import upgrade_to_head
@@ -65,10 +50,7 @@ def cmd_init_db(_: argparse.Namespace) -> int:
     upgrade_to_head(engine)
     with session_scope(engine) as session:
         counts = SecurityRepository(session).sync_roles_and_permissions(settings.security)
-        seeded = seed_schemas(session, settings)
-    print(f"Migrations applied. Security model synced: {counts}")
-    if seeded:
-        print(f"Seeded column schemas from config/datasets.yaml: {', '.join(seeded)}")
+    print(f"Database ready. Access roles synced: {counts}")
     return 0
 
 
@@ -140,23 +122,34 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_process(args: argparse.Namespace) -> int:
-    """Headless processing for one reporting date (for Windows Task Scheduler / automation)."""
-    from datetime import date, timedelta
+def cmd_upload(args: argparse.Namespace) -> int:
+    """Upload one day's Pocket HRMS Attendance Summary from the command line (for scheduling)
+    and email the reports if auto-send is on."""
+    from pathlib import Path
 
-    from database.connection import create_db_engine
-    from orchestration.pipeline import PipelineError, start_run
-    from core.timeutils import today_ist
+    from daily.analysis import FileError
+    from daily.service import AlreadyUploaded, upload_and_send
+    from database.connection import session_scope
 
-    day = date.fromisoformat(args.date) if args.date else today_ist() - timedelta(days=1)
+    path = Path(args.file)
+    if not path.is_file():
+        print(f"File not found: {path}")
+        return 2
     settings = get_settings()
     try:
-        res = start_run(create_db_engine(settings), settings, day, f"cli:{getpass.getuser()}")
-    except PipelineError as exc:
-        print(f"Not started: {exc}")
+        with session_scope(_engine()) as session:
+            upload, outcomes = upload_and_send(session, settings, path.name, path.read_bytes(), f"cli:{getpass.getuser()}",
+                                               replace=args.replace)
+            print(f"{upload.report_date:%d-%b-%Y}: {upload.employees} employees processed.")
+            for o in outcomes or []:
+                print(f"  email {o.scope}: {o.status} {', '.join(o.recipients)} {o.detail or ''}".rstrip())
+            if outcomes is None:
+                print("  auto-send is off; send from the Emails screen.")
+            failed = any(o.status == "FAILED" for o in outcomes or [])
+    except (FileError, AlreadyUploaded) as exc:
+        print(f"Not processed: {exc}")
         return 3
-    print(f"{res.run_ref}: {res.state}{'' if res.created else ' (inputs unchanged; existing run kept)'}")
-    return 1 if res.state == "FAILED" else 0
+    return 1 if failed else 0
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -190,9 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--demo", action="store_true", help="use the synthetic demo database (storage/demo)")
     serve.set_defaults(func=cmd_serve)
 
-    proc = sub.add_parser("process", help="process one reporting date headlessly (default: yesterday IST)")
-    proc.add_argument("--date", help="YYYY-MM-DD")
-    proc.set_defaults(func=cmd_process)
+    up = sub.add_parser("upload", help="process one day's Attendance Summary file and email the reports")
+    up.add_argument("file", help="path to the Pocket HRMS AttendanceSummary .xlsx/.csv")
+    up.add_argument("--replace", action="store_true", help="replace an existing upload for the same date")
+    up.set_defaults(func=cmd_upload)
 
     demo = sub.add_parser("demo", help="build a SYNTHETIC demo database in storage/demo (never touches real data)")
     demo.add_argument("--days", type=int, default=10)

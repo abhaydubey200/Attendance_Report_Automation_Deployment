@@ -80,6 +80,7 @@ const STATUS_KIND: Record<string, BadgeKind> = {
   UNRESOLVED: "warn", PENDING: "warn", PENDING_REVIEW: "warn", REQUIRES_REVIEW: "warn", MISSING_PUNCH: "warn",
   PENDING_APPROVAL: "warn", STATUS_CONFLICT: "warn", LEAVE_CONFLICT: "warn", EMPLOYEE_MAPPING_MISSING: "fail",
   MEDIUM: "warn", WARN: "warn", PROVISIONAL: "warn", NOT_APPROVED: "warn", PENDING_DISCOVERY: "warn", UNAVAILABLE: "warn",
+  SENT: "ok", SAVED: "info", NO_RECIPIENTS: "warn", NOT_TRACKED: "info", LEAVE: "info", ON_DUTY: "ok", HALF_DAY: "info",
 };
 
 /** Badge whose colour follows the value (status words from the API). */

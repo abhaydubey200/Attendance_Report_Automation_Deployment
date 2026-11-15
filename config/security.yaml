@@ -1,59 +1,18 @@
-# Role-based access control definition (PRD 3.6).
-# STATUS: PROVISIONAL -- role/permission assignments require HR and IT approval.
-#
-# This file is the seed. `python main.py init-db` synchronises it into the
-# security.* tables, which are the central store checked server-side at runtime.
-#
-# Principle: SYSTEM_ADMIN does NOT imply access to employee-level HR data (PRD 3.5).
-
-approval_status: PROVISIONAL
+# Access for the simple tool. `python main.py init-db` syncs this into the database.
 
 permissions:
-  DASHBOARD_VIEW: View the executive dashboard (aggregates only)
-  DATA_UPLOAD: Upload datasets
-  DATA_REGISTRY_VIEW: View dataset registry and upload history
-  DATA_REGISTRY_MANAGE: Activate, deactivate and configure dataset types
-  DATA_QUALITY_VIEW: View data-quality indicators
-  ATTENDANCE_VIEW_AGGREGATE: View aggregated attendance analytics
-  ATTENDANCE_VIEW_EMPLOYEE: View employee-level attendance records (department-scoped)
-  ATTENDANCE_VIEW_ALL_DEPARTMENTS: Scope covers every department (otherwise explicit departments only)
-  RECONCILIATION_VIEW: View reconciliation results and exceptions
-  RECONCILIATION_RESOLVE: Resolve reconciliation exceptions and mappings
-  REPORT_VIEW_HOD: View/download HOD department MIS (department-scoped)
-  REPORT_VIEW_DIRECTORS: View/download Directors consolidated MIS
-  REPORT_GENERATE: Generate MIS reports
-  REPORT_APPROVE: Approve MIS reports
-  AI_USE: Use AI summaries and the attendance analyst
-  ADMIN_USERS: Manage users and role assignments
-  ADMIN_MAPPING: Manage department and employee mappings
-  ADMIN_RULES: Manage attendance rules and reporting hierarchy
-  ADMIN_SETTINGS: Manage application settings
-  SYSTEM_MONITOR: View processing runs, logs, database health and configuration
-  AUDIT_VIEW: View audit logs
+  VIEW_INSIGHTS: See daily insights, dashboards and reports
+  UPLOAD_AND_SEND: Upload attendance files and send report emails
+  MANAGE_SETTINGS: Change counting rules, recipients and email settings
+  ADMIN_USERS: Manage users (sign-in mode only)
 
 roles:
-  SYSTEM_ADMIN:
-    description: Application configuration, users, health. No HR data by default.
-    permissions: [ADMIN_USERS, ADMIN_SETTINGS, SYSTEM_MONITOR, AUDIT_VIEW]
-  HR_ADMIN:
-    description: Uploads, processing, reconciliation, reports, approvals.
-    permissions:
-      [DASHBOARD_VIEW, DATA_UPLOAD, DATA_REGISTRY_VIEW, DATA_REGISTRY_MANAGE, DATA_QUALITY_VIEW,
-       ATTENDANCE_VIEW_AGGREGATE, ATTENDANCE_VIEW_EMPLOYEE, ATTENDANCE_VIEW_ALL_DEPARTMENTS,
-       RECONCILIATION_VIEW, RECONCILIATION_RESOLVE, REPORT_VIEW_HOD, REPORT_VIEW_DIRECTORS,
-       REPORT_GENERATE, REPORT_APPROVE, AI_USE, ADMIN_MAPPING, ADMIN_RULES, AUDIT_VIEW, SYSTEM_MONITOR]
-  HR_MANAGER:
-    description: Organisation-wide review and management report approval.
-    permissions:
-      [DASHBOARD_VIEW, DATA_REGISTRY_VIEW, DATA_QUALITY_VIEW, ATTENDANCE_VIEW_AGGREGATE,
-       ATTENDANCE_VIEW_EMPLOYEE, ATTENDANCE_VIEW_ALL_DEPARTMENTS, RECONCILIATION_VIEW,
-       REPORT_VIEW_HOD, REPORT_VIEW_DIRECTORS, REPORT_APPROVE, AI_USE]
-  HOD:
-    description: Own department(s) only, via explicit department assignments.
-    permissions: [DASHBOARD_VIEW, ATTENDANCE_VIEW_AGGREGATE, ATTENDANCE_VIEW_EMPLOYEE, REPORT_VIEW_HOD]
-  DIRECTOR:
-    description: Organisation-level aggregates. Employee-level data only if explicitly granted.
-    permissions: [DASHBOARD_VIEW, ATTENDANCE_VIEW_AGGREGATE, ATTENDANCE_VIEW_ALL_DEPARTMENTS, REPORT_VIEW_DIRECTORS]
-  READ_ONLY:
-    description: Aggregated dashboard only.
-    permissions: [DASHBOARD_VIEW]
+  ADMIN:
+    description: Everything, including settings.
+    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND, MANAGE_SETTINGS, ADMIN_USERS]
+  HR:
+    description: Upload files, see insights, send reports.
+    permissions: [VIEW_INSIGHTS, UPLOAD_AND_SEND]
+  VIEWER:
+    description: See insights only.
+    permissions: [VIEW_INSIGHTS]

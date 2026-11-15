@@ -30,7 +30,7 @@ export function LoginPage() {
     <div className="splash">
       <form className="splash-card" onSubmit={onSubmit} aria-label="Sign in">
         <BrandMark size="lg" />
-        <h1>Intelligent HR &amp; Attendance MIS</h1>
+        <h1>Daily Attendance</h1>
         <p className="muted">APIS India Limited · Sign in to continue</p>
         {notice && <Notice>{notice}</Notice>}
         {error && <Notice kind="fail">{error}</Notice>}
@@ -52,7 +52,7 @@ export function UnavailablePage({ message }: { message: string }) {
     <div className="splash">
       <div className="splash-card">
         <BrandMark size="lg" />
-        <h1>Intelligent HR &amp; Attendance MIS</h1>
+        <h1>Daily Attendance</h1>
         <Notice kind="fail">{message}</Notice>
         <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
           Try again

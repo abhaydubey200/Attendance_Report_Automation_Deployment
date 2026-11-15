@@ -1,82 +1,71 @@
-# APIS Intelligent HR & Attendance MIS
+# APIS Daily Attendance
 
-Attendance intelligence, reconciliation and MIS **automation** platform for APIS India Limited.
+A small automation tool for APIS India Limited:
 
-**Stack:** Python 3.12 automation core and FastAPI REST API · React 19 + TypeScript (Vite) UI · SQLAlchemy/Alembic · SQL Server (SQLite for local development only).
+**Upload one day's Pocket HRMS "Attendance Summary" export → see the insights → each team's manager (and HR/Directors) automatically receive an email with the highlights, an Excel report and an interactive HTML dashboard.**
 
-The automation runs headless (CLI / scheduler). The REST API exposes it to the React UI now and to the **APIS intranet** later. See [docs/INTEGRATION.md](docs/INTEGRATION.md).
+Python 3.12 (FastAPI) + React (Vite). SQLite database on a single PC; SQL Server optional for a shared server.
 
-**Data source (since v0.5.0):** Pocket HRMS only, by manual upload of the AttendanceSummary export (Bizom switched off).
-
-**Status (v0.5.0):** Phases 1-12 are built and tested: upload and validation, column-schema discovery, standardization and employee mapping, the attendance engine, reconciliation and exception workflow, SQL Server-ready migrations, HOD/Directors/HR reports, analytics, email distribution (test mode), optional AI summary and the attendance analyst. **All attendance figures are PROVISIONAL** until HR approves the rules, and no real dataset schema exists until real sample files are mapped in the Dataset Registry.
-
-## Quick start (Windows, development)
-
-One-time setup:
+## Run it
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 npm --prefix frontend install
-.\.venv\Scripts\python.exe main.py init-db
-```
-
-**No login page.** By default (`auth.mode: none`) the app opens straight on the dashboard as the configured local operator (`APIS HR Operator`, roles HR_ADMIN + SYSTEM_ADMIN). This mode only runs on `localhost` and is refused in production. To require sign-in, set `AUTH_MODE=local` and create users with `main.py create-user`. Intranet sign-in is the planned production route (see docs/INTEGRATION.md).
-
-**Day-to-day development** (two terminals; the UI hot-reloads and proxies `/api` to the API):
-
-```powershell
-.\.venv\Scripts\python.exe main.py serve --reload     # API on http://127.0.0.1:8000  (docs: /api/docs)
-npm --prefix frontend run dev                          # UI  on http://localhost:5173
-```
-
-**See it working with synthetic data** (separate demo database in `storage/demo`; never touches real data):
-
-```powershell
-.\.venv\Scripts\python.exe main.py demo
-.\.venv\Scripts\python.exe main.py serve --demo --port 8010   # http://127.0.0.1:8010
-```
-
-**Headless processing** (for Windows Task Scheduler): `python main.py process --date 2026-11-13` (default: yesterday, IST).
-
-**Single-server mode** (how it is deployed): build the UI once, and the API serves it.
-
-```powershell
 npm --prefix frontend run build
-.\.venv\Scripts\python.exe main.py serve              # UI + API on http://127.0.0.1:8000
+.\.venv\Scripts\python.exe main.py init-db
+.\.venv\Scripts\python.exe main.py serve          # open http://127.0.0.1:8000
 ```
 
-`py` defaults to Python 3.15 on this machine. Always create the venv with `py -3.12`.
+The app opens with no login page (this PC only). Four screens:
+
+| Screen | What it does |
+|---|---|
+| **Upload** | Drop the Attendance Summary file. It is analysed and the report emails go out automatically. |
+| **Insights** | KPIs, highlights, charts, team comparison, trend across days, searchable employee list; download the Excel or HTML dashboard; preview or resend the emails. |
+| **Emails** | Every email sent, to whom, and whether it was delivered. |
+| **Settings** | Who gets which report, how attendance is counted, email server. |
+
+First time: open **Settings**, add the managers (one per team, plus HR/Directors under "All employees"), and switch Email from *test* to *live* once the SMTP details are in. In test mode emails are saved to `storage/outbox/` instead of being sent.
+
+**Try it with synthetic data:** `python main.py demo` then `python main.py serve --demo --port 8010`.
+
+**Automate the upload** (e.g. Windows Task Scheduler after the HRMS export is saved): `python main.py upload "C:\path\AttendanceSummary.xlsx"`.
+
+## How a day is counted (change in Settings)
+
+| Pocket HRMS shows | Counted as |
+|---|---|
+| In and out punch | Present (late if first punch after 09:30; left early if last punch before 18:00) |
+| One punch only | Missing punch (counted present, listed for regularisation) |
+| Type = LD | On duty (counts as present) |
+| Type = PL, SL, CL… | Leave (Half day if the Day column says half) |
+| No punch, shift assigned | Absent |
+| No punch, "Shift Not Assigned" | Not tracked (mostly field Sales; left out of attendance %) |
+| Codes test, DUMMY, CAND-, A001 | Skipped (test records) |
+
+Attendance % = (present + on duty + missing punch + half of half-days) ÷ tracked employees.
+
+## What managers receive
+
+- **Email:** KPI tiles, highlights in plain words, a team table (full-company email only), and the attachments.
+- **Excel:** Summary (figures + highlights + counting notes), All Employees, Absent, Late Arrivals, Left Early, Missing Punch, Leave & On Duty, Short Hours, Not Tracked.
+- **HTML dashboard:** a single self-contained file that opens in any browser: KPIs, highlights, status/arrival/team charts, and a searchable, filterable, sortable employee table.
+
+Each team manager gets only their team's data; "All employees" recipients get everything.
 
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest      # backend: config, contracts, DB, auth, RBAC, API
-npm --prefix frontend test                 # frontend: login flow, navigation, formatting
-npm --prefix frontend run typecheck
+.\.venv\Scripts\python.exe -m pytest
+npm --prefix frontend test
 ```
 
-## Layout
+## Security notes
 
-| Path | Purpose |
-|---|---|
-| `main.py` | CLI: `check`, `init-db`, `create-user`, `serve` |
-| `api/` | FastAPI app factory, session cookies, routers (`/api/v1/...`), page registry |
-| `frontend/` | React + TypeScript UI (Vite). `npm run build` writes `frontend/dist/`, which the API serves |
-| `config/` | YAML configuration (no secrets) |
-| `core/` | Settings loader and validation, logging, paths, time handling |
-| `contracts/` | Standardized internal data contracts and lifecycle state machines |
-| `database/` | Engine abstraction, ORM models, Alembic migrations, repositories |
-| `security/` | Authentication, RBAC authorization, audit |
-| `monitoring/` | Health checks |
-| `ingestion/`, `data_engine/`, `reporting/`, `orchestration/`, ... | Automation modules (later phases) |
-| `docs/` | Architecture, decisions, integration, rules, test plan, runbooks |
+- No login page is allowed only on `127.0.0.1` and never in production; set `AUTH_MODE=local` to serve other PCs (users via `main.py create-user --role ADMIN|HR|VIEWER`).
+- The SMTP password lives only in the `.env` file (`SMTP_PASSWORD`), never in the app or database.
+- Uploaded files, reports and the email outbox stay under `storage/` and are not committed to git.
+- The Remarks column of the HRMS export (free text) is not stored.
 
-## Ground rules
-
-- No credentials in files. Secrets (DB credentials, `APP_SECRET_KEY`) come from environment variables only.
-- No real HR data in git: `storage/`, `logs/`, `*.db`, `*.csv` and `*.xlsx` are ignored.
-- Attendance rules and source authority stay **unapproved** (null) until HR signs off. See [docs/ATTENDANCE_RULES.md](docs/ATTENDANCE_RULES.md).
-- Dataset column definitions come only from inspected sample files.
-- Email and AI are disabled. Configuration validation refuses email outside production.
-- UI follows the APIS India Limited look (honey gold, honey brown, cream; Literata + Jost fonts bundled locally). To use the official logo artwork, place it under `frontend/public/brand/` and build with `VITE_BRAND_LOGO=/brand/<file>`.
+The earlier PRD-scale system (14-phase MIS platform) is preserved at git tag `v0.5.0-full`.

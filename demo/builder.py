@@ -1,63 +1,67 @@
 """Builds a self-contained DEMO database from synthetic data (python main.py demo).
 
-Since 14-Nov-2026 all data comes from Pocket HRMS via the AttendanceSummary export,
-so the demo uploads one synthetic AttendanceSummary per day (real layout, invented
-people). It never touches the real development database: the demo uses storage/demo/.
+Uploads 10 synthetic Attendance Summary days and adds example recipients, so the whole
+flow (insights, Excel, dashboard, emails in test mode) can be seen. Uses storage/demo/
+only; never touches the real database.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 from datetime import date, timedelta
 from pathlib import Path
 
 from core.config import Settings
 from core.paths import PROJECT_ROOT
+from daily.service import upload_and_send
+from daily.settings_store import replace_recipients
 from database.connection import create_db_engine, session_scope
 from database.migrate import upgrade_to_head
 from database.repositories.security_repository import SecurityRepository
 from demo.synthetic import build_summary_xlsx
-from ingestion.dataset_registry import load_dataset_registry
-from ingestion.upload_manager import confirm_upload, inspect_upload
-from orchestration.pipeline import start_run
 
 DEMO_DIR = PROJECT_ROOT / "storage" / "demo"
-DEMO_DB = DEMO_DIR / "apis_mis_demo.db"
+DEMO_DB = DEMO_DIR / "apis_attendance_demo.db"
 DEMO_STORAGE = DEMO_DIR / "files"
-ACTOR = "demo:builder"
+ACTOR = "demo"
+
+EXAMPLE_RECIPIENTS = [  # example.com addresses: test mode only, never delivered
+    {"name": "Sales Manager (demo)", "email": "sales.manager@example.com", "scope": "Sales"},
+    {"name": "Plant Head (demo)", "email": "plant.head@example.com", "scope": "Plant"},
+    {"name": "HO Admin Head (demo)", "email": "ho.head@example.com", "scope": "Head Office"},
+    {"name": "HR Team (demo)", "email": "hr@example.com", "scope": "ALL"},
+    {"name": "Director (demo)", "email": "director@example.com", "scope": "ALL"},
+]
 
 
 def demo_env() -> dict[str, str]:
     return {"DB_PROFILE": "dev_sqlite", "DB_SQLITE_PATH": str(DEMO_DB), "APP_STORAGE_DIR": str(DEMO_STORAGE)}
 
 
-def build(settings: Settings, days: int = 10, end: date | None = None, log=print) -> Path:
-    from main import seed_schemas
+def _force_remove(func, path, _exc) -> None:
+    """Older demo builds archived files read-only; clear the flag and retry."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
+
+def build(settings: Settings, days: int = 10, end: date | None = None, log=print) -> Path:
     if DEMO_DIR.exists():
-        for path in DEMO_DIR.rglob("*"):
-            if path.is_file():
-                path.chmod(0o666)            # raw archive files are read-only by design
-        shutil.rmtree(DEMO_DIR)
+        shutil.rmtree(DEMO_DIR, onexc=_force_remove)
     DEMO_DIR.mkdir(parents=True)
     engine = create_db_engine(settings)
     upgrade_to_head(engine)
-    registry = load_dataset_registry(settings.config_dir)
     with session_scope(engine) as s:
         SecurityRepository(s).sync_roles_and_permissions(settings.security)
-        seed_schemas(s, settings)
-
+        replace_recipients(s, EXAMPLE_RECIPIENTS)
     end = end or date.today() - timedelta(days=1)
-    start = end - timedelta(days=days - 1)
     for i in range(days):
-        day = start + timedelta(days=i)
+        day = end - timedelta(days=days - 1 - i)
         with session_scope(engine) as s:
-            res = inspect_upload(s, settings, registry, filename=f"AttendanceSummary_{day:%Y%m%d}_SYNTHETIC.xlsx",
-                                 data=build_summary_xlsx(day), dataset_id="HRMS_ATTENDANCE_SUMMARY",
-                                 source_system="POCKET_HRMS", reporting_date=day, sheet=None, header_row=1, actor=ACTOR)
-        with session_scope(engine) as s:
-            confirm_upload(s, settings, registry, token=res["token"], actor=ACTOR, acknowledge_review=True, supersede=True)
-        run = start_run(engine, settings, day, ACTOR)
-        log(f"  {day:%d-%b-%Y}: {run.run_ref} -> {run.state}")
+            up, outcomes = upload_and_send(s, settings, f"AttendanceSummary_{day:%Y%m%d}_SYNTHETIC.xlsx",
+                                           build_summary_xlsx(day), ACTOR)
+            sent = sum(1 for o in outcomes or [] if o.status in ("SAVED", "SENT"))
+            log(f"  {day:%d-%b-%Y}: {up.employees} employees, {sent} emails saved to the outbox (test mode)")
     engine.dispose()
     return DEMO_DB

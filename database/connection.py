@@ -23,7 +23,7 @@ from core.exceptions import DatabaseConfigurationError
 
 log = logging.getLogger(__name__)
 
-LOGICAL_SCHEMAS: tuple[str, ...] = ("staging", "hr", "attendance", "audit", "security", "reporting")
+LOGICAL_SCHEMAS: tuple[str, ...] = ("staging", "hr", "attendance", "audit", "security", "reporting", "daily")
 
 
 def _truthy(value: str | None) -> bool:

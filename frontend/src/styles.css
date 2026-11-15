@@ -232,3 +232,24 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; }
 .chip:hover { background: var(--honey-soft); }
 .ai-text { white-space: pre-line; font-size: .95rem; line-height: 1.5; }
 .log-view { background: var(--espresso); color: #eadcc6; border-radius: var(--radius); padding: 1rem; font-size: .75rem; max-height: 70vh; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+
+/* ---------- daily tool ---------- */
+.dropzone { display: flex; flex-direction: column; align-items: center; gap: .4rem; padding: 2.4rem 1rem; margin: .4rem 0 1.2rem;
+  background: var(--white) var(--honeycomb); border: 2px dashed var(--gold); border-radius: 14px; cursor: pointer; text-align: center; }
+.dropzone:hover, .dropzone.drag { border-color: var(--brown); background-color: var(--cream-2); }
+.dropzone.busy { cursor: wait; opacity: .8; }
+.dropzone-icon { font-size: 2rem; color: var(--brown); }
+.hl-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .45rem; }
+.hl { background: var(--white); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 8px; padding: .55rem .8rem; font-size: .93rem; }
+.hl-good { border-left-color: #2e7d4f; } .hl-warn { border-left-color: #c88a00; } .hl-bad { border-left-color: #a52a1a; }
+.toolbar-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-left: auto; align-items: flex-end; }
+.controls { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-bottom: .7rem; }
+.controls .search { border: 1px solid var(--line); border-radius: 7px; padding: .5rem .6rem; min-width: 240px; font: inherit; font-size: .9rem; }
+.controls .chips { margin-top: 0; }
+.chip.on { background: var(--brown); color: var(--white); border-color: var(--brown); }
+.st { padding: .1rem .55rem; border-radius: 999px; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.email-frame { width: 100%; height: 75vh; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.edit-table { width: 100%; border-collapse: collapse; font-size: .88rem; margin: .4rem 0; }
+.edit-table th { text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--brown-dark); padding: .3rem .4rem; }
+.edit-table td { padding: .25rem .4rem; }
+.edit-table input:not([type=checkbox]), .edit-table select { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: .4rem .5rem; font: inherit; font-size: .88rem; }

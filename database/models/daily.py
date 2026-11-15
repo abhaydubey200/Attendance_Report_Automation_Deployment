@@ -1,0 +1,95 @@
+"""Tables for the daily attendance tool (schema `daily`)."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+
+from core.timeutils import now_utc
+from database.models.base import Base, BigId, UtcDateTime
+
+SCHEMA = "daily"
+
+
+class DayUpload(Base):
+    """One uploaded day. Re-uploading a date replaces it (the old one is kept, not current)."""
+
+    __tablename__ = "day_upload"
+    __table_args__ = (Index("ix_day_upload_date", "report_date"), {"schema": SCHEMA})
+
+    upload_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    employees: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    insights: Mapped[str] = mapped_column(Text, nullable=False)          # JSON computed at upload
+    rules: Mapped[str] = mapped_column(Text, nullable=False)             # JSON of the rules used
+    uploaded_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+
+
+class EmployeeDay(Base):
+    __tablename__ = "employee_day"
+    __table_args__ = (Index("ix_employee_day_upload", "upload_id"), Index("ix_employee_day_code", "employee_code"),
+                      {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    upload_id: Mapped[int] = mapped_column(ForeignKey(f"{SCHEMA}.day_upload.upload_id"), nullable=False)
+    employee_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    employee_name: Mapped[str | None] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    shift_name: Mapped[str | None] = mapped_column(String(100))
+    in_time: Mapped[str | None] = mapped_column(String(8))              # HH:MM
+    out_time: Mapped[str | None] = mapped_column(String(8))
+    punches: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    work_minutes: Mapped[int | None] = mapped_column(Integer)
+    leave_type: Mapped[str | None] = mapped_column(String(20))
+    day_portion: Mapped[str | None] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    late_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    early_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    flags: Mapped[str | None] = mapped_column(String(200))               # comma-separated: LATE,EARLY,SHORT,...
+
+
+class Recipient(Base):
+    """Who gets which report: scope = a Category name (that team) or ALL (full company)."""
+
+    __tablename__ = "recipient"
+    __table_args__ = (UniqueConstraint("email", "scope"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    scope: Mapped[str] = mapped_column(String(100), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_setting"
+    __table_args__ = {"schema": SCHEMA}
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)              # JSON
+    updated_by: Mapped[str | None] = mapped_column(String(100))
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc, onupdate=now_utc)
+
+
+class EmailLog(Base):
+    __tablename__ = "email_log"
+    __table_args__ = (Index("ix_email_log_upload", "upload_id"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    upload_id: Mapped[int] = mapped_column(ForeignKey(f"{SCHEMA}.day_upload.upload_id"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(100), nullable=False)
+    recipients: Mapped[str] = mapped_column(String(2000), nullable=False)   # comma-separated
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False)          # TEST | LIVE
+    status: Mapped[str] = mapped_column(String(20), nullable=False)        # SENT | SAVED | FAILED
+    error: Mapped[str | None] = mapped_column(String(500))
+    outbox_file: Mapped[str | None] = mapped_column(String(500))
+    sent_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)

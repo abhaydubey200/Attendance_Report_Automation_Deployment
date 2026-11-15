@@ -33,7 +33,7 @@ export function Layout() {
         <div className="topbar-brand">
           <BrandMark />
           <div className="topbar-title">
-            <span className="topbar-product">Intelligent HR &amp; Attendance MIS</span>
+            <span className="topbar-product">Daily Attendance</span>
             <span className="topbar-company">APIS India Limited</span>
           </div>
         </div>

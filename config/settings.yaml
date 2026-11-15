@@ -39,7 +39,8 @@ rules:
   early_before: "18:00"             # last punch before this = left early
   min_work_hours: 8.0               # less = short hours
   long_work_hours: 11.0             # more = long hours
-  on_duty_codes: [LD]               # Type codes that mean working (on duty); other codes = leave
+  on_duty_codes: [LD, OD]           # Type codes that mean working (on duty); other codes = leave
+  wfh_codes: [WFH, WH]              # Type codes that mean work from home (counted present)
   no_punch_with_shift: ABSENT       # no punch, shift assigned
   no_punch_no_shift: NOT_TRACKED    # no punch, "Shift Not Assigned" (mostly field Sales)
   single_punch_counts_present: true # one punch = present, flagged as missing punch
@@ -47,18 +48,30 @@ rules:
   bizom_include_codes: ["^AP"]      # Bizom-only users reported besides the employee master (AP = promoters)
 
 email:
-  mode: test                        # test = save to outbox and show in app; live = send via SMTP
-  auto_send: true                   # send right after a successful upload
-  send_to_hods: true                # each HOD gets their own people's report (email from the employee master)
-  wait_for_bizom: true              # auto-send only when both Pocket HRMS and Bizom files for the day are in
-  sender: null                      # e.g. hr-reports@<apis domain>
+  mode: test                        # test = save to storage/outbox and show in app; live = deliver
+  provider: gmail                   # gmail (APIS uses the Gmail API) | smtp | graph. Secrets only via environment variables.
+  approval_required: true           # preview mode: emails wait for Approve on the "Approve emails" screen
+  auto_send: true                   # when approval is off: send right after the upload
+  wait_for_bizom: true              # prepare emails only once both Pocket HRMS and Bizom files for the day are in
+  sender: null                      # one central mailbox, e.g. attendance@<company domain>
+  reply_to: null
   smtp_host: null                   # Microsoft 365: smtp.office365.com
   smtp_port: 587
   smtp_starttls: true
   smtp_username: null               # password only via env SMTP_PASSWORD
-  subject_prefix: "APIS Daily Attendance"
+  subject_prefix: "Daily Attendance"
   attach_excel: true
   attach_dashboard: true
+  retry_attempts: 3
+  team_emails: true                 # Email_Routing_Config switches (imported from HR's routing workbook)
+  hod_summary: true
+  director_report: true
+  hr_exceptions: true
+  hod_cc_on_team: false             # needs HR approval
+  hr_cc_on_hod_summary: false
+  director_name: Director
+  director_emails: []               # TBC
+  hr_emails: []                     # HR attendance mailbox, TBC
 
 api:
   host: 127.0.0.1

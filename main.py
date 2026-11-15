@@ -122,35 +122,129 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_upload(args: argparse.Namespace) -> int:
-    """Upload one day's Pocket HRMS Attendance Summary and/or Bizom attendance report from the command
-    line (for scheduling) and email the reports if auto-send is on."""
-    from pathlib import Path
-
+def _upload(paths, replace: bool) -> int:
+    from daily import mail
     from daily.analysis import FileError
     from daily.service import AlreadyUploaded, upload_files_and_send
     from database.connection import session_scope
+
+    settings = get_settings()
+    try:
+        with session_scope(_engine()) as session:
+            upload, items, note = upload_files_and_send(session, settings, [(p.name, p.read_bytes()) for p in paths],
+                                                        f"cli:{getpass.getuser()}", replace=replace)
+            print(f"{upload.report_date:%d-%b-%Y}: {upload.employees} employees processed.")
+            for i in items:
+                print(f"  email {i.recipient_name} <{i.to_addrs or '-'}>: {i.status} {i.note or ''}".rstrip())
+            if note:
+                print(f"  {note}")
+            failed = any(i.status == mail.FAILED for i in items)
+    except (FileError, AlreadyUploaded) as exc:
+        print(f"Not processed: {exc}")
+        return 3
+    return 1 if failed else 0
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    """Upload one day's Pocket HRMS Attendance Summary and/or Bizom attendance report from the command
+    line (for scheduling). Emails are prepared and - unless approval is required - sent."""
+    from pathlib import Path
 
     paths = [Path(f) for f in args.files]
     missing = [p for p in paths if not p.is_file()]
     if missing:
         print(f"File not found: {missing[0]}")
         return 2
-    settings = get_settings()
+    return _upload(paths, args.replace)
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Watch a folder: each new .xlsx/.csv dropped there is uploaded like the Upload page does, then moved to
+    'processed' (or 'failed' with a .txt note). Stop with Ctrl+C."""
+    import contextlib
+    import io
+    import shutil
+    import time
+    from pathlib import Path
+
+    folder = Path(args.folder)
+    if not folder.is_dir():
+        print(f"Folder not found: {folder}")
+        return 2
+    done, failed = folder / "processed", folder / "failed"
+    done.mkdir(exist_ok=True)
+    failed.mkdir(exist_ok=True)
+    sizes: dict[Path, int] = {}
+    print(f"Watching {folder} every {args.interval}s for Pocket HRMS / Bizom files (Ctrl+C to stop).")
+    while True:
+        for f in sorted(folder.iterdir()):
+            if not f.is_file() or f.suffix.lower() not in (".xlsx", ".csv") or f.name.startswith("~$"):
+                continue
+            stat = f.stat()
+            settled = time.time() - stat.st_mtime >= 10
+            if sizes.get(f) != stat.st_size and not settled:   # may still be being written
+                sizes[f] = stat.st_size
+                continue
+            sizes.pop(f, None)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = _upload([f], replace=False)
+            print(out.getvalue().rstrip())
+            target = (done if code in (0, 1) else failed) / f.name
+            shutil.move(str(f), target)
+            if code not in (0, 1):
+                target.with_suffix(target.suffix + ".txt").write_text(out.getvalue(), encoding="utf-8")
+        if args.once:
+            return 0
+        time.sleep(args.interval)
+
+
+def cmd_gmail_auth(args: argparse.Namespace) -> int:
+    """Connect the Gmail API once: sign in as the sender mailbox; the refresh token goes into .env."""
+    import os
+    import secrets as _secrets
+    import webbrowser
+    from pathlib import Path
+
+    from daily import gmail_auth as ga
+
+    env_path = PROJECT_ROOT / ".env"
     try:
-        with session_scope(_engine()) as session:
-            upload, outcomes, note = upload_files_and_send(session, settings, [(p.name, p.read_bytes()) for p in paths],
-                                                           f"cli:{getpass.getuser()}", replace=args.replace)
-            print(f"{upload.report_date:%d-%b-%Y}: {upload.employees} employees processed.")
-            for o in outcomes or []:
-                print(f"  email {o.scope}: {o.status} {', '.join(o.recipients)} {o.detail or ''}".rstrip())
-            if note:
-                print(f"  {note}")
-            failed = any(o.status == "FAILED" for o in outcomes or [])
-    except (FileError, AlreadyUploaded) as exc:
-        print(f"Not processed: {exc}")
+        client = ga.client_from(dict(os.environ), Path(args.client_json) if args.client_json else None)
+    except ga.GmailAuthError as exc:
+        print(exc)
+        return 2
+    redirect = f"http://localhost:{args.port}/oauth2callback"
+    state = _secrets.token_urlsafe(24)
+    verifier, challenge = ga.pkce()
+    url = ga.auth_url(client, redirect, state, challenge, args.login_hint)
+    print("1. Sign in with the SENDER mailbox (the one the daily emails come from) and allow 'Send email on your behalf'.")
+    print(f"   If Google says redirect_uri_mismatch: add {redirect} under Authorized redirect URIs of the OAuth client.")
+    print("2. If the browser does not open, paste this address into it:")
+    print(f"   {url}")
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        code = ga.wait_for_code(args.port, state)
+        refresh, mailbox = ga.exchange(client, code, redirect, verifier)
+    except ga.GmailAuthError as exc:
+        print(f"Not connected: {exc}")
         return 3
-    return 1 if failed else 0
+    if args.client_json:
+        ga.set_env_value(env_path, "GMAIL_CLIENT_ID", client.client_id)
+        ga.set_env_value(env_path, "GMAIL_CLIENT_SECRET", client.client_secret)
+    ga.set_env_value(env_path, "GMAIL_REFRESH_TOKEN", refresh)
+    print(f"Gmail connected{f' as {mailbox}' if mailbox else ''}. The refresh token is saved in {env_path} (not shown, never committed).")
+    if mailbox:
+        from daily.settings_store import get_email_settings, save_email_settings
+        from database.connection import session_scope
+
+        settings = get_settings()
+        with session_scope(_engine()) as session:
+            cfg = get_email_settings(session, settings)
+            save_email_settings(session, cfg.model_copy(update={"provider": "gmail", "sender": mailbox}), "cli:gmail-auth")
+        print(f"Settings: provider = Gmail API, sender = {mailbox}. Restart the app so it reads the new token.")
+    return 0
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -188,6 +282,19 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("files", nargs="+", help="Pocket HRMS AttendanceSummary and/or Bizom attendance report (.xlsx/.csv)")
     up.add_argument("--replace", action="store_true", help="replace an existing upload for the same date")
     up.set_defaults(func=cmd_upload)
+
+    g = sub.add_parser("gmail-auth", help="connect the Gmail API once (sign in as the sender mailbox)")
+    g.add_argument("--port", type=int, default=8765, help="local port for Google's redirect (default 8765)")
+    g.add_argument("--client-json", help="OAuth client JSON downloaded from Google Cloud (instead of .env values)")
+    g.add_argument("--login-hint", help="sender mailbox address, pre-filled on Google's sign-in page")
+    g.add_argument("--no-browser", action="store_true", help="only print the sign-in address")
+    g.set_defaults(func=cmd_gmail_auth)
+
+    w = sub.add_parser("watch", help="watch a folder and process each attendance file dropped there")
+    w.add_argument("folder")
+    w.add_argument("--interval", type=int, default=30, help="seconds between checks (default 30)")
+    w.add_argument("--once", action="store_true", help="check once and exit (for Task Scheduler)")
+    w.set_defaults(func=cmd_watch)
 
     demo = sub.add_parser("demo", help="build a SYNTHETIC demo database in storage/demo (never touches real data)")
     demo.add_argument("--days", type=int, default=10)

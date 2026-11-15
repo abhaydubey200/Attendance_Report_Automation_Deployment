@@ -40,8 +40,14 @@ def isolated_env(tmp_path, monkeypatch) -> dict[str, str]:
     }
     for key, value in env.items():
         monkeypatch.setenv(key, value)
-    for key in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_TRUSTED_CONNECTION", "DB_DRIVER", "AI_ENDPOINT", "APP_SECRET_KEY", "API_HOST", "API_PORT", "AUTH_MODE"):
+    for key in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_TRUSTED_CONNECTION", "DB_DRIVER", "AI_ENDPOINT", "APP_SECRET_KEY", "API_HOST", "API_PORT", "AUTH_MODE",
+                "SMTP_PASSWORD", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
+                "GMAIL_REFRESH_TOKEN"):
         monkeypatch.delenv(key, raising=False)
+    # Never read the developer's real .env (mail secrets) during tests.
+    import core.config
+
+    monkeypatch.setattr(core.config, "load_dotenv_if_present", lambda: None)
     get_settings.cache_clear()
     yield env
     get_settings.cache_clear()
@@ -52,7 +58,9 @@ def settings(isolated_env) -> Settings:
     """Most tests upload only a Pocket HRMS file, so auto-send does not wait for Bizom here
     (tests of the waiting behaviour save their own email settings)."""
     s = load_settings()
-    return s.model_copy(update={"email": s.email.model_copy(update={"wait_for_bizom": False})})
+    return s.model_copy(update={"email": s.email.model_copy(update={
+        "wait_for_bizom": False, "approval_required": False, "director_emails": ["director@example.com"],
+        "hr_emails": ["hr@example.com"]})})
 
 
 @pytest.fixture

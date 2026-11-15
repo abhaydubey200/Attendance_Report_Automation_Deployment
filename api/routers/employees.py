@@ -110,9 +110,18 @@ async def import_file(file: UploadFile = File(...), principal: Principal = Depen
     except emp.EmployeeError as exc:
         raise _bad(exc) from None
     result = emp.import_rows(db, rows, principal.username)
+    out = result.as_dict()
+    try:
+        extras = emp.read_routing_extras(file.filename or "employees.xlsx", data)
+    except emp.EmployeeError:
+        extras = {}
+    if extras:
+        from daily import routing
+
+        out["routing"] = routing.apply_workbook(db, settings, extras, principal.username)
     record_activity(db, "EMPLOYEE_IMPORT", "SUCCESS", username=principal.username,
-                    detail={k: v for k, v in result.as_dict().items() if k != "problems"})
-    return result.as_dict()
+                    detail={k: v for k, v in out.items() if k not in ("problems", "routing")})
+    return out
 
 
 @router.get("/employees/export")

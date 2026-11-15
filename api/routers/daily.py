@@ -13,10 +13,9 @@ from sqlalchemy.orm import Session
 
 from api.deps import get_db, get_settings, require
 from core.config import Settings
-from daily import service
+from daily import mail, service
 from daily.analysis import FileError
 from daily.render import file_stem
-from daily.settings_store import ALL, get_email_settings
 from database.models.daily import DayUpload, EmailLog
 from security.permissions import Perm, Principal
 
@@ -59,13 +58,13 @@ async def upload(files: list[UploadFile] | None = File(None), file: UploadFile |
     limit = settings.uploads.max_file_size_mb * 1024 * 1024 + 1
     payload = [(f.filename or "upload.xlsx", await f.read(limit)) for f in chosen]
     try:
-        up, outcomes, note = service.upload_files_and_send(db, settings, payload, principal.username, replace)
+        up, items, note = service.upload_files_and_send(db, settings, payload, principal.username, replace)
     except FileError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     except service.AlreadyUploaded as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
-    return {**_day_payload(db, up, include_rows=False),
-            "auto_sent": outcomes is not None, "send_note": note, "email_results": [o.as_dict() for o in outcomes or []]}
+    return {**_day_payload(db, up, include_rows=False), "send_note": note, "mail": [mail.item_dict(i) for i in items],
+            "auto_sent": any(i.status in mail.DELIVERED for i in items)}
 
 
 @router.get("/days")
@@ -94,7 +93,7 @@ def _scope(up: DayUpload, scope: str) -> str:
 
 
 @router.get("/days/{report_date}/excel")
-def excel(report_date: date, scope: str = Query(ALL), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+def excel(report_date: date, scope: str = Query("ALL"), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
           settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> Response:
     up = _day(db, report_date)
     scope = _scope(up, scope)
@@ -104,7 +103,7 @@ def excel(report_date: date, scope: str = Query(ALL), _: Principal = Depends(req
 
 
 @router.get("/days/{report_date}/dashboard")
-def dashboard(report_date: date, scope: str = Query(ALL), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+def dashboard(report_date: date, scope: str = Query("ALL"), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
               settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> Response:
     up = _day(db, report_date)
     scope = _scope(up, scope)
@@ -113,28 +112,6 @@ def dashboard(report_date: date, scope: str = Query(ALL), _: Principal = Depends
         "Content-Disposition": f'attachment; filename="{file_stem(up.report_date, scope)}_dashboard.html"',
         # Self-contained page: its own inline script/styles only, no network access.
         "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; sandbox allow-scripts"})
-
-
-@router.get("/days/{report_date}/email-preview", response_class=HTMLResponse)
-def email_preview(report_date: date, scope: str = Query(ALL), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
-                  settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> HTMLResponse:
-    up = _day(db, report_date)
-    subject, html = service.email_preview(db, settings, up, _scope(up, scope))
-    return HTMLResponse(html, headers={"X-Email-Subject": subject.encode("ascii", "replace").decode(),
-                                       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox; frame-ancestors 'self'"})
-
-
-class SendIn(BaseModel):
-    scopes: list[str] | None = None
-
-
-@router.post("/days/{report_date}/send")
-def send(report_date: date, body: SendIn, principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)),
-         settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
-    up = _day(db, report_date)
-    scopes = [_scope(up, s) for s in body.scopes] if body.scopes else None
-    outcomes = service.send_reports(db, settings, up, principal.username, scopes)
-    return {"mode": get_email_settings(db, settings).mode, "email_results": [o.as_dict() for o in outcomes]}
 
 
 @router.post("/days/{report_date}/recalculate")

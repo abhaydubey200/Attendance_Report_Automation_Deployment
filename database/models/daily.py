@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.timeutils import now_utc
@@ -66,19 +66,6 @@ class EmployeeDay(Base):
     hq: Mapped[str | None] = mapped_column(String(100))
 
 
-class Recipient(Base):
-    """Who gets which report: scope = a Category name (that team) or ALL (full company)."""
-
-    __tablename__ = "recipient"
-    __table_args__ = (UniqueConstraint("email", "scope"), {"schema": SCHEMA})
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    email: Mapped[str] = mapped_column(String(320), nullable=False)
-    scope: Mapped[str] = mapped_column(String(100), nullable=False)
-    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-
 class AppSetting(Base):
     __tablename__ = "app_setting"
     __table_args__ = {"schema": SCHEMA}
@@ -123,6 +110,7 @@ class Employee(Base):
     team_lead_email: Mapped[str | None] = mapped_column(String(320))               # "Sub split ID"
     reporting_manager: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")  # ACTIVE | LEFT
+    routing_issue: Mapped[str | None] = mapped_column(String(200))   # e.g. HOD_EMAIL_CONFLICT -> held for HR
     exit_date: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str] = mapped_column(String(10), nullable=False, default="MANUAL")  # IMPORT | MANUAL
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
@@ -142,3 +130,44 @@ class EmployeeChange(Base):
     changes: Mapped[str | None] = mapped_column(Text)             # JSON {field: [old, new]}
     actor: Mapped[str] = mapped_column(String(100), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+
+
+class MailRecipient(Base):
+    """Per-recipient switch and display name (Recipient_Master sheet). Absent = active, name derived."""
+
+    __tablename__ = "mail_recipient"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)    # lower-case
+    name: Mapped[str | None] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    effective_from: Mapped[date | None] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    updated_by: Mapped[str | None] = mapped_column(String(100))
+
+
+class MailItem(Base):
+    """One planned email for one recipient and one day. Content is rendered from the stored lists."""
+
+    __tablename__ = "mail_item"
+    __table_args__ = (Index("ix_mail_item_day", "report_date", "recipient_key"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    upload_id: Mapped[int] = mapped_column(ForeignKey(f"{SCHEMA}.day_upload.upload_id"), nullable=False)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False)
+    recipient_key: Mapped[str] = mapped_column(String(320), nullable=False)    # email, DIRECTOR or HR
+    recipient_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), nullable=False)
+    to_addrs: Mapped[str | None] = mapped_column(String(2000))
+    cc_addrs: Mapped[str | None] = mapped_column(String(2000))
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)                 # JSON: codes per section
+    counts: Mapped[str] = mapped_column(Text, nullable=False)                  # JSON
+    status: Mapped[str] = mapped_column(String(20), nullable=False)          # PENDING|SENT|SAVED|FAILED|HELD|DISABLED|DUPLICATE|SUPERSEDED
+    note: Mapped[str | None] = mapped_column(String(500))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    outbox_file: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+    approved_by: Mapped[str | None] = mapped_column(String(100))
+    sent_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

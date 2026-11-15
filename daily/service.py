@@ -1,4 +1,4 @@
-"""Upload one day (Pocket HRMS and/or Bizom) -> analyse -> store -> (auto) email each HOD and HR/Directors."""
+"""Upload one day (Pocket HRMS and/or Bizom) -> analyse -> store -> plan one email per recipient (daily.mail)."""
 
 from __future__ import annotations
 
@@ -14,10 +14,9 @@ from core.config import Rules, Settings
 from daily import analysis, bizom, employees
 from daily.analysis import FileError
 from daily.excel_report import build_excel
-from daily.mailer import Attachment, MailError, build_message, send
-from daily.render import dashboard_html, email_parts, file_stem, scope_label
-from daily.settings_store import ALL, get_email_settings, get_rules, recipients_by_scope
-from database.models.daily import DayUpload, EmailLog, EmployeeDay
+from daily.render import dashboard_html
+from daily.settings_store import get_email_settings, get_rules
+from database.models.daily import DayUpload, EmployeeDay
 from ingestion.checksum import sha256_bytes
 from ingestion.file_inspector import inspect_file, safe_filename
 from ingestion.file_reader import ReadError, read_raw
@@ -48,19 +47,6 @@ class Incoming:
     bizom_day: bizom.BizomDay | None = None
 
 
-@dataclass
-class EmailOutcome:
-    scope: str
-    recipients: list[str]
-    status: str               # SENT | SAVED | FAILED | NO_RECIPIENTS
-    detail: str | None = None
-
-    def as_dict(self) -> dict:
-        return {"scope": self.scope, "scope_label": scope_label(self.scope), "recipients": self.recipients,
-                "status": self.status, "detail": self.detail}
-
-
-# ---------------------------------------------------------------------------- reading + analysis
 def identify(settings: Settings, filename: str, data: bytes) -> Incoming:
     """Recognise a Pocket HRMS Attendance Summary or a Bizom attendance report by its columns."""
     check = inspect_file(filename, data, tuple(settings.uploads.allowed_extensions), settings.uploads.max_file_size_mb * 1024 * 1024)
@@ -268,100 +254,34 @@ def check_scope(upload: DayUpload, scope: str) -> str:
     return scope
 
 
-@dataclass
-class Person:
-    name: str
-    email: str
+def plan_and_maybe_send(session: Session, settings: Settings, upload: DayUpload, actor: str) -> tuple[list, str | None]:
+    """Plan the day's emails (one per recipient). Send them now only when approval is off and auto-send is on.
+    Returns (mail items, note for the user)."""
+    from daily import mail
 
-
-def recipients_for(session: Session, settings: Settings, scope: str, directory: dict[str, list[str]] | None = None) -> list[Person]:
-    """Settings recipients for the scope, plus (for an HOD report) the HOD's email from the employee master."""
-    people = [Person(r.name, r.email) for r in recipients_by_scope(session).get(scope if scope == ALL else scope.lower(), [])]
-    if scope.startswith(analysis.HOD_PREFIX) and get_email_settings(session, settings).send_to_hods:
-        name = scope[len(analysis.HOD_PREFIX):]
-        directory = employees.hod_directory(session) if directory is None else directory
-        people = [Person(name, e) for e in directory.get(name, [])] + people
-    seen, out = set(), []
-    for p in people:
-        if p.email.lower() not in seen:
-            seen.add(p.email.lower())
-            out.append(p)
-    return out
-
-
-def email_preview(session: Session, settings: Settings, upload: DayUpload, scope: str) -> tuple[str, str]:
     cfg = get_email_settings(session, settings)
-    names = [r.name for r in recipients_for(session, settings, scope)]
-    subject, html, _ = email_parts(settings.app.company, upload.report_date, scope, json.loads(upload.insights),
-                                   settings.app.date_format, cfg.subject_prefix, names, settings.app.public_url)
-    return subject, html
-
-
-def send_reports(session: Session, settings: Settings, upload: DayUpload, actor: str, scopes: list[str] | None = None) -> list[EmailOutcome]:
-    """One email per audience: ALL (HR/Directors), each HOD (their own people, email from the employee
-    master) and each Category that has recipients in Settings."""
-    cfg = get_email_settings(session, settings)
-    insights = json.loads(upload.insights)
-    rows = rows_for(session, upload.upload_id)
-    by_scope = recipients_by_scope(session)
-    directory = employees.hod_directory(session)
-    outbox = settings.storage.area("outbox") / upload.report_date.isoformat()
-    if scopes is None:
-        targets = [ALL]
-        if cfg.send_to_hods:
-            targets += [h["scope"] for h in insights.get("hods", [])]
-        targets += [c for c in insights["categories"] if c.lower() in by_scope]
-    else:
-        targets = scopes
-    outcomes = []
-    for scope in targets:
-        people = recipients_for(session, settings, scope, directory)
-        if not people:
-            hint = ("No HOD email in the employee master." if scope.startswith(analysis.HOD_PREFIX)
-                    else "Add a recipient for this in Settings.")
-            outcomes.append(EmailOutcome(scope, [], "NO_RECIPIENTS", hint))
-            continue
-        to = [p.email for p in people]
-        subject, html, text = email_parts(settings.app.company, upload.report_date, scope, insights, settings.app.date_format,
-                                          cfg.subject_prefix, [p.name for p in people], settings.app.public_url)
-        stem = file_stem(upload.report_date, scope)
-        attachments = []
-        if cfg.attach_excel:
-            attachments.append(Attachment(f"{stem}.xlsx", excel_bytes(settings, upload, scope, rows), XLSX))
-        if cfg.attach_dashboard:
-            attachments.append(Attachment(f"{stem}_dashboard.html", dashboard_bytes(settings, upload, scope, rows), "text/html"))
-        message = build_message(cfg.sender or "apis-attendance@localhost", to, subject, html, text, attachments)
-        try:
-            result = send(cfg, message, outbox)
-            outcome = EmailOutcome(scope, to, result.status, result.outbox_file)
-        except MailError as exc:
-            outcome = EmailOutcome(scope, to, "FAILED", str(exc))
-        session.add(EmailLog(upload_id=upload.upload_id, scope=scope, recipients=", ".join(to)[:2000], subject=subject[:300],
-                             mode="LIVE" if cfg.mode == "live" else "TEST", status=outcome.status,
-                             error=outcome.detail if outcome.status == "FAILED" else None,
-                             outbox_file=outcome.detail if outcome.status == "SAVED" else None, sent_by=actor))
-        outcomes.append(outcome)
-    record_activity(session, "REPORT_EMAIL", "FAILED" if any(o.status == "FAILED" for o in outcomes) else "SUCCESS", username=actor,
-                    detail={"date": upload.report_date.isoformat(), "mode": cfg.mode,
-                            "results": {o.scope: o.status for o in outcomes}})
-    session.flush()
-    return outcomes
+    if cfg.wait_for_bizom and not has_both(upload):
+        missing = "Bizom" if upload.stored_path else "Pocket HRMS"
+        return [], f"Waiting for the {missing} file of this day; the emails are prepared once it is uploaded."
+    items = mail.build_plan(session, settings, upload, actor)
+    pending = [i for i in items if i.status == mail.PENDING]
+    if cfg.approval_required:
+        return items, f"{len(pending)} email(s) ready - review and approve them on the Approve emails screen."
+    if not cfg.auto_send:
+        return items, "Automatic sending is off: send from the Approve emails screen."
+    mail.send_items(session, settings, pending, actor)
+    return items, None
 
 
 def upload_files_and_send(session: Session, settings: Settings, files: list[tuple[str, bytes]], actor: str,
-                          replace: bool = False) -> tuple[DayUpload, list[EmailOutcome] | None, str | None]:
-    """Returns (upload, email outcomes or None, why emails were not sent automatically)."""
+                          replace: bool = False) -> tuple[DayUpload, list, str | None]:
+    """Upload -> analyse -> plan emails -> (send unless approval is required). Returns (upload, mail items, note)."""
     upload = process_files(session, settings, files, actor, replace)
-    cfg = get_email_settings(session, settings)
-    if not cfg.auto_send:
-        return upload, None, "Automatic sending is off (Settings)."
-    if cfg.wait_for_bizom and not has_both(upload):
-        missing = "Bizom" if upload.stored_path else "Pocket HRMS"
-        return upload, None, f"Waiting for the {missing} file of this day; emails go out automatically once it is uploaded (or use Send emails)."
-    return upload, send_reports(session, settings, upload, actor), None
+    items, note = plan_and_maybe_send(session, settings, upload, actor)
+    return upload, items, note
 
 
 def upload_and_send(session: Session, settings: Settings, filename: str, data: bytes, actor: str,
-                    replace: bool = False) -> tuple[DayUpload, list[EmailOutcome] | None]:
-    upload, outcomes, _ = upload_files_and_send(session, settings, [(filename, data)], actor, replace)
-    return upload, outcomes
+                    replace: bool = False) -> tuple[DayUpload, list]:
+    upload, items, _ = upload_files_and_send(session, settings, [(filename, data)], actor, replace)
+    return upload, items

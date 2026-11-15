@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{{ subject }}</title></head>
+<body style="margin:0;padding:0;background:#f6efe3;font-family:Segoe UI,Arial,sans-serif;color:#2b2118;">
+{% macro tiles(c) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;">
+  <tr>
+  {% for label, value, color in [("Total", c.total, "#5e3c0f"), ("Present", c.present, "#2e7d4f"), ("Absent", c.absent, "#a52a1a"), ("Leave", c.leave, "#9f7b49")] %}
+    <td width="25%" style="background:#fffbf6;border:1px solid #ecdfc9;border-top:3px solid {{ color }};padding:8px 10px;">
+      <div style="font-size:11px;color:#6e6152;text-transform:uppercase;letter-spacing:.5px;">{{ label }}</div>
+      <div style="font:bold 22px Georgia,serif;color:{{ color }};">{{ value }}</div>
+    </td>
+  {% endfor %}
+  </tr>
+  <tr>
+  {% for label, value, color in [("On duty", c.od, "#3b6fb6"), ("WFH", c.wfh, "#5a7fc0"), ("Late", c.late, "#c88a00"), ("Missing punch", c.missing_punch, "#c88a00")] %}
+    <td width="25%" style="background:#fffbf6;border:1px solid #ecdfc9;border-top:3px solid {{ color }};padding:8px 10px;">
+      <div style="font-size:11px;color:#6e6152;text-transform:uppercase;letter-spacing:.5px;">{{ label }}</div>
+      <div style="font:bold 22px Georgia,serif;color:{{ color }};">{{ value }}</div>
+    </td>
+  {% endfor %}
+  </tr>
+</table>
+<div style="font-size:12px;color:#6e6152;padding:2px 6px 8px;">
+  Attendance {{ "–" if c.attendance_pct is none else c.attendance_pct ~ "%" }}
+  {%- if c.week_off %} · {{ c.week_off }} week off{% endif %}
+  {%- if c.not_tracked %} · {{ c.not_tracked }} not tracked{% endif %}
+  {%- if c.no_record %} · {{ c.no_record }} with no attendance record{% endif %}
+</div>
+{%- endmacro %}
+{% macro group_table(rows, first) -%}
+<table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+  <tr style="background:#835415;color:#ffffff;"><th align="left">{{ first }}</th><th align="right">Employees</th><th align="right">Present</th><th align="right">Absent</th><th align="right">Leave</th><th align="right">Late</th><th align="right">Attendance</th></tr>
+  {% for t in rows %}
+  <tr style="border-bottom:1px solid #ecdfc9;"><td>{{ t.name }}</td><td align="right">{{ t.total }}</td><td align="right">{{ t.present + t.od + t.wfh }}</td><td align="right" style="color:{{ '#a52a1a' if t.absent else '#2b2118' }};">{{ t.absent }}</td><td align="right">{{ t.leave }}</td><td align="right">{{ t.late }}</td><td align="right">{{ "–" if t.attendance_pct is none else t.attendance_pct ~ "%" }}</td></tr>
+  {% endfor %}
+</table>
+{%- endmacro %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6efe3;"><tr><td align="center" style="padding:18px 8px;">
+<table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border:1px solid #ecdfc9;">
+  <tr><td style="background:#2f2113;padding:14px 22px;">
+    <span style="display:inline-block;background:#f5b800;color:#2f2113;font:bold 15px Georgia,serif;padding:4px 14px;border-radius:14px;">apis</span>
+    <span style="color:#f3e3c6;font-size:13px;padding-left:10px;">{{ company }} · Daily Attendance</span>
+  </td></tr>
+  <tr><td style="padding:18px 24px 6px;">
+    <div style="font:bold 20px Georgia,serif;color:#5e3c0f;">Daily Attendance &ndash; {{ day }}</div>
+    <p style="font-size:14px;margin:10px 0 4px;">{{ greeting }},</p>
+    <p style="font-size:14px;margin:0 0 6px;color:#4a3b2c;">
+      {% if b.exceptions %}These records could not be routed to a manager today and need HR action.
+      {% elif b.company %}Here is today's company attendance by HOD{% if b.team %}, followed by your direct staff{% endif %}.
+      {% else %}Here is today's attendance{% if b.team and b.summary %} for your team and your department{% elif b.summary %} for your department{% else %} for your team{% endif %}. Only the people who need attention are listed; everyone else is in the counts.{% endif %}
+    </p>
+  </td></tr>
+
+  {% if b.company %}
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">Company ({{ b.company.total }} employees)</td></tr>
+  <tr><td style="padding:0 18px;">{{ tiles(b.company) }}</td></tr>
+  <tr><td style="padding:0 24px 12px;">{{ group_table(b.company_by_hod, "HOD") }}</td></tr>
+  {% endif %}
+
+  {% if b.team %}
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">{{ "Director Office staff" if b.company else "Your team" }} ({{ b.team.total }})</td></tr>
+  <tr><td style="padding:0 18px;">{{ tiles(b.team) }}</td></tr>
+  <tr><td style="padding:0 24px 12px;">
+    {% if b.team_attention %}
+    <div style="font-size:13px;font-weight:bold;color:#a52a1a;padding:4px 0;">Needs attention ({{ b.team_attention|length + b.team_attention_more }})</div>
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+      <tr style="background:#fbe4e1;color:#5e3c0f;"><th align="left">Code</th><th align="left">Name</th><th align="left">What</th><th align="left">In</th><th align="left">Out</th></tr>
+      {% for r in b.team_attention %}
+      <tr style="border-bottom:1px solid #ecdfc9;"><td>{{ r.code }}</td><td>{{ r.name }}</td><td>{{ r.reason }}</td><td>{{ r.in_time or "" }}</td><td>{{ r.out_time or "" }}</td></tr>
+      {% endfor %}
+    </table>
+    {% if b.team_attention_more %}<div style="font-size:12px;color:#6e6152;padding-top:4px;">… and {{ b.team_attention_more }} more in the attachment.</div>{% endif %}
+    {% else %}
+    <div style="font-size:13px;color:#2e7d4f;padding:4px 0;">Nobody in your team needs attention today.</div>
+    {% endif %}
+  </td></tr>
+  {% endif %}
+
+  {% if b.summary %}
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">Department summary &ndash; everyone under you ({{ b.summary.total }})</td></tr>
+  <tr><td style="padding:0 18px;">{{ tiles(b.summary) }}</td></tr>
+  <tr><td style="padding:0 24px 12px;">{{ group_table(b.summary_by_team, "Team") }}</td></tr>
+  {% endif %}
+
+  {% if b.exceptions %}
+  <tr><td style="padding:10px 24px 12px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+      <tr style="background:#835415;color:#ffffff;"><th align="left">Code</th><th align="left">Name</th><th align="left">Issue</th><th align="left">HOD</th><th align="left">Today</th></tr>
+      {% for x in b.exceptions %}
+      <tr style="border-bottom:1px solid #ecdfc9;"><td>{{ x.code }}</td><td>{{ x.name }}</td><td>{{ x.issue }}</td><td>{{ x.hod }}</td><td>{{ x.status_label }}</td></tr>
+      {% endfor %}
+    </table>
+    {% if b.exceptions_more %}<div style="font-size:12px;color:#6e6152;padding-top:4px;">… and {{ b.exceptions_more }} more in the attachment.</div>{% endif %}
+    <div style="font-size:12px;color:#6e6152;padding-top:6px;">Fix these on the Employees screen (or in the routing workbook) so tomorrow's emails reach the right manager.</div>
+  </td></tr>
+  {% endif %}
+
+  <tr><td style="padding:8px 24px 16px;font-size:13px;color:#6e6152;">
+    {% if attach_name %}Attached: <b>{{ attach_name }}</b> (full list{% if not b.exceptions %}, people needing attention first{% endif %}){% endif %}
+    {%- if dashboard_name and not b.exceptions %} and <b>{{ dashboard_name }}</b> (interactive dashboard &ndash; open in your browser){% endif %}.
+    {% if app_url %}<br>Open the attendance app: <a href="{{ app_url }}" style="color:#835415;">{{ app_url }}</a>{% endif %}
+  </td></tr>
+  <tr><td style="padding:12px 24px;border-top:1px solid #ecdfc9;font-size:11px;color:#9f7b49;">
+    This is an automated email from the APIS Daily Attendance tool. It is meant only for {{ greeting[5:] if greeting.startswith("Dear ") else "you" }}; please do not forward or reply.
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

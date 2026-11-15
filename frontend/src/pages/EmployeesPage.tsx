@@ -21,7 +21,7 @@ const PAGE = 100;
 const NONE = "(none)";
 
 const FIELD_LABELS: Record<string, string> = {
-  name: "Name", department: "Department", date_of_joining: "Date of joining", hod_name: "HOD", hod_email: "HOD email",
+  routing_issue: "Routing issue", name: "Name", department: "Department", date_of_joining: "Date of joining", hod_name: "HOD", hod_email: "HOD email",
   team_lead_email: "Team lead email", reporting_manager: "Reporting manager", status: "Status", exit_date: "Last working day",
 };
 
@@ -51,6 +51,7 @@ interface Draft {
   hod_email: string;
   team_lead_email: string;
   reporting_manager: string;
+  routing_issue: string;
 }
 
 function toDraft(e?: Employee): Draft {
@@ -58,6 +59,7 @@ function toDraft(e?: Employee): Draft {
     code: e?.code ?? "", name: e?.name ?? "", department: e?.department ?? "", date_of_joining: e?.date_of_joining ?? "",
     hod_name: e?.hod_name ?? "", hod_email: e?.hod_email ?? "", team_lead_email: e?.team_lead_email ?? "",
     reporting_manager: e?.reporting_manager ?? "",
+    routing_issue: e?.routing_issue ?? "",
   };
 }
 
@@ -128,7 +130,12 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
         <Field label="Team lead email (Sub split ID)" hint="Blank = reports directly to the HOD.">
           <input type="email" value={d.team_lead_email} disabled={ro} onChange={(e) => set({ team_lead_email: e.target.value })} />
         </Field>
-        <Field label="Reporting manager"><input list="dl-managers" value={d.reporting_manager} disabled={ro} onChange={(e) => set({ reporting_manager: e.target.value })} /></Field>
+        <Field label="Reporting manager" hint="For information only; the team lead email decides who gets the email.">
+          <input list="dl-managers" value={d.reporting_manager} disabled={ro} onChange={(e) => set({ reporting_manager: e.target.value })} />
+        </Field>
+        <Field label="Routing issue" hint="HOD_EMAIL_CONFLICT holds this person for HR. Clear it once the emails are confirmed.">
+          <input value={d.routing_issue} disabled={ro} onChange={(e) => set({ routing_issue: e.target.value.toUpperCase() })} placeholder="none" />
+        </Field>
       </div>
       <ActionMessages error={act.error} message={act.message} />
       {canEdit && (
@@ -228,6 +235,15 @@ export function EmployeesPage() {
           Import: {imported.rows} rows · {imported.added} added · {imported.updated} updated · {imported.unchanged} unchanged
           {imported.kept_left > 0 && ` · ${imported.kept_left} kept as Left`}
           {imported.not_in_file > 0 && ` · ${imported.not_in_file} active employees not in this file (left unchanged)`}
+          {imported.routing?.coverage && (
+            <><br />Routing workbook: {imported.routing.coverage.differences === 0
+              ? `the app's routing matches the Employee_Coverage sheet for all ${imported.routing.coverage.checked} employees ✓`
+              : `${imported.routing.coverage.differences} difference(s) with the Employee_Coverage sheet, e.g. ${imported.routing.coverage.examples.slice(0, 3).map((x) => `${x.code}: ${x.issue}`).join("; ")}`}</>
+          )}
+          {imported.routing?.recipients && <><br />Recipient switches imported: {imported.routing.recipients.imported} ({imported.routing.recipients.switched_off} off).</>}
+          {imported.routing?.config && imported.routing.config.disabled.length > 0 && (
+            <><br /><strong>Email_Routing_Config switched these off:</strong> {imported.routing.config.disabled.join("; ")}. Turn them on in Settings when the addresses are confirmed.</>
+          )}
           {imported.problem_count > 0 && (
             <details><summary>{imported.problem_count} value(s) needed attention</summary>
               <ul className="small">{imported.problems.map((p) => <li key={p}>{p}</li>)}</ul></details>
@@ -309,9 +325,13 @@ export function EmployeesPage() {
           { header: "Team", render: (e) => e.team },
           { header: "Reporting manager", render: (e) => e.reporting_manager },
           { header: "DOJ", render: (e) => (e.date_of_joining ? formatDate(e.date_of_joining) : "") },
-          { header: "Status", render: (e) => (e.status === "LEFT"
-            ? <span className="badge badge-warn">Left{e.exit_date ? ` ${formatDate(e.exit_date)}` : ""}</span>
-            : <span className="badge badge-ok">Active</span>) },
+          { header: "Status", render: (e) => (
+            <>
+              {e.status === "LEFT"
+                ? <span className="badge badge-warn">Left{e.exit_date ? ` ${formatDate(e.exit_date)}` : ""}</span>
+                : <span className="badge badge-ok">Active</span>}
+              {e.routing_issue.includes("CONFLICT") && <> <span className="badge badge-fail" title={e.routing_issue}>Held for HR</span></>}
+            </>) },
           { header: "", render: (e) => (
             <span className="inline-actions">
               <button className="btn btn-ghost btn-small" onClick={() => { setEditing(e); setSaved(null); }}>{canEdit ? "Edit" : "View"}</button>

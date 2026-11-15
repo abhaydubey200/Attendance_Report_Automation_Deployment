@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import email
+import email.policy
 import io
 import json
 from datetime import date
@@ -15,8 +16,8 @@ from api.main import CSRF_HEADER, create_app
 from core.config import Rules
 from daily import analysis, service
 from daily.analysis import FileError
-from daily.render import dashboard_html, email_parts
-from daily.settings_store import get_rules, replace_recipients, save_email_settings, save_rules
+from daily.render import dashboard_html
+from daily.settings_store import get_rules, save_email_settings, save_rules
 from database.connection import session_scope
 from demo.synthetic import build_summary_xlsx
 from ingestion.file_reader import ReadError, read_raw
@@ -150,30 +151,20 @@ def test_dashboard_embeds_data_safely():
     assert '"attendance_pct": 68.8' in html
 
 
-def test_email_parts():
-    day, results, excluded = _classify()
-    ins = analysis.build_insights(day, results, Rules(), excluded)
-    subject, html, text = email_parts("APIS India Limited", day, "ALL", ins, "%d-%b-%Y", "APIS Daily Attendance", ["Asha"], None)
-    assert subject == "APIS Daily Attendance | All employees | 13-Nov-2026 | Attendance 68.8%"
-    assert "Dear Asha" in html and "By category" in html and "Highlights" in text
-    _, html2, _ = email_parts("APIS India Limited", day, "Plant", ins, "%d-%b-%Y", "X", ["A", "B"], "http://intranet/att")
-    assert "Dear Team" in html2 and "By category" not in html2 and "http://intranet/att" in html2
-
-
 # ------------------------------------------------------------------ service
 def test_upload_replace_recalculate_and_send(engine, settings):
+    """No employee master yet: nobody can be routed, so only the Director (company summary) and the HR
+    exception email are planned - and sent at once because approval is off in these tests."""
     data = summary_file(CASES)
     with session_scope(engine) as s:
-        replace_recipients(s, [{"name": "Plant Head", "email": "plant@example.com", "scope": "Plant"},
-                               {"name": "HR", "email": "hr@example.com", "scope": "ALL"}])
-        up, outcomes = service.upload_and_send(s, settings, "summary.xlsx", data, "tester")
-        status = {o.scope: o.status for o in outcomes}
-    assert status == {"ALL": "SAVED", "Plant": "SAVED"}   # categories without recipients are skipped
+        up, items = service.upload_and_send(s, settings, "summary.xlsx", data, "tester")
+        status = {i.recipient_key: i.status for i in items}
+    assert status == {"DIRECTOR": "SAVED", "HR": "SAVED"}
     outbox = list((settings.storage.area("outbox") / "2026-11-13").glob("*.eml"))
     assert len(outbox) == 2
-    msg = email.message_from_bytes(outbox[0].read_bytes())
-    names = sorted(p.get_filename() for p in msg.walk() if p.get_filename())
-    assert any(n.endswith(".xlsx") for n in names) and any(n.endswith("_dashboard.html") for n in names)
+    msg = email.message_from_bytes(next(p for p in outbox if b"hr@example.com" in p.read_bytes()).read_bytes(),
+                                   policy=email.policy.default)
+    assert "NOT_IN_EMPLOYEE_MASTER" in msg.get_body(("html",)).get_content()
 
     with session_scope(engine) as s, pytest.raises(service.AlreadyUploaded):
         service.process_upload(s, settings, "summary.xlsx", data, "tester")
@@ -184,24 +175,20 @@ def test_upload_replace_recalculate_and_send(engine, settings):
         assert service.current_upload(s, DAY).upload_id == up2.upload_id
 
 
-def test_live_mode_failure_is_logged_not_raised(engine, settings, monkeypatch):
+def test_live_mode_failure_is_retried_and_logged(engine, settings, monkeypatch):
     from core.config import EmailSettings
+    from daily import mail
 
+    naps = []
+    monkeypatch.setattr(mail, "SLEEP", naps.append)
     with session_scope(engine) as s:
-        replace_recipients(s, [{"name": "HR", "email": "hr@example.com", "scope": "ALL"}])
-        save_email_settings(s, EmailSettings(mode="live", wait_for_bizom=False, smtp_host="127.0.0.1", smtp_port=9, sender="hr@example.com",
-                                             smtp_starttls=False), "tester")
-        up, outcomes = service.upload_and_send(s, settings, "summary.xlsx", summary_file(CASES), "tester")
-    failed = [o for o in outcomes if o.scope == "ALL"][0]
-    assert failed.status == "FAILED" and "Could not send" in failed.detail
-
-
-def test_recipient_validation(engine):
-    with session_scope(engine) as s:
-        with pytest.raises(ValueError, match="Invalid email"):
-            replace_recipients(s, [{"name": "x", "email": "not-an-email", "scope": "ALL"}])
-        with pytest.raises(ValueError, match="Choose"):
-            replace_recipients(s, [{"name": "x", "email": "a@b.co", "scope": ""}])
+        save_email_settings(s, EmailSettings(mode="live", provider="smtp", wait_for_bizom=False, approval_required=False, smtp_host="127.0.0.1",
+                                             smtp_port=9, sender="attendance@example.com", smtp_starttls=False,
+                                             director_emails=["director@example.com"], hr_emails=["hr@example.com"]), "tester")
+        up, items = service.upload_and_send(s, settings, "summary.xlsx", summary_file(CASES), "tester")
+        failed = [i for i in items if i.recipient_key == "DIRECTOR"][0]
+        assert failed.status == "FAILED" and "Could not send" in failed.note and failed.attempts == 3
+    assert naps == [2, 4, 2, 4]          # two emails, back-off between the 3 attempts of each
 
 
 # ------------------------------------------------------------------ over HTTP
@@ -212,19 +199,16 @@ def api(settings, engine, tmp_path):
 
 
 def test_full_flow_over_http(api):
-    r = api.put("/api/v1/settings/recipients", headers=H, json={"recipients": [
-        {"name": "Sales Mgr", "email": "sales@example.com", "scope": "Sales"}, {"name": "HR", "email": "hr@example.com", "scope": "ALL"}]})
-    assert r.status_code == 200
     r = api.post("/api/v1/days/upload", headers=H, files={"file": ("AttendanceSummary.xlsx", summary_file(CASES))})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["report_date"] == "2026-11-13" and body["auto_sent"]
-    assert {e["scope"]: e["status"] for e in body["email_results"]}["Sales"] == "SAVED"
+    assert {m["key"]: m["status"] for m in body["mail"]} == {"DIRECTOR": "SAVED", "HR": "SAVED"}
 
     again = api.post("/api/v1/days/upload", headers=H, files={"file": ("AttendanceSummary.xlsx", summary_file(CASES))})
     assert again.status_code == 409 and "already uploaded" in again.json()["detail"]
     ok = api.post("/api/v1/days/upload", headers=H, data={"replace": "true"}, files={"file": ("A.xlsx", summary_file(CASES))})
-    assert ok.status_code == 200
+    assert ok.status_code == 200 and {m["status"] for m in ok.json()["mail"]} == {"DUPLICATE"}   # sent once per day
 
     days = api.get("/api/v1/days").json()
     assert days[0]["report_date"] == "2026-11-13" and days[0]["attendance_pct"] == 68.8
@@ -235,14 +219,10 @@ def test_full_flow_over_http(api):
     assert x.status_code == 200 and "Sales" in x.headers["content-disposition"]
     d = api.get("/api/v1/days/2026-11-13/dashboard")
     assert d.status_code == 200 and "attachment" in d.headers["content-disposition"] and "sandbox" in d.headers["content-security-policy"]
-    p = api.get("/api/v1/days/2026-11-13/email-preview", params={"scope": "Sales"})
-    assert "Dear Sales Mgr" in p.text and "sandbox" in p.headers["content-security-policy"]
     assert api.get("/api/v1/days/2026-11-13/excel", params={"scope": "Nope"}).status_code == 404
 
-    sent = api.post("/api/v1/days/2026-11-13/send", headers=H, json={"scopes": ["ALL"]}).json()
-    assert sent["mode"] == "test" and sent["email_results"][0]["status"] == "SAVED"
     log = api.get("/api/v1/emails").json()
-    assert len(log) >= 3 and log[0]["scope"] == "ALL"
+    assert len(log) == 2 and {e["scope"] for e in log} == {"DIRECTOR", "HR"}
 
     bad = api.post("/api/v1/days/upload", headers=H, files={"file": ("x.csv", b"a,b\n1,2\n")})
     assert bad.status_code == 422 and "Attendance Summary" in bad.json()["detail"]
@@ -251,9 +231,14 @@ def test_full_flow_over_http(api):
 def test_settings_over_http(api):
     s = api.get("/api/v1/settings").json()
     assert s["rules"]["late_after"] == "09:30" and s["email"]["mode"] == "test" and s["smtp_password_set"] is False
+    assert s["secrets"]["GRAPH_CLIENT_SECRET"] is False
     r = api.put("/api/v1/settings/rules", headers=H, json={**s["rules"], "late_after": "10:00"})
     assert r.status_code == 200 and api.get("/api/v1/settings").json()["rules"]["late_after"] == "10:00"
     assert api.put("/api/v1/settings/rules", headers=H, json={**s["rules"], "late_after": "ten"}).status_code == 422
     assert api.put("/api/v1/settings/email", headers=H, json={**s["email"], "mode": "live"}).status_code == 422
+    bad = api.put("/api/v1/settings/email", headers=H, json={**s["email"], "director_emails": ["not-an-email"]})
+    assert bad.status_code == 422 and "Director" in bad.json()["detail"]
+    good = api.put("/api/v1/settings/email", headers=H, json={**s["email"], "director_emails": [" MD@Example.com "]})
+    assert good.json()["director_emails"] == ["md@example.com"]
     ok = api.post("/api/v1/settings/test-email", headers=H, json={"to": "someone@example.com"}).json()
     assert ok == {"status": "SAVED", "mode": "test"}

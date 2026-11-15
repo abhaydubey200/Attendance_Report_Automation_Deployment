@@ -15,7 +15,7 @@ from openpyxl import Workbook, load_workbook
 from api.main import CSRF_HEADER, create_app
 from daily import employees as emp
 from daily import service
-from daily.render import email_parts, scope_label
+from daily.render import scope_label
 from database.connection import session_scope
 from tests.integration.test_daily import CASES, summary_file
 
@@ -107,11 +107,11 @@ def test_create_update_left_restore(engine):
         assert [h["action"] for h in emp.history(s, "X10")] == ["RESTORE", "LEFT", "UPDATE", "CREATE"]
 
 
-def test_attendance_uses_master_and_each_hod_gets_own_people(engine, settings):
+def test_attendance_uses_master(engine, settings):
     with session_scope(engine) as s:
         _import(s)
         emp.mark_left(s, "E7", date(2026, 11, 12), "tester")       # left before the report date -> dropped
-        up, outcomes = service.upload_and_send(s, settings, "summary.xlsx", summary_file(CASES), "tester")
+        up = service.process_upload(s, settings, "summary.xlsx", summary_file(CASES), "tester")
         ins = json.loads(up.insights)
         rows = service.rows_for(s, up.upload_id)
     assert ins["master"] == {"matched": 7, "not_in_master": 1, "left_excluded": 1, "missing_from_file": 0}
@@ -119,43 +119,31 @@ def test_attendance_uses_master_and_each_hod_gets_own_people(engine, settings):
     assert {h["name"] for h in ins["hods"]} == {"Asha Rao", "Vikram Shah", "Meera Iyer"}
     assert ins["scopes"]["HOD:Vikram Shah"]["summary"]["employees"] == 3
     assert ins["scopes"]["ALL"]["breakdown"]["by"] == "Department"
-    assert any("not in the employee master" in h["text"] for h in ins["scopes"]["ALL"]["highlights"])
     by_code = {r["code"]: r for r in rows}
     assert by_code["E3"]["hod"] == "Vikram Shah" and by_code["E3"]["team"] == "lead.two" and "E7" not in by_code
-
-    status = {o.scope: (o.status, o.recipients) for o in outcomes}
-    assert status["ALL"][0] == "NO_RECIPIENTS"                       # no HR recipients configured in this test
-    assert status["HOD:Vikram Shah"] == ("SAVED", ["vikram@example.com"])
-    assert status["HOD:Meera Iyer"] == ("SAVED", ["meera@example.com", "meera.iyer@example.com"])
-    outbox = sorted((settings.storage.area("outbox") / "2026-11-13").glob("*.eml"))
-    msgs = [email.message_from_bytes(p.read_bytes()) for p in outbox]
-    vikram = next(m for m in msgs if "vikram@example.com" in m["To"])
-    assert "HOD Vikram Shah" in vikram["Subject"]
-    xlsx = next(p for p in vikram.walk() if (p.get_filename() or "").endswith(".xlsx")).get_payload(decode=True)
-    sheet = load_workbook(io.BytesIO(xlsx))["All Employees"]
-    codes = {sheet.cell(r, 1).value for r in range(2, sheet.max_row + 1)}
-    assert codes == {"E3", "E4", "E5"}                              # only Vikram's people
-
-
-def test_hod_emails_can_be_switched_off(engine, settings):
-    from core.config import EmailSettings
-    from daily.settings_store import save_email_settings
-
-    with session_scope(engine) as s:
-        _import(s)
-        save_email_settings(s, EmailSettings(send_to_hods=False, wait_for_bizom=False), "tester")
-        _, outcomes = service.upload_and_send(s, settings, "summary.xlsx", summary_file(CASES), "tester")
-    assert [o.scope for o in outcomes] == ["ALL"]
-
-
-def test_scope_label_and_email_breakdown(engine, settings):
     assert scope_label("HOD:Asha Rao") == "HOD Asha Rao"
+
+
+def test_routing_workbook_columns_status_and_issue(engine):
+    wb = master_file([])
+    from openpyxl import Workbook
+    book = Workbook()
+    book.active.title = "Summary"
+    ws = book.create_sheet("Employee_Master")
+    ws.append(["Employee_Code", "Employee_Name", "Department", "DOJ", "Employee_Status", "HOD_Name", "HOD_Email", "Sub_Split_ID",
+               "Report_To_Type", "Report_To_Email", "Reporting_Manager_Name", "Routing_Status", "Issues"])
+    ws.append(["SL1", "ONE", "SALES", "2020-01-01", None, "ARUN MISHRA", "arun@example.com", "lead@example.com", "", "", "RAVI", "READY", None])
+    ws.append(["SL2", "TWO", "SALES", "2020-01-01", "Inactive", "ARUN MISHRA", "arun@example.com", "", "", "", "", "READY", None])
+    ws.append(["HO3", "THREE", "CS", "", None, "VIKAS", "vaibhav@example.com", "", "", "", "", "BLOCKED", "HOD_EMAIL_CONFLICT"])
+    buf = io.BytesIO()
+    book.save(buf)
+    assert wb  # (the plain amendment layout still works: see the tests above)
     with session_scope(engine) as s:
-        _import(s)
-        up = service.process_upload(s, settings, "summary.xlsx", summary_file(CASES), "tester")
-        ins = json.loads(up.insights)
-    _, html, _ = email_parts("APIS", DAY, "ALL", ins, "%d-%b-%Y", "X", ["HR"], None)
-    assert "By department" in html and "Vikram Shah" in html
+        res = emp.import_rows(s, emp.read_master_file("routing.xlsx", buf.getvalue()), "tester")
+        assert res.added == 3 and not res.problems
+        assert emp.get(s, "SL1").hod_name == "Arun Mishra" and emp.get(s, "SL1").reporting_manager == "RAVI"
+        assert emp.get(s, "SL2").status == emp.LEFT
+        assert emp.get(s, "HO3").routing_issue == "HOD_EMAIL_CONFLICT"
 
 
 # ------------------------------------------------------------------ over HTTP

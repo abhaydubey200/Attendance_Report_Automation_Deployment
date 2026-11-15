@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, apiUrl } from "../api/client";
-import { useAction, useApi } from "../api/useApi";
-import type { BreakdownRow, DayDetail, DayListItem, EmailResult, EmployeeRow, Highlight, Insights } from "../api/types";
+import { apiUrl } from "../api/client";
+import { useApi } from "../api/useApi";
+import type { BreakdownRow, DayDetail, DayListItem, EmployeeRow, Highlight, Insights } from "../api/types";
 import { SOURCE_LABELS, scopeLabel } from "../api/types";
 import { Link } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
 import { HBars, LineChart, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
-import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
+import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
 import { formatDate } from "../format";
 
 export function HighlightList({ items }: { items: Highlight[] }) {
@@ -57,10 +56,7 @@ export function InsightsPage() {
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("");
-  const [preview, setPreview] = useState(false);
   const day = useApi<DayDetail>(date ? `/v1/days/${date}` : null);
-  const send = useAction();
-  const { hasPermission } = useAuth();
 
   useEffect(() => setScope("ALL"), [date]);
   useEffect(() => setDept(""), [scope]);
@@ -78,12 +74,6 @@ export function InsightsPage() {
     .map((r) => r.department || r.category))].sort(), [day.data, scope]);
   const bd = ins ? breakdownOf(ins, scope) : { by: "Category", rows: [] };
   const trend = useMemo(() => [...(days.data ?? [])].reverse().slice(-30), [days.data]);
-
-  async function sendNow() {
-    const res = await send.run(() => api.post<{ mode: string; email_results: EmailResult[] }>(`/v1/days/${date}/send`, { scopes: null }),
-      (r) => r.email_results.map((e) => `${e.scope_label}: ${e.status === "SAVED" ? "saved (test mode)" : e.status.replace("_", " ").toLowerCase()}`).join(" · "));
-    if (res) day.reload();
-  }
 
   if (days.loading) return <Loading />;
   if (days.data && !days.data.length) {
@@ -115,22 +105,11 @@ export function InsightsPage() {
         <div className="toolbar-actions">
           <a className="btn btn-ghost btn-inline" href={apiUrl(`/v1/days/${date}/excel`, { scope })}>Excel</a>
           <a className="btn btn-ghost btn-inline" href={apiUrl(`/v1/days/${date}/dashboard`, { scope })}>HTML dashboard</a>
-          <button className="btn btn-ghost btn-inline" onClick={() => setPreview(!preview)}>{preview ? "Hide" : "Preview"} email</button>
-          {hasPermission("UPLOAD_AND_SEND") && (
-            <button className="btn btn-primary btn-inline" disabled={send.busy} onClick={() => void sendNow()}>
-              {send.busy ? "Sending…" : "Send emails"}
-            </button>
-          )}
+          <Link className="btn btn-primary btn-inline" to={`/mail?date=${date}`}>Daily emails</Link>
         </div>
       </Toolbar>
-      <ActionMessages error={send.error} message={send.message} />
       {day.error && <ErrorNotice error={day.error} />}
       {day.loading && <Loading />}
-      {preview && date && (
-        <Card title="Email preview">
-          <iframe className="email-frame" sandbox="" title="Email preview" src={apiUrl(`/v1/days/${date}/email-preview`, { scope })} />
-        </Card>
-      )}
       {s && data && ins && (
         <>
           <div className="kpi-grid">
@@ -245,7 +224,7 @@ export function InsightsPage() {
           {day.data && day.data.emails.length > 0 && (
             <Card title="Emails for this day">
               <DataTable rows={day.data.emails} rowKey={(e) => `${e.scope}-${e.sent_at}`} columns={[
-                { header: "Report", render: (e) => scopeLabel(e.scope) },
+                { header: "To", render: (e) => scopeLabel(e.scope) },
                 { header: "To", render: (e) => e.recipients },
                 { header: "Status", render: (e) => <StatusBadge value={e.status} /> },
                 { header: "Mode", render: (e) => e.mode },

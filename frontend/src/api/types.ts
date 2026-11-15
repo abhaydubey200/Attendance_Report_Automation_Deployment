@@ -128,14 +128,6 @@ export interface EmployeeRow {
   flags: string[];
 }
 
-export interface EmailResult {
-  scope: string;
-  scope_label: string;
-  recipients: string[];
-  status: "SENT" | "SAVED" | "FAILED" | "NO_RECIPIENTS";
-  detail: string | null;
-}
-
 export interface DayDetail {
   upload_id: number;
   report_date: string;
@@ -152,7 +144,7 @@ export interface DayDetail {
 export interface UploadResult extends DayDetail {
   auto_sent: boolean;
   send_note: string | null;
-  email_results: EmailResult[];
+  mail: MailItem[];
 }
 
 export interface DayListItem {
@@ -183,10 +175,12 @@ export interface EmailLogRow {
 
 export interface EmailSettings {
   mode: "test" | "live";
+  provider: "smtp" | "graph" | "gmail";
+  approval_required: boolean;
   auto_send: boolean;
-  send_to_hods: boolean;
   wait_for_bizom: boolean;
   sender: string | null;
+  reply_to: string | null;
   smtp_host: string | null;
   smtp_port: number;
   smtp_starttls: boolean;
@@ -194,22 +188,87 @@ export interface EmailSettings {
   subject_prefix: string;
   attach_excel: boolean;
   attach_dashboard: boolean;
-}
-
-export interface RecipientRow {
-  name: string;
-  email: string;
-  scope: string;
-  active: boolean;
+  retry_attempts: number;
+  team_emails: boolean;
+  hod_summary: boolean;
+  director_report: boolean;
+  hr_exceptions: boolean;
+  hod_cc_on_team: boolean;
+  hr_cc_on_hod_summary: boolean;
+  director_name: string;
+  director_emails: string[];
+  hr_emails: string[];
 }
 
 export interface SettingsData {
   rules: Rules;
   email: EmailSettings;
   smtp_password_set: boolean;
-  recipients: RecipientRow[];
+  secrets: Record<string, boolean>;
   categories: string[];
   public_url: string | null;
+}
+
+export type MailStatus = "PENDING" | "SENT" | "SAVED" | "FAILED" | "HELD" | "DISABLED" | "DUPLICATE" | "SUPERSEDED";
+
+export interface MailCounts {
+  total: number;
+  present: number;
+  absent: number;
+  leave: number;
+  od: number;
+  wfh: number;
+  late: number;
+  missing_punch: number;
+  week_off: number;
+  not_tracked: number;
+  no_record: number;
+  attendance_pct: number | null;
+  attention: number;
+}
+
+export interface MailItem {
+  id: number;
+  report_date: string;
+  key: string;
+  name: string;
+  role: string;
+  to: string;
+  cc: string;
+  subject: string;
+  status: MailStatus;
+  note: string | null;
+  attempts: number;
+  team: number;
+  summary: number;
+  company: number;
+  exceptions: number;
+  attention: number;
+  counts: { team: MailCounts; summary: MailCounts | null; company: MailCounts | null; exceptions: number };
+  sent_at: string | null;
+  approved_by: string | null;
+}
+
+export interface DayMail {
+  report_date: string;
+  mode: "test" | "live";
+  approval_required: boolean;
+  provider: string;
+  items: MailItem[];
+  status: Partial<Record<MailStatus, number>>;
+  planned: boolean;
+  sent_now?: number;
+}
+
+export interface RoutingOverview {
+  employees: number;
+  detail_total: number;
+  routed_to_people: number;
+  routed_to_director: number;
+  unique: boolean;
+  recipients: { key: string; name: string; role: string; to: string[]; cc: string[]; team: number; summary: number; status: string; note: string | null }[];
+  held: { code: string; name: string; department: string; hod: string; issue: string | null }[];
+  rules: Record<string, number>;
 }
 
 export interface Employee {
@@ -228,6 +287,7 @@ export interface Employee {
   source: string;
   updated_at: string | null;
   updated_by: string | null;
+  routing_issue: string;
 }
 
 export interface EmployeeSummary {
@@ -253,6 +313,11 @@ export interface ImportResult {
   not_in_file: number;
   problems: string[];
   problem_count: number;
+  routing?: {
+    config?: { applied: Record<string, boolean | string>; disabled: string[] };
+    recipients?: { imported: number; switched_off: number };
+    coverage?: { checked: number; differences: number; examples: { code: string; issue: string }[] };
+  };
 }
 
 export interface EmployeeChange {

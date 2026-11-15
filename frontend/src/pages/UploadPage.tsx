@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { UploadResult } from "../api/types";
-import { Card, DataTable, KpiCard, Notice, PageHeader, StatusBadge } from "../components/ui";
+import { Card, KpiCard, Notice, PageHeader } from "../components/ui";
 import { HighlightList } from "./InsightsPage";
 import { formatDate } from "../format";
 
@@ -48,12 +48,13 @@ export function UploadPage() {
   }
 
   const s = result?.insights.scopes.ALL.summary;
-  const sentCount = result?.email_results.filter((r) => r.status === "SENT" || r.status === "SAVED").length ?? 0;
+  const sentCount = result?.mail.filter((m) => m.status === "SENT" || m.status === "SAVED").length ?? 0;
+  const waiting = result?.mail.filter((m) => m.status === "PENDING").length ?? 0;
   const bz = result?.insights.sources?.bizom;
 
   return (
     <>
-      <PageHeader title="Upload today's attendance" subtitle="Pocket HRMS Attendance Summary and the Bizom attendance report of the same day. Drop both together, or one at a time." />
+      <PageHeader title="Upload yesterday's attendance" subtitle="Pocket HRMS Attendance Summary and the Bizom attendance report of the same day. Drop both together, or one at a time." />
       <div className={`dropzone${drag ? " drag" : ""}${busy ? " busy" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}
         onClick={() => !busy && input.current?.click()} role="button" tabIndex={0}
@@ -87,8 +88,9 @@ export function UploadPage() {
             {formatDate(result.report_date)} processed: {result.employees} employees
             {result.insights.excluded ? ` (${result.insights.excluded} test / inactive record(s) skipped)` : ""}.{" "}
             {result.auto_sent
-              ? `${sentCount} email(s) ${result.email_results.some((r) => r.status === "SAVED") ? "prepared (test mode)" : "sent"}.`
-              : result.send_note ?? "Auto-send is off."}{" "}
+              ? `${sentCount} email(s) ${result.mail.some((m) => m.status === "SAVED") ? "saved to the outbox (test mode)" : "sent"}.`
+              : result.send_note ?? ""}{" "}
+            {waiting > 0 && <><Link to={`/mail?date=${result.report_date}`}><strong>Review and approve {waiting} email(s) →</strong></Link>{" "}</>}
             <Link to={`/insights?date=${result.report_date}`}>Open insights →</Link>
           </Notice>
           <div className="kpi-grid">
@@ -103,19 +105,6 @@ export function UploadPage() {
           <Card title="Highlights">
             <HighlightList items={result.insights.scopes.ALL.highlights} />
           </Card>
-          {result.email_results.length > 0 && (
-            <Card title="Emails">
-              <DataTable rows={result.email_results} rowKey={(r) => r.scope} columns={[
-                { header: "Report", render: (r) => r.scope_label },
-                { header: "To", render: (r) => r.recipients.join(", ") || "—" },
-                { header: "Status", render: (r) => <StatusBadge value={r.status} /> },
-                { header: "Note", render: (r) => (r.status === "SAVED" ? "Test mode: saved, not sent" : r.detail ?? "") },
-              ]} />
-              {result.email_results.some((r) => r.status === "NO_RECIPIENTS") && (
-                <p className="muted small">Add HR/Directors in <Link to="/settings">Settings</Link> and HOD emails on <Link to="/employees">Employees</Link>, then use “Send emails” on the Insights page.</p>
-              )}
-            </Card>
-          )}
         </>
       )}
     </>

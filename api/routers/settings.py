@@ -1,4 +1,4 @@
-"""Settings: counting rules, recipients, email. Changes are audited."""
+"""Settings: counting rules and email (sender, provider, routing switches). Changes are audited."""
 
 from __future__ import annotations
 
@@ -13,8 +13,7 @@ from sqlalchemy.orm import Session
 from api.deps import get_db, get_settings, require
 from core.config import EmailSettings, Rules, Settings
 from daily.mailer import MailError, build_message, send
-from daily.settings_store import (get_email_settings, get_rules, list_recipients, replace_recipients, save_email_settings,
-                                  save_rules, valid_email)
+from daily.settings_store import get_email_settings, get_rules, save_email_settings, save_rules, valid_email
 from database.models.daily import DayUpload
 from security.audit import record_activity
 from security.permissions import Perm, Principal
@@ -37,7 +36,9 @@ def get_all(_: Principal = Depends(require(Perm.MANAGE_SETTINGS)), settings: Set
         "rules": get_rules(db, settings).model_dump(),
         "email": get_email_settings(db, settings).model_dump(),
         "smtp_password_set": bool(os.environ.get("SMTP_PASSWORD")),
-        "recipients": [{"name": r.name, "email": r.email, "scope": r.scope, "active": r.active} for r in list_recipients(db)],
+        "secrets": {name: bool(os.environ.get(name)) for name in ("SMTP_PASSWORD", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID",
+                                                                   "GRAPH_CLIENT_SECRET", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
+                                                                   "GMAIL_REFRESH_TOKEN")},
         "categories": _known_categories(db),
         "public_url": settings.app.public_url,
     }
@@ -63,30 +64,22 @@ def put_rules(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
 def put_email(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SETTINGS)), db: Session = Depends(get_db)) -> dict:
     try:
         cfg = EmailSettings.model_validate(body)
-        if cfg.sender and not valid_email(cfg.sender):
-            raise ValueError("Sender is not a valid email address.")
-        if cfg.mode == "live" and not (cfg.smtp_host and cfg.sender):
-            raise ValueError("Live mode needs the SMTP server and the sender address.")
+        cfg.director_emails = [a.strip().lower() for a in cfg.director_emails if a.strip()]
+        cfg.hr_emails = [a.strip().lower() for a in cfg.hr_emails if a.strip()]
+        for label, addrs in (("Sender", [cfg.sender] if cfg.sender else []), ("Reply-to", [cfg.reply_to] if cfg.reply_to else []),
+                             ("Director", cfg.director_emails), ("HR mailbox", cfg.hr_emails)):
+            bad = [a for a in addrs if not valid_email(a)]
+            if bad:
+                raise ValueError(f"{label} is not a valid email address: {', '.join(bad)}")
+        if cfg.mode == "live" and not cfg.sender:
+            raise ValueError("Live mode needs the sender mailbox.")
+        if cfg.mode == "live" and cfg.provider == "smtp" and not cfg.smtp_host:
+            raise ValueError("Live mode with SMTP needs the SMTP server.")
     except (ValidationError, ValueError) as exc:
         raise _bad(exc) from None
     save_email_settings(db, cfg, principal.username)
     record_activity(db, "SETTINGS_EMAIL", "SUCCESS", username=principal.username, detail=cfg.model_dump())
     return cfg.model_dump()
-
-
-class RecipientsIn(BaseModel):
-    recipients: list[dict]
-
-
-@router.put("/recipients")
-def put_recipients(body: RecipientsIn, principal: Principal = Depends(require(Perm.MANAGE_SETTINGS)),
-                   db: Session = Depends(get_db)) -> dict:
-    try:
-        rows = replace_recipients(db, body.recipients)
-    except ValueError as exc:
-        raise _bad(exc) from None
-    record_activity(db, "SETTINGS_RECIPIENTS", "SUCCESS", username=principal.username, detail={"count": len(rows)})
-    return {"count": len(rows)}
 
 
 class TestEmailIn(BaseModel):

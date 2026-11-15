@@ -4,6 +4,7 @@ Statuses (how each is decided is in Settings -> Counting rules):
   PRESENT        two or more punches
   MISSING_PUNCH  exactly one punch (counted present unless the rule says otherwise)
   ON_DUTY        a Type code listed as on duty (e.g. LD)
+  WFH            a Type code listed as work from home (counts as present)
   HALF_DAY       leave with a half-day portion
   LEAVE          any other Type code (PL, SL, ...)
   ABSENT         no punch (per rule)
@@ -23,8 +24,8 @@ from datetime import date, datetime
 
 from core.config import Rules
 
-STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "HALF_DAY", "LEAVE", "ABSENT", "WEEK_OFF", "NOT_TRACKED"]
-STATUS_LABEL = {"PRESENT": "Present", "MISSING_PUNCH": "Missing punch", "ON_DUTY": "On duty", "HALF_DAY": "Half day",
+STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "WFH", "HALF_DAY", "LEAVE", "ABSENT", "WEEK_OFF", "NOT_TRACKED"]
+STATUS_LABEL = {"PRESENT": "Present", "MISSING_PUNCH": "Missing punch", "ON_DUTY": "On duty", "WFH": "Work from home", "HALF_DAY": "Half day",
                 "LEAVE": "Leave", "ABSENT": "Absent", "WEEK_OFF": "Week off", "NOT_TRACKED": "Not tracked"}
 UNCOUNTED = ("NOT_TRACKED", "WEEK_OFF")       # left out of attendance %
 HRMS, BIZOM, BOTH = "HRMS", "BIZOM", "HRMS+BIZOM"
@@ -109,6 +110,8 @@ def bizom_result(code: str, status: str, rules: Rules) -> tuple[str, str | None]
         return "WEEK_OFF", None
     if status in {c.strip().upper() for c in rules.on_duty_codes}:
         return "ON_DUTY", status
+    if status in {c.strip().upper() for c in rules.wfh_codes}:
+        return "WFH", status
     if status in ("HD", "HALF", "HALF DAY"):
         return "HALF_DAY", status
     return "LEAVE", status
@@ -140,7 +143,7 @@ def merge_bizom(results: list[EmployeeResult], bizom, report_date: date, rules: 
         stats["matched"] += 1
         res.bizom_status, res.designation, res.hq = rec.status or None, rec.designation, rec.hq
         bz_status, bz_leave = bizom_result(rec.code, rec.status, rules)
-        if res.status in ("PRESENT", "MISSING_PUNCH", "HALF_DAY", "ON_DUTY"):
+        if res.status in ("PRESENT", "MISSING_PUNCH", "HALF_DAY", "ON_DUTY", "WFH"):
             res.source = BOTH
             continue
         if res.status == "LEAVE" and bz_status != "PRESENT":
@@ -180,6 +183,7 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
 
     excludes = [re.compile(p, re.IGNORECASE) for p in rules.exclude_codes]
     on_duty = {c.strip().upper() for c in rules.on_duty_codes}
+    wfh = {c.strip().upper() for c in rules.wfh_codes}
     late_after, early_before = _minutes(rules.late_after), _minutes(rules.early_before)
     results, excluded = [], 0
     for r in rows:
@@ -195,6 +199,8 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
 
         if leave and leave in on_duty:
             status = "ON_DUTY"
+        elif leave and leave in wfh:
+            status = "WFH"
         elif leave and portion and "half" in portion.lower():
             status = "HALF_DAY"
         elif leave:
@@ -235,7 +241,7 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
 
 # ---------------------------------------------------------------------------- insights
 def _present_equivalent(c: Counter, rules: Rules) -> float:
-    return (c["PRESENT"] + c["ON_DUTY"] + (c["MISSING_PUNCH"] if rules.single_punch_counts_present else 0)
+    return (c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + (c["MISSING_PUNCH"] if rules.single_punch_counts_present else 0)
             + 0.5 * c["HALF_DAY"])
 
 
@@ -324,8 +330,9 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
     if s["avg_work_hours"] is not None:
         out.append({"kind": "info", "text": f"Average working time {s['avg_work_hours']} h; {s['short_hours']} worked less than "
                                             f"{rules.min_work_hours:g} h, {s['long_hours']} more than {rules.long_work_hours:g} h."})
-    if c["LEAVE"] or c["ON_DUTY"] or c["HALF_DAY"]:
-        out.append({"kind": "info", "text": f"{c['LEAVE']} on leave, {c['HALF_DAY']} half day, {c['ON_DUTY']} on duty."})
+    if c["LEAVE"] or c["ON_DUTY"] or c["HALF_DAY"] or c["WFH"]:
+        out.append({"kind": "info", "text": f"{c['LEAVE']} on leave, {c['HALF_DAY']} half day, {c['ON_DUTY']} on duty"
+                                            + (f", {c['WFH']} working from home" if c["WFH"] else "") + "."})
     if c["WEEK_OFF"]:
         out.append({"kind": "info", "text": f"{c['WEEK_OFF']} on week off (per Bizom); not counted in attendance %."})
     if c["NOT_TRACKED"]:
@@ -338,7 +345,7 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
 def _breakdown_row(name: str, s: dict, hod: str | None = None) -> dict:
     c = s["counts"]
     return {"name": name, "hod": hod, "employees": s["employees"], "tracked": s["tracked"],
-            "attendance_pct": s["attendance_pct"], "present": c["PRESENT"] + c["ON_DUTY"] + c["MISSING_PUNCH"],
+            "attendance_pct": s["attendance_pct"], "present": c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + c["MISSING_PUNCH"],
             "absent": c["ABSENT"], "late": s["late"], "leave": c["LEAVE"] + c["HALF_DAY"],
             "not_tracked": c["NOT_TRACKED"] + c["WEEK_OFF"]}
 

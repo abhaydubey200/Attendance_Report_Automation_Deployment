@@ -54,7 +54,7 @@ def test_cli_upload_processes_and_saves_emails(isolated_env, tmp_path, capsys):
     assert "13-Nov-2026: 42 employees processed." in out and "Waiting for the Bizom file" in out
     assert main.main(["upload", str(b)]) == 0                       # second source merges and triggers the emails
     out = capsys.readouterr().out
-    assert "44 employees processed" in out and "NO_RECIPIENTS" in out
+    assert "44 employees processed" in out and "Director email not set" in out   # emails prepared, held until set up
     assert main.main(["upload", str(f)]) == 3                       # same date again without --replace
     assert "already uploaded" in capsys.readouterr().out
     assert main.main(["upload", str(f), "--replace"]) == 0

@@ -24,10 +24,13 @@ from ingestion.file_reader import ReadError, read_raw
 
 ACTIVE, LEFT = "ACTIVE", "LEFT"
 DIRECT = "Direct to HOD"
-EDITABLE = ("name", "department", "date_of_joining", "hod_name", "hod_email", "team_lead_email", "reporting_manager")
+EDITABLE = ("name", "department", "date_of_joining", "hod_name", "hod_email", "team_lead_email", "reporting_manager",
+            "routing_issue")
+INACTIVE_WORDS = {"INACTIVE", "LEFT", "EXITED", "RESIGNED", "SEPARATED", "TERMINATED", "N"}
 _SPLIT = re.compile(r"[,;/\s]+")
 
-# Header names in the HR Excel (matched case-insensitively, spaces/NBSP collapsed).
+# Header names in HR's Excel files (case-insensitive; '_', spaces and NBSP treated alike). Works for the
+# Employee Amendment file and the Employee_Master sheet of the email routing workbook.
 COLUMNS = {
     "code": ("employee code", "emp code", "code"),
     "name": ("employee name", "name"),
@@ -36,8 +39,11 @@ COLUMNS = {
     "hod_name": ("hod", "hod name"),
     "hod_email": ("email id - hod", "hod email", "email id hod"),
     "team_lead_email": ("sub split id", "team lead email", "sub split"),
-    "reporting_manager": ("reporting manager",),
+    "reporting_manager": ("reporting manager", "reporting manager name"),
+    "status": ("employee status", "status"),
+    "routing_issue": ("issues", "routing issue"),
 }
+ROUTING_SHEET = "Employee_Master"
 
 
 class EmployeeError(ValueError):
@@ -105,6 +111,7 @@ def to_dict(e: Employee) -> dict:
             "hod_name": e.hod_name or "", "hod_email": e.hod_email or "", "team_lead_email": e.team_lead_email or "",
             "team": team_of(e.team_lead_email), "reporting_manager": e.reporting_manager or "", "status": e.status,
             "exit_date": e.exit_date.isoformat() if e.exit_date else None, "source": e.source,
+            "routing_issue": e.routing_issue or "",
             "updated_at": e.updated_at.isoformat() if e.updated_at else None, "updated_by": e.updated_by}
 
 
@@ -114,17 +121,40 @@ def _log(session: Session, code: str, action: str, changes: dict | None, actor: 
 
 
 # ---------------------------------------------------------------------------- reading HR's Excel
-def read_master_file(filename: str, data: bytes) -> list[dict]:
+def _ext(filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in ("xlsx", "csv"):
         raise EmployeeError("Upload the employee list as .xlsx or .csv.")
+    return ext
+
+
+def _header_key(value) -> str:
+    return _clean(str(value or "").replace("_", " ")).lower()
+
+
+def _sheet(data: bytes, ext: str, name: str | None) -> list[list[str]]:
     try:
-        raw, _ = read_raw(data, ext)
+        return read_raw(data, ext, name)[0]
     except ReadError as exc:
         raise EmployeeError(str(exc)) from exc
+
+
+def sheet_names(filename: str, data: bytes) -> list[str]:
+    ext = _ext(filename)
+    if ext != "xlsx":
+        return []
+    try:
+        return read_raw(data, ext)[1]
+    except ReadError as exc:
+        raise EmployeeError(str(exc)) from exc
+
+
+def read_master_file(filename: str, data: bytes) -> list[dict]:
+    ext = _ext(filename)
+    raw = _sheet(data, ext, ROUTING_SHEET if ROUTING_SHEET in sheet_names(filename, data) else None)
     header_at, mapping = None, {}
     for i, row in enumerate(raw[:20]):
-        cells = [_clean(c).lower() for c in row]
+        cells = [_header_key(c) for c in row]
         found = {}
         for field_, names in COLUMNS.items():
             for j, c in enumerate(cells):
@@ -178,6 +208,8 @@ def _validated(data: dict, hods: dict[str, str], depts: dict[str, str], partial:
             out[f] = text or None
         elif f == "name":
             out[f] = _clean(v) or None
+        elif f == "routing_issue":
+            out[f] = _given(v).upper() or None
         else:
             out[f] = _given(v) or None
     if not partial and not out.get("name"):
@@ -292,6 +324,8 @@ def import_rows(session: Session, rows: list[dict], actor: str) -> ImportResult:
             res.problems.append(f"{code}: appears more than once - first row used.")
             continue
         seen.add(code)
+        inactive = _clean(raw.get("status")).upper() in INACTIVE_WORDS
+        raw = {k: v for k, v in raw.items() if k != "status"}
         try:
             values = _validated({k: v for k, v in raw.items() if k != "code"}, hods, depts)
         except EmployeeError as exc:
@@ -310,12 +344,14 @@ def import_rows(session: Session, rows: list[dict], actor: str) -> ImportResult:
                 continue
         e = existing.get(code)
         if e is None:
-            e = Employee(code=code, status=ACTIVE, source="IMPORT", updated_by=actor, **values)
+            e = Employee(code=code, status=LEFT if inactive else ACTIVE, source="IMPORT", updated_by=actor, **values)
             session.add(e)
             existing[code] = e
             _log(session, code, "IMPORT_ADD", None, actor)
             res.added += 1
             continue
+        if inactive and e.status != LEFT:
+            values["status"] = LEFT
         changes = {k: [getattr(e, k), v] for k, v in values.items() if getattr(e, k) != v}
         if changes:
             for k, (_, v) in changes.items():
@@ -373,3 +409,25 @@ def summary(session: Session) -> dict:
                      for h in sorted(directory)],
             "departments": sorted({e.department for e in active if e.department}),
             "hods_without_email": sorted(h for h, m in directory.items() if not m)}
+
+
+# ---------------------------------------------------------------------------- routing workbook extras
+def _table(rows: list[list[str]]) -> list[dict]:
+    if not rows:
+        return []
+    head = [_header_key(c) for c in rows[0]]
+    return [dict(zip(head, r)) for r in rows[1:] if any(_clean(c) for c in r)]
+
+
+def read_routing_extras(filename: str, data: bytes) -> dict:
+    """Recipient_Master, Email_Routing_Config and Employee_Coverage sheets, when present."""
+    names = sheet_names(filename, data)
+    out: dict = {}
+    if "Recipient_Master" in names:
+        out["recipients"] = _table(_sheet(data, "xlsx", "Recipient_Master"))
+    if "Email_Routing_Config" in names:
+        out["config"] = _table(_sheet(data, "xlsx", "Email_Routing_Config"))
+    if "Employee_Coverage" in names:
+        out["coverage"] = [{"code": r.get("employee code"), "detail": r.get("detail recipient"),
+                            "summary": r.get("hod summary recipient")} for r in _table(_sheet(data, "xlsx", "Employee_Coverage"))]
+    return out

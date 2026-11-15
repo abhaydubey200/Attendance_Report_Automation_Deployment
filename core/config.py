@@ -85,7 +85,8 @@ class Rules(BaseModel):
     early_before: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
     min_work_hours: float = Field(default=8.0, ge=0, le=24)
     long_work_hours: float = Field(default=11.0, ge=0, le=24)
-    on_duty_codes: list[str] = Field(default_factory=lambda: ["LD"])
+    on_duty_codes: list[str] = Field(default_factory=lambda: ["LD", "OD"])
+    wfh_codes: list[str] = Field(default_factory=lambda: ["WFH", "WH"])
     no_punch_with_shift: Literal["ABSENT", "NOT_TRACKED"] = "ABSENT"
     no_punch_no_shift: Literal["ABSENT", "NOT_TRACKED"] = "NOT_TRACKED"
     single_punch_counts_present: bool = True
@@ -106,22 +107,38 @@ class Rules(BaseModel):
 
 
 class EmailSettings(BaseModel):
-    """Email options. The SMTP password is never stored here: env SMTP_PASSWORD."""
+    """Email options. Secrets are never stored here: SMTP_PASSWORD, GRAPH_* and GMAIL_* come from the environment.
+
+    Routing (who gets what) comes from the employee master; these switches mirror the
+    Email_Routing_Config sheet of HR's routing workbook and can be changed in Settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["test", "live"] = "test"
-    auto_send: bool = True
-    send_to_hods: bool = True
-    wait_for_bizom: bool = True        # auto-send only once both the Pocket HRMS and Bizom files of the day are in          # each HOD gets their own people's report (email from the employee master)
-    sender: str | None = None
+    mode: Literal["test", "live"] = "test"            # test = save .eml files to the outbox; live = deliver
+    provider: Literal["smtp", "graph", "gmail"] = "gmail"   # APIS uses the Gmail API
+    approval_required: bool = True     # preview mode: emails wait on the Approve screen until someone approves
+    auto_send: bool = True             # when approval is off: send right after the upload
+    wait_for_bizom: bool = True        # only prepare/send once both the Pocket HRMS and Bizom files of the day are in
+    sender: str | None = None          # one central mailbox, e.g. attendance@<company domain>
+    reply_to: str | None = None
     smtp_host: str | None = None
     smtp_port: int = Field(default=587, gt=0, lt=65536)
     smtp_starttls: bool = True
     smtp_username: str | None = None
-    subject_prefix: str = "APIS Daily Attendance"
+    subject_prefix: str = "Daily Attendance"
     attach_excel: bool = True
     attach_dashboard: bool = True
+    retry_attempts: int = Field(default=3, ge=1, le=5)
+    # routing switches (Email_Routing_Config)
+    team_emails: bool = True           # team lead (Sub split ID) gets their own team's detail
+    hod_summary: bool = True           # each HOD gets a summary of everyone under them
+    director_report: bool = True       # Director gets the company summary by HOD (+ Director Office staff)
+    hr_exceptions: bool = True         # HR gets records that cannot be routed (only on days with any)
+    hod_cc_on_team: bool = False       # CC the HOD on team-lead emails (needs HR approval)
+    hr_cc_on_hod_summary: bool = False
+    director_name: str = "Director"
+    director_emails: list[str] = Field(default_factory=list)
+    hr_emails: list[str] = Field(default_factory=list)
 
 
 class ApiSection(_Strict):

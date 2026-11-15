@@ -12,7 +12,7 @@ from api.main import CSRF_HEADER, create_app
 from core.config import EmailSettings, Rules
 from daily import analysis, bizom, service
 from daily.analysis import FileError
-from daily.settings_store import replace_recipients, save_email_settings
+from daily.settings_store import save_email_settings
 from database.connection import session_scope
 from demo.synthetic import build_bizom_csv
 from tests.integration.test_daily import CASES, summary_file
@@ -83,13 +83,12 @@ def _hrms_rows():
 
 def test_upload_waits_for_bizom_then_sends(engine, settings):
     with session_scope(engine) as s:
-        save_email_settings(s, EmailSettings(), "tester")                     # default: wait for both files
-        replace_recipients(s, [{"name": "HR", "email": "hr@example.com", "scope": "ALL"}])
-        up, outcomes, note = service.upload_files_and_send(s, settings, [("summary.xlsx", summary_file(CASES))], "tester")
-        assert outcomes is None and "Waiting for the Bizom file" in note
+        save_email_settings(s, EmailSettings(approval_required=False, director_emails=["director@example.com"]), "tester")
+        up, items, note = service.upload_files_and_send(s, settings, [("summary.xlsx", summary_file(CASES))], "tester")
+        assert items == [] and "Waiting for the Bizom file" in note                # default: wait for both files
         assert json.loads(up.insights)["scopes"]["ALL"]["summary"]["counts"]["NOT_TRACKED"] == 1
-        up2, outcomes, note = service.upload_files_and_send(s, settings, [("bizom.csv", bizom_file(BIZOM))], "tester")
-        assert note is None and [o.status for o in outcomes] == ["SAVED"]
+        up2, items, note = service.upload_files_and_send(s, settings, [("bizom.csv", bizom_file(BIZOM))], "tester")
+        assert note is None and {i.recipient_key: i.status for i in items} == {"DIRECTOR": "SAVED", "HR": "HELD"}  # no HR mailbox
         assert up2.original_filename == "summary.xlsx" and up2.bizom_filename == "bizom.csv"   # HRMS kept, Bizom added
         ins = json.loads(up2.insights)
         assert ins["sources"]["bizom"]["decided"] == 3

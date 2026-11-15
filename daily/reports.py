@@ -73,13 +73,13 @@ def day_dict(d: date, e: EmployeeDay) -> dict:
 def _tally(days: list[dict], rules: Rules) -> dict:
     c = Counter(x["status"] for x in days)
     tracked = len(days) - sum(c[s] for s in UNCOUNTED)
-    present_eq = (c["PRESENT"] + c["ON_DUTY"] + (c["MISSING_PUNCH"] if rules.single_punch_counts_present else 0)
+    present_eq = (c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + (c["MISSING_PUNCH"] if rules.single_punch_counts_present else 0)
                   + 0.5 * c["HALF_DAY"])
     late = [x for x in days if "LATE" in x["flags"]]
     ins = [int(x["in_time"][:2]) * 60 + int(x["in_time"][3:5]) for x in days if x["in_time"] and x["status"] in ("PRESENT", "MISSING_PUNCH")]
     hours = [x["work_hours"] for x in days if x["work_hours"] is not None]
     avg_in = round(sum(ins) / len(ins)) if ins else None
-    return {"days": len(days), "tracked": tracked, "present": c["PRESENT"] + c["ON_DUTY"], "missing_punch": c["MISSING_PUNCH"],
+    return {"days": len(days), "tracked": tracked, "present": c["PRESENT"] + c["ON_DUTY"] + c["WFH"], "wfh": c["WFH"], "missing_punch": c["MISSING_PUNCH"],
             "half_day": c["HALF_DAY"], "leave": c["LEAVE"], "absent": c["ABSENT"], "week_off": c["WEEK_OFF"],
             "not_tracked": c["NOT_TRACKED"], "late": len(late), "left_early": sum(1 for x in days if "LEFT_EARLY" in x["flags"]),
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,

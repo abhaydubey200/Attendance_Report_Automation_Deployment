@@ -1,45 +1,8 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
-import type { EmailSettings, RecipientRow, Rules, SettingsData } from "../api/types";
+import type { EmailSettings, Rules, SettingsData } from "../api/types";
 import { ActionMessages, Card, ErrorNotice, Field, Loading, Notice, PageHeader } from "../components/ui";
-
-function Recipients({ initial, categories, onSaved }: { initial: RecipientRow[]; categories: string[]; onSaved: () => void }) {
-  const [rows, setRows] = useState<RecipientRow[]>(initial.length ? initial : [{ name: "", email: "", scope: "ALL", active: true }]);
-  const act = useAction();
-  const scopes = ["ALL", ...categories];
-  const set = (i: number, patch: Partial<RecipientRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  return (
-    <Card title="Who gets the reports">
-      <p className="muted small">Each HOD automatically gets the report for their own people, using the HOD email on the Employees screen.
-        Add HR and Directors here under “All employees” (full company report). A Pocket HRMS category (Sales, Plant…) only needs a row here if someone should get that unit's report too.</p>
-      <table className="edit-table">
-        <thead><tr><th>Name</th><th>Email</th><th>Receives report for</th><th>Active</th><th /></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td><input value={r.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="e.g. Sales Manager" /></td>
-              <td><input type="email" value={r.email} onChange={(e) => set(i, { email: e.target.value })} placeholder="name@apisindia.com" /></td>
-              <td>
-                <select value={r.scope} onChange={(e) => set(i, { scope: e.target.value })}>
-                  {[...new Set([...scopes, r.scope])].map((s) => <option key={s} value={s}>{s === "ALL" ? "All employees" : s}</option>)}
-                </select>
-              </td>
-              <td><input type="checkbox" checked={r.active} onChange={(e) => set(i, { active: e.target.checked })} /></td>
-              <td><button className="btn btn-ghost btn-small" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <ActionMessages error={act.error} message={act.message} />
-      <div className="form-actions">
-        <button className="btn btn-ghost btn-inline" onClick={() => setRows([...rows, { name: "", email: "", scope: "ALL", active: true }])}>Add person</button>
-        <button className="btn btn-primary btn-inline" disabled={act.busy}
-          onClick={() => void act.run(() => api.put("/v1/settings/recipients", { recipients: rows }), "Recipients saved.").then((r) => r && onSaved())}>Save recipients</button>
-      </div>
-    </Card>
-  );
-}
 
 function RulesForm({ initial }: { initial: Rules }) {
   const [r, setR] = useState<Rules>(initial);
@@ -81,44 +44,92 @@ function RulesForm({ initial }: { initial: Rules }) {
   );
 }
 
-function EmailForm({ initial, passwordSet }: { initial: EmailSettings; passwordSet: boolean }) {
+const list = (v: string) => v.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+
+function Check({ on, set, children }: { on: boolean; set: (v: boolean) => void; children: string }) {
+  return <label className="check"><input type="checkbox" checked={on} onChange={(x) => set(x.target.checked)} /> {children}</label>;
+}
+
+function EmailForm({ initial, secrets }: { initial: EmailSettings; secrets: Record<string, boolean> }) {
   const [e, setE] = useState<EmailSettings>(initial);
+  const [director, setDirector] = useState(initial.director_emails.join(", "));
+  const [hr, setHr] = useState(initial.hr_emails.join(", "));
   const [to, setTo] = useState("");
   const act = useAction();
   const test = useAction();
+  const set = (patch: Partial<EmailSettings>) => setE({ ...e, ...patch });
+  const needed = e.provider === "smtp" ? ["SMTP_PASSWORD"] : e.provider === "graph" ? ["GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET"]
+    : ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"];
   return (
-    <Card title="Email">
-      <div className="form-grid">
-        <Field label="Mode">
-          <select value={e.mode} onChange={(x) => setE({ ...e, mode: x.target.value as EmailSettings["mode"] })}>
-            <option value="test">Test – save emails, don't send</option><option value="live">Live – send to managers</option>
-          </select>
-        </Field>
-        <Field label="Sender address"><input value={e.sender ?? ""} onChange={(x) => setE({ ...e, sender: x.target.value || null })} placeholder="hr-reports@apisindia.com" /></Field>
-        <Field label="SMTP server" hint="Microsoft 365: smtp.office365.com"><input value={e.smtp_host ?? ""} onChange={(x) => setE({ ...e, smtp_host: x.target.value || null })} /></Field>
-        <Field label="Port"><input type="number" value={e.smtp_port} onChange={(x) => setE({ ...e, smtp_port: Number(x.target.value) })} /></Field>
-        <Field label="SMTP username"><input value={e.smtp_username ?? ""} onChange={(x) => setE({ ...e, smtp_username: x.target.value || null })} /></Field>
-        <Field label="Subject starts with"><input value={e.subject_prefix} onChange={(x) => setE({ ...e, subject_prefix: x.target.value })} /></Field>
-      </div>
-      <label className="check"><input type="checkbox" checked={e.auto_send} onChange={(x) => setE({ ...e, auto_send: x.target.checked })} /> Send automatically after each upload</label>
-      <label className="check"><input type="checkbox" checked={e.wait_for_bizom} onChange={(x) => setE({ ...e, wait_for_bizom: x.target.checked })} /> Wait until both the Pocket HRMS and the Bizom file of the day are uploaded before sending</label>
-      <label className="check"><input type="checkbox" checked={e.send_to_hods} onChange={(x) => setE({ ...e, send_to_hods: x.target.checked })} /> Send each HOD the report for their own people (HOD email from the Employees screen)</label>
-      <label className="check"><input type="checkbox" checked={e.smtp_starttls} onChange={(x) => setE({ ...e, smtp_starttls: x.target.checked })} /> Use STARTTLS (encrypted connection)</label>
-      <label className="check"><input type="checkbox" checked={e.attach_excel} onChange={(x) => setE({ ...e, attach_excel: x.target.checked })} /> Attach Excel report</label>
-      <label className="check"><input type="checkbox" checked={e.attach_dashboard} onChange={(x) => setE({ ...e, attach_dashboard: x.target.checked })} /> Attach HTML dashboard</label>
-      <p className="muted small">SMTP password: {passwordSet ? "set (environment variable SMTP_PASSWORD)" : "not set – put SMTP_PASSWORD in the .env file on the server; it is never stored in the app."}</p>
-      <ActionMessages error={act.error} message={act.message} />
-      <div className="form-actions">
-        <button className="btn btn-primary btn-inline" disabled={act.busy} onClick={() => void act.run(() => api.put("/v1/settings/email", e), "Email settings saved.")}>Save email settings</button>
-      </div>
-      <div className="toolbar" style={{ marginTop: "1rem" }}>
-        <Field label="Send a test email to"><input type="email" value={to} onChange={(x) => setTo(x.target.value)} placeholder="you@apisindia.com" /></Field>
-        <button className="btn btn-ghost btn-inline" disabled={test.busy || !to}
-          onClick={() => void test.run(() => api.post<{ status: string; mode: string }>("/v1/settings/test-email", { to }),
-            (r) => (r.status === "SENT" ? "Test email sent." : "Test mode: saved to the outbox (not sent)."))}>Send test</button>
-      </div>
-      <ActionMessages error={test.error} message={test.message} />
-    </Card>
+    <>
+      <Card title="Who gets the daily emails">
+        <p className="muted small">Team leads (Sub split ID) and HODs come from the employee master on the Employees screen. One email per person per day.</p>
+        <div className="form-grid">
+          <Field label="Director name"><input value={e.director_name} onChange={(x) => set({ director_name: x.target.value })} /></Field>
+          <Field label="Director email(s)" hint="Company summary by HOD + Director Office staff. Comma separated.">
+            <input value={director} onChange={(x) => setDirector(x.target.value)} placeholder="director@apisindia.com" />
+          </Field>
+          <Field label="HR attendance mailbox" hint="Gets records that cannot be routed (only on days with any).">
+            <input value={hr} onChange={(x) => setHr(x.target.value)} placeholder="hr.attendance@apisindia.com" />
+          </Field>
+        </div>
+        <Check on={e.team_emails} set={(v) => set({ team_emails: v })}>Team leads get their own team's attendance</Check>
+        <Check on={e.hod_summary} set={(v) => set({ hod_summary: v })}>HODs get a summary of everyone under them</Check>
+        <Check on={e.director_report} set={(v) => set({ director_report: v })}>Director gets the company summary</Check>
+        <Check on={e.hr_exceptions} set={(v) => set({ hr_exceptions: v })}>HR gets the exception report</Check>
+        <Check on={e.hod_cc_on_team} set={(v) => set({ hod_cc_on_team: v })}>CC the HOD on team-lead emails (only if HR has approved)</Check>
+        <Check on={e.hr_cc_on_hod_summary} set={(v) => set({ hr_cc_on_hod_summary: v })}>CC the HR mailbox on HOD summaries</Check>
+      </Card>
+      <Card title="Sending">
+        <Check on={e.approval_required} set={(v) => set({ approval_required: v })}>Preview mode: emails wait on “Approve emails” until someone approves them</Check>
+        {!e.approval_required && <Check on={e.auto_send} set={(v) => set({ auto_send: v })}>Send automatically right after each upload</Check>}
+        <Check on={e.wait_for_bizom} set={(v) => set({ wait_for_bizom: v })}>Prepare the emails only once both the Pocket HRMS and the Bizom file of the day are uploaded</Check>
+        <Check on={e.attach_excel} set={(v) => set({ attach_excel: v })}>Attach the team list (.xlsx)</Check>
+        <Check on={e.attach_dashboard} set={(v) => set({ attach_dashboard: v })}>Attach the interactive HTML dashboard</Check>
+        <div className="form-grid">
+          <Field label="Mode">
+            <select value={e.mode} onChange={(x) => set({ mode: x.target.value as EmailSettings["mode"] })}>
+              <option value="test">Test – save emails to the outbox, don't deliver</option><option value="live">Live – deliver</option>
+            </select>
+          </Field>
+          <Field label="Mail provider">
+            <select value={e.provider} onChange={(x) => set({ provider: x.target.value as EmailSettings["provider"] })}>
+              <option value="smtp">SMTP (any mail server)</option><option value="graph">Microsoft 365 (Graph API)</option><option value="gmail">Google Workspace (Gmail API)</option>
+            </select>
+          </Field>
+          <Field label="Sender mailbox" hint="One central company mailbox, e.g. attendance@…"><input value={e.sender ?? ""} onChange={(x) => set({ sender: x.target.value || null })} placeholder="attendance@apisindia.com" /></Field>
+          <Field label="Reply-to (optional)"><input value={e.reply_to ?? ""} onChange={(x) => set({ reply_to: x.target.value || null })} /></Field>
+          {e.provider === "smtp" && (
+            <>
+              <Field label="SMTP server" hint="Microsoft 365: smtp.office365.com"><input value={e.smtp_host ?? ""} onChange={(x) => set({ smtp_host: x.target.value || null })} /></Field>
+              <Field label="Port"><input type="number" value={e.smtp_port} onChange={(x) => set({ smtp_port: Number(x.target.value) })} /></Field>
+              <Field label="SMTP username"><input value={e.smtp_username ?? ""} onChange={(x) => set({ smtp_username: x.target.value || null })} /></Field>
+            </>
+          )}
+          <Field label="Subject starts with"><input value={e.subject_prefix} onChange={(x) => set({ subject_prefix: x.target.value })} /></Field>
+          <Field label="Attempts per email" hint="Retries with a short pause if delivery fails.">
+            <input type="number" min={1} max={5} value={e.retry_attempts} onChange={(x) => set({ retry_attempts: Number(x.target.value) })} />
+          </Field>
+        </div>
+        {e.provider === "smtp" && <Check on={e.smtp_starttls} set={(v) => set({ smtp_starttls: v })}>Use STARTTLS (encrypted connection)</Check>}
+        <p className="muted small">
+          Secrets for {e.provider === "smtp" ? "SMTP" : e.provider === "graph" ? "Microsoft Graph" : "Gmail"} come only from the server's .env file:{" "}
+          {needed.map((n) => `${n} ${secrets[n] ? "✓ set" : "✗ not set"}`).join(" · ")}. They are never stored in the app.
+        </p>
+        <ActionMessages error={act.error} message={act.message} />
+        <div className="form-actions">
+          <button className="btn btn-primary btn-inline" disabled={act.busy}
+            onClick={() => void act.run(() => api.put("/v1/settings/email", { ...e, director_emails: list(director), hr_emails: list(hr) }), "Email settings saved.")}>Save email settings</button>
+        </div>
+        <div className="toolbar" style={{ marginTop: "1rem" }}>
+          <Field label="Send a test email to"><input type="email" value={to} onChange={(x) => setTo(x.target.value)} placeholder="you@apisindia.com" /></Field>
+          <button className="btn btn-ghost btn-inline" disabled={test.busy || !to}
+            onClick={() => void test.run(() => api.post<{ status: string; mode: string }>("/v1/settings/test-email", { to }),
+              (r) => (r.status === "SENT" ? "Test email sent." : "Test mode: saved to the outbox (not sent)."))}>Send test</button>
+        </div>
+        <ActionMessages error={test.error} message={test.message} />
+      </Card>
+    </>
   );
 }
 
@@ -126,15 +137,14 @@ export function SettingsPage() {
   const data = useApi<SettingsData>("/v1/settings");
   return (
     <>
-      <PageHeader title="Settings" subtitle="Recipients, counting rules and email" />
+      <PageHeader title="Settings" subtitle="Who gets the emails, how they are sent, and how attendance is counted" />
       {data.loading && <Loading />}
       {data.error && <ErrorNotice error={data.error} />}
       {data.data && (
         <>
-          {data.data.email.mode === "test" && <Notice kind="warn">Email is in test mode: reports are prepared and saved, but not sent.</Notice>}
-          <Recipients key={JSON.stringify(data.data.recipients)} initial={data.data.recipients} categories={data.data.categories} onSaved={data.reload} />
+          {data.data.email.mode === "test" && <Notice kind="warn">Email is in test mode: emails are prepared and saved to the outbox, but not delivered.</Notice>}
+          <EmailForm key={JSON.stringify(data.data.email)} initial={data.data.email} secrets={data.data.secrets ?? {}} />
           <RulesForm initial={data.data.rules} />
-          <EmailForm initial={data.data.email} passwordSet={data.data.smtp_password_set} />
         </>
       )}
     </>

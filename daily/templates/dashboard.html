@@ -73,8 +73,8 @@
 </main>
 <script>
 const D = {{ data_json | safe }};
-const COLORS = {PRESENT:"#2e7d4f", MISSING_PUNCH:"#c88a00", ON_DUTY:"#3b6fb6", HALF_DAY:"#d7ad5f", LEAVE:"#9f7b49", ABSENT:"#a52a1a", WEEK_OFF:"#6c8ea4", NOT_TRACKED:"#9a9a9a"};
-const LABELS = {PRESENT:"Present", MISSING_PUNCH:"Missing punch", ON_DUTY:"On duty", HALF_DAY:"Half day", LEAVE:"Leave", ABSENT:"Absent", WEEK_OFF:"Week off", NOT_TRACKED:"Not tracked"};
+const COLORS = {PRESENT:"#2e7d4f", MISSING_PUNCH:"#c88a00", ON_DUTY:"#3b6fb6", WFH:"#5a7fc0", HALF_DAY:"#d7ad5f", LEAVE:"#9f7b49", ABSENT:"#a52a1a", WEEK_OFF:"#6c8ea4", NOT_TRACKED:"#9a9a9a"};
+const LABELS = {PRESENT:"Present", MISSING_PUNCH:"Missing punch", ON_DUTY:"On duty", WFH:"Work from home", HALF_DAY:"Half day", LEAVE:"Leave", ABSENT:"Absent", WEEK_OFF:"Week off", NOT_TRACKED:"Not tracked"};
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const S = D.summary, C = S.counts;
 document.getElementById("title").textContent = D.title;
@@ -134,7 +134,7 @@ document.getElementById("search").addEventListener("input", render);
 function matches(r) {
   const f = statusFilter;
   if (f === "ALL") return true;
-  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF"].includes(r.status);
+  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WFH", "WEEK_OFF"].includes(r.status);
   if (["LATE", "LEFT_EARLY", "SHORT_HOURS"].includes(f)) return r.flags.includes(f);
   return r.status === f;
 }

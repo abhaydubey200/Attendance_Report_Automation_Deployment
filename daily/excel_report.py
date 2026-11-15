@@ -12,7 +12,7 @@ from daily.render import breakdown, scope_label, scoped_rows, sources_label
 
 BROWN, HONEY, CREAM, INK = "#835415", "#F5B800", "#FFF4E3", "#2B2118"
 STATUS_FILL = {"PRESENT": "#E4F1E8", "MISSING_PUNCH": "#FFF1D6", "ON_DUTY": "#E8F0FB", "HALF_DAY": "#FFF8E1",
-               "LEAVE": "#F3E8D9", "ABSENT": "#FBE4E1", "WEEK_OFF": "#EAF2F7", "NOT_TRACKED": "#EEEEEE"}
+               "LEAVE": "#F3E8D9", "ABSENT": "#FBE4E1", "WEEK_OFF": "#EAF2F7", "WFH": "#E8F0FB", "NOT_TRACKED": "#EEEEEE"}
 
 DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "category", 12), ("Department", "department", 18),
                ("HOD", "hod", 18), ("Team", "team", 14), ("Reporting manager", "manager", 20), ("Status", "status_label", 15),
@@ -50,7 +50,7 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
     ws.write(1, 0, f"Date: {report_date.strftime(date_format)}   |   Generated automatically from {sources_label(insights)}", f_sub)
     kpis = [("Employees", s["employees"]), ("Tracked", s["tracked"]), ("Attendance %", "" if s["attendance_pct"] is None else s["attendance_pct"]),
             ("Present", c["PRESENT"]), ("Absent", c["ABSENT"]), ("Late arrivals", s["late"]), ("Missing punch", c["MISSING_PUNCH"]),
-            ("Leave", c["LEAVE"]), ("Half day", c["HALF_DAY"]), ("On duty", c["ON_DUTY"]), ("Left early", s["left_early"]),
+            ("Leave", c["LEAVE"]), ("Half day", c["HALF_DAY"]), ("On duty", c["ON_DUTY"]), ("Work from home", c.get("WFH", 0)), ("Left early", s["left_early"]),
             ("Week off", c.get("WEEK_OFF", 0)), ("Not tracked", c["NOT_TRACKED"]), ("Average arrival", s["avg_in_time"] or "-"),
             ("Average working hours", s["avg_work_hours"] if s["avg_work_hours"] is not None else "-")]
     ws.write(3, 0, "Key figures", f_section)
@@ -111,7 +111,7 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
     sheet("Late Arrivals", [x for x in rows if "LATE" in x["flags"]], lambda x: -x["late_minutes"])
     sheet("Left Early", [x for x in rows if "LEFT_EARLY" in x["flags"]], lambda x: -x["early_minutes"])
     sheet("Missing Punch", [x for x in rows if x["status"] == "MISSING_PUNCH"])
-    sheet("Leave, On Duty, Week Off", [x for x in rows if x["status"] in ("LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF")])
+    sheet("Leave, On Duty, Week Off", [x for x in rows if x["status"] in ("LEAVE", "HALF_DAY", "ON_DUTY", "WFH", "WEEK_OFF")])
     sheet("Short Hours", [x for x in rows if "SHORT_HOURS" in x["flags"]], lambda x: x["work_hours"] or 0)
     sheet("Not Tracked", [x for x in rows if x["status"] == "NOT_TRACKED"])
     wb.close()

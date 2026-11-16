@@ -33,7 +33,7 @@ class AppSection(_Strict):
     company: str = "APIS India Limited"
     timezone: str = "Asia/Kolkata"
     date_format: str = "%d-%b-%Y"
-    datetime_format: str = "%d-%b-%Y %H:%M"
+    datetime_format: str = "%d-%b-%Y %I:%M %p"
     environment: Environment = "development"
     public_url: str | None = None          # link to this app in emails (intranet URL)
 
@@ -81,8 +81,12 @@ class Rules(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    late_after: str = Field(default="09:30", pattern=r"^\d{2}:\d{2}$")
-    early_before: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
+    late_after: str = Field(default="09:30", pattern=r"^\d{2}:\d{2}$")          # office opens
+    # Latest punch-in: a first punch after this is late, minutes counted from it. Arriving between late_after and
+    # flexi_until is on time. None = late after late_after. Everyone must still work min_work_hours from their punch-in.
+    flexi_until: str | None = Field(default="11:00", pattern=r"^\d{2}:\d{2}$")
+    # Office close: leaving before this WITHOUT completing min_work_hours = left early.
+    early_before: str = Field(default="19:30", pattern=r"^\d{2}:\d{2}$")
     min_work_hours: float = Field(default=8.0, ge=0, le=24)
     long_work_hours: float = Field(default=11.0, ge=0, le=24)
     on_duty_codes: list[str] = Field(default_factory=lambda: ["LD", "OD"])
@@ -91,9 +95,20 @@ class Rules(BaseModel):
     no_punch_no_shift: Literal["ABSENT", "NOT_TRACKED"] = "NOT_TRACKED"
     single_punch_counts_present: bool = True
     exclude_codes: list[str] = Field(default_factory=list)
-    bizom_include_codes: list[str] = Field(default_factory=lambda: ["^AP"])   # Bizom-only users to report besides the master
+    # Employee codes always counted as present (e.g. the Directors): never absent, late, left early, short hours or
+    # missing punch. A recorded leave / WFH / on duty still shows as such.
+    always_present_codes: list[str] = Field(default_factory=lambda: ["HO0034", "HO0077", "HO0098"])
+    # Pocket HRMS staff of these categories who are NOT in the employee master are left out of this tool
+    # (field sales: their attendance is handled by the separate Bizom tool). Listed master employees always count.
+    out_of_scope_categories: list[str] = Field(default_factory=lambda: ["Sales"])
 
-    @field_validator("exclude_codes", "bizom_include_codes")
+    @model_validator(mode="after")
+    def _flexi_after_start(self) -> "Rules":
+        if self.flexi_until and self.flexi_until < self.late_after:
+            raise ValueError("Latest punch-in must not be before the office opening time.")
+        return self
+
+    @field_validator("exclude_codes")
     @classmethod
     def _valid_patterns(cls, v: list[str]) -> list[str]:
         import re
@@ -107,24 +122,19 @@ class Rules(BaseModel):
 
 
 class EmailSettings(BaseModel):
-    """Email options. Secrets are never stored here: SMTP_PASSWORD, GRAPH_* and GMAIL_* come from the environment.
+    """Email options. Email is sent only through the Gmail API; its secrets (GMAIL_*) come only from the environment.
 
     Routing (who gets what) comes from the employee master; these switches mirror the
     Email_Routing_Config sheet of HR's routing workbook and can be changed in Settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["test", "live"] = "test"            # test = save .eml files to the outbox; live = deliver
-    provider: Literal["smtp", "graph", "gmail"] = "gmail"   # APIS uses the Gmail API
+    mode: Literal["test", "live"] = "test"            # test = save .eml files to the outbox; live = send via the Gmail API
     approval_required: bool = True     # preview mode: emails wait on the Approve screen until someone approves
     auto_send: bool = True             # when approval is off: send right after the upload
-    wait_for_bizom: bool = True        # only prepare/send once both the Pocket HRMS and Bizom files of the day are in
+    wait_for_permission: bool = True   # prepare emails only once the day's Permission Report is in as well
     sender: str | None = None          # one central mailbox, e.g. attendance@<company domain>
     reply_to: str | None = None
-    smtp_host: str | None = None
-    smtp_port: int = Field(default=587, gt=0, lt=65536)
-    smtp_starttls: bool = True
-    smtp_username: str | None = None
     subject_prefix: str = "Daily Attendance"
     attach_excel: bool = True
     attach_dashboard: bool = True
@@ -136,9 +146,22 @@ class EmailSettings(BaseModel):
     hr_exceptions: bool = True         # HR gets records that cannot be routed (only on days with any)
     hod_cc_on_team: bool = False       # CC the HOD on team-lead emails (needs HR approval)
     hr_cc_on_hod_summary: bool = False
+    test_recipient: str | None = None  # TESTING: deliver every email only to this address (real recipients shown inside)
+    test_cc: list[str] = Field(default_factory=list)   # TESTING: CC on every test email
     director_name: str = "Director"
     director_emails: list[str] = Field(default_factory=list)
     hr_emails: list[str] = Field(default_factory=list)
+
+
+class JobsSection(_Strict):
+    """Unattended jobs run by Windows Task Scheduler (main.py run-daily / backup / monthly / cleanup)."""
+
+    inbox_dir: Path                              # where the day's Pocket HRMS exports are dropped (env APP_INBOX_DIR)
+    permission_required: bool = False           # 09:30 job: wait for the Permission Report (False = go without it)
+    lock_stale_minutes: int = Field(default=120, ge=5)
+    backup_keep_days: int = Field(default=30, ge=1)
+    keep_months: int = Field(default=2, ge=1)    # months of daily rows kept (current + previous); older ones archived then removed
+    alert_emails: list[str] = Field(default_factory=list)   # job failures; empty = the HR mailbox in Email settings
 
 
 class ApiSection(_Strict):
@@ -187,6 +210,7 @@ class DatabaseProfile(_Strict):
     connect_timeout_seconds: int = 15
     pool_size: int = 5
     max_overflow: int = 5
+    production: bool = False          # a SQLite profile must say production: true to be used with APP_ENV=production
 
 
 class RoleDefinition(_Strict):
@@ -210,6 +234,7 @@ class SecurityConfig(_Strict):
 class Settings(_Strict):
     app: AppSection
     storage: StorageSection
+    jobs: JobsSection
     logging: LoggingSection
     uploads: UploadSection
     session: SessionSection
@@ -228,8 +253,8 @@ class Settings(_Strict):
     @model_validator(mode="after")
     def _environment_rules(self) -> "Settings":
         if self.environment == "production":
-            if self.database.backend == "sqlite":
-                raise ValueError("SQLite is not permitted in production; select an mssql profile")
+            if self.database.backend == "sqlite" and not self.database.production:
+                raise ValueError("The development SQLite profile is not permitted in production; use DB_PROFILE=sqlite_prod")
             key = self.api.secret_key.get_secret_value() if self.api.secret_key else ""
             if len(key) < 32:
                 raise ValueError("APP_SECRET_KEY (>= 32 characters) is required in production")
@@ -283,6 +308,9 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
     if env.get("APP_PUBLIC_URL"):
         app["public_url"] = env["APP_PUBLIC_URL"]
     storage["base_dir"] = resolve_path(env.get("APP_STORAGE_DIR") or storage.get("base_dir", "storage"))
+    jobs_cfg = dict(raw.get("jobs", {}))
+    jobs_cfg["inbox_dir"] = resolve_path(env.get("APP_INBOX_DIR") or jobs_cfg.get("inbox_dir")
+                                         or str(Path(storage["base_dir"]) / "inbox"))
     logging_cfg["dir"] = resolve_path(env.get("APP_LOG_DIR") or logging_cfg.get("dir", "logs"))
     if env.get("APP_LOG_LEVEL"):
         logging_cfg["level"] = env["APP_LOG_LEVEL"].upper()
@@ -309,12 +337,14 @@ def load_settings(config_dir: Path | None = None, env: Mapping[str, str] | None 
         api_cfg["host"] = env["API_HOST"]
     if env.get("API_PORT"):
         api_cfg["port"] = env["API_PORT"]
+    if env.get("API_COOKIE_SECURE"):
+        api_cfg["cookie_secure"] = env["API_COOKIE_SECURE"].strip().lower() in {"1", "yes", "true"}
     auth_cfg = dict(raw.get("auth", {}))
     if env.get("AUTH_MODE"):
         auth_cfg["mode"] = env["AUTH_MODE"].strip().lower()
 
     data = {
-        "app": app, "storage": storage, "logging": logging_cfg,
+        "app": app, "storage": storage, "jobs": jobs_cfg, "logging": logging_cfg,
         "uploads": raw.get("uploads", {}), "session": raw.get("session", {}),
         "rules": raw.get("rules", {}), "email": raw.get("email", {}),
         "api": api_cfg, "auth": auth_cfg, "database": profile,

@@ -27,7 +27,7 @@ export type Status = "PRESENT" | "MISSING_PUNCH" | "ON_DUTY" | "HALF_DAY" | "LEA
 export interface Summary {
   employees: number;
   tracked: number;
-  counts: Record<Status, number>;   // WEEK_OFF may be missing on days analysed before Bizom
+  counts: Record<Status, number>;   // WEEK_OFF / WFH may be missing on older days
   attendance_pct: number | null;
   absent_pct: number | null;
   late: number;
@@ -77,6 +77,7 @@ export interface HodInsight {
 
 export interface Rules {
   late_after: string;
+  flexi_until?: string | null;
   early_before: string;
   min_work_hours: number;
   long_work_hours: number;
@@ -85,7 +86,8 @@ export interface Rules {
   no_punch_no_shift: "ABSENT" | "NOT_TRACKED";
   single_punch_counts_present: boolean;
   exclude_codes: string[];
-  bizom_include_codes?: string[];
+  always_present_codes?: string[];
+  out_of_scope_categories?: string[];
 }
 
 export interface Insights {
@@ -95,7 +97,8 @@ export interface Insights {
   by_category: Record<string, Summary>;
   departments?: string[];
   hods?: HodInsight[];
-  sources?: { hrms?: boolean; bizom_file?: boolean; bizom?: { rows: number; matched: number; decided: number; added: number; skipped: number; excluded: number } };
+  sources?: { hrms?: boolean; permission_file?: boolean;
+    permissions?: { rows: number; today: number; approved: number; pending: number; other_dates: number; excused_late: number; excused_early: number; not_in_file: number } };
   master?: { matched: number; not_in_master: number; left_excluded: number; missing_from_file: number } | null;
   scopes: Record<string, ScopeInsights>;
   previous_date: string | null;
@@ -111,7 +114,7 @@ export interface EmployeeRow {
   team?: string;
   manager?: string;
   source?: string;
-  bizom_status?: string;
+  permission?: string;
   designation?: string;
   shift: string;
   in_time: string | null;
@@ -132,7 +135,7 @@ export interface DayDetail {
   upload_id: number;
   report_date: string;
   file: string | null;
-  bizom_file?: string | null;
+  permission_file?: string | null;
   uploaded_by: string;
   uploaded_at: string;
   employees: number;
@@ -145,6 +148,18 @@ export interface UploadResult extends DayDetail {
   auto_sent: boolean;
   send_note: string | null;
   mail: MailItem[];
+  master_import?: ImportResult | null;
+  send_mode?: "auto" | "manual";
+}
+
+export interface UploadOptions {
+  default_mode: "auto" | "manual";
+  test_recipient: string | null;
+  test_cc?: string[];
+  wait_for_permission: boolean;
+  mode: "test" | "live";
+  can_import_master: boolean;
+  employees: number;
 }
 
 export interface DayListItem {
@@ -152,7 +167,7 @@ export interface DayListItem {
   employees: number;
   attendance_pct: number | null;
   has_hrms?: boolean;
-  has_bizom?: boolean;
+  has_permission?: boolean;
   absent: number;
   late: number;
   emails: number;
@@ -175,16 +190,11 @@ export interface EmailLogRow {
 
 export interface EmailSettings {
   mode: "test" | "live";
-  provider: "smtp" | "graph" | "gmail";
   approval_required: boolean;
   auto_send: boolean;
-  wait_for_bizom: boolean;
+  wait_for_permission: boolean;
   sender: string | null;
   reply_to: string | null;
-  smtp_host: string | null;
-  smtp_port: number;
-  smtp_starttls: boolean;
-  smtp_username: string | null;
   subject_prefix: string;
   attach_excel: boolean;
   attach_dashboard: boolean;
@@ -195,6 +205,8 @@ export interface EmailSettings {
   hr_exceptions: boolean;
   hod_cc_on_team: boolean;
   hr_cc_on_hod_summary: boolean;
+  test_recipient: string | null;
+  test_cc: string[];
   director_name: string;
   director_emails: string[];
   hr_emails: string[];
@@ -203,13 +215,12 @@ export interface EmailSettings {
 export interface SettingsData {
   rules: Rules;
   email: EmailSettings;
-  smtp_password_set: boolean;
   secrets: Record<string, boolean>;
   categories: string[];
   public_url: string | null;
 }
 
-export type MailStatus = "PENDING" | "SENT" | "SAVED" | "FAILED" | "HELD" | "DISABLED" | "DUPLICATE" | "SUPERSEDED";
+export type MailStatus = "PENDING" | "SENT" | "SAVED" | "FAILED" | "HELD" | "DISABLED" | "DUPLICATE" | "SUPERSEDED" | "TEST_SENT";
 
 export interface MailCounts {
   total: number;
@@ -253,7 +264,8 @@ export interface DayMail {
   report_date: string;
   mode: "test" | "live";
   approval_required: boolean;
-  provider: string;
+  test_recipient: string | null;
+  test_cc?: string[];
   items: MailItem[];
   status: Partial<Record<MailStatus, number>>;
   planned: boolean;
@@ -369,7 +381,7 @@ export interface ReportDay {
   early_minutes: number;
   leave_type: string | null;
   source: string;
-  bizom_status: string;
+  permission: string;
   flags: string[];
 }
 
@@ -403,4 +415,4 @@ export interface EmployeeReport {
   days: ReportDay[];
 }
 
-export const SOURCE_LABELS: Record<string, string> = { HRMS: "Pocket HRMS", BIZOM: "Bizom", "HRMS+BIZOM": "HRMS + Bizom" };
+

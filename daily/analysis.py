@@ -9,10 +9,11 @@ Statuses (how each is decided is in Settings -> Counting rules):
   LEAVE          any other Type code (PL, SL, ...)
   ABSENT         no punch (per rule)
   NOT_TRACKED    no punch and "Shift Not Assigned" (per rule) -- left out of attendance %
-  WEEK_OFF       Bizom says week off -- left out of attendance %
+  WEEK_OFF       Type = WO (week off) -- left out of attendance %
 
-Bizom (field sales app) is merged by EMP_CODE: a biometric punch or HRMS leave wins; without one,
-Bizom's status is used (P = present, A = absent, WO = week off, other codes = leave).
+The Pocket HRMS Permission Report (short-leave permissions) is applied by EMP_CODE: an APPROVED
+permission excuses a late arrival / early leaving inside its time window; a PENDING one is shown but
+excuses nothing. Pocket HRMS is the only attendance source.
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "WFH", "HALF_DAY", "LEAVE", "
 STATUS_LABEL = {"PRESENT": "Present", "MISSING_PUNCH": "Missing punch", "ON_DUTY": "On duty", "WFH": "Work from home", "HALF_DAY": "Half day",
                 "LEAVE": "Leave", "ABSENT": "Absent", "WEEK_OFF": "Week off", "NOT_TRACKED": "Not tracked"}
 UNCOUNTED = ("NOT_TRACKED", "WEEK_OFF")       # left out of attendance %
-HRMS, BIZOM, BOTH = "HRMS", "BIZOM", "HRMS+BIZOM"
+HRMS = "HRMS"
+PERMISSION_GRACE_MIN = 15          # arrival/leaving up to 15 min outside the permission window is still covered
 NO_SHIFT = "shift not assigned"
 HOD_PREFIX = "HOD:"
 NOT_IN_MASTER = "Not in employee master"
@@ -70,10 +72,8 @@ class EmployeeResult:
     hod: str | None = None
     team: str | None = None
     manager: str | None = None
-    source: str = "HRMS"               # HRMS | BIZOM | HRMS+BIZOM (which file decided the status)
-    bizom_status: str | None = None    # raw Bizom code (P, A, WO, PL...)
-    designation: str | None = None
-    hq: str | None = None
+    source: str = "HRMS"
+    permission: str | None = None      # e.g. "Approved 16:00-18:00" / "Pending 16:00-18:00"
 
 
 def _minutes(hhmm: str | None) -> int | None:
@@ -84,10 +84,33 @@ def _minutes(hhmm: str | None) -> int | None:
 
 
 def _hhmm(minutes: float | None) -> str | None:
+    """Minutes after midnight -> 12-hour display time, e.g. 545 -> "9:05 AM"."""
     if minutes is None:
         return None
-    m = int(round(minutes))
-    return f"{m // 60:02d}:{m % 60:02d}"
+    m = int(round(minutes)) % (24 * 60)
+    h = m // 60
+    return f"{h % 12 or 12}:{m % 60:02d} {'AM' if h < 12 else 'PM'}"
+
+
+def hm(hours: float | None) -> str | None:
+    """Decimal hours -> "h:mm" (9.47 -> "9:28"). Everything shown to people uses hours:minutes."""
+    if hours is None or hours == "":
+        return None
+    try:
+        m = int(round(float(hours) * 60))
+    except (TypeError, ValueError):
+        return str(hours)
+    return f"{m // 60}:{m % 60:02d}"
+
+
+def t12(value: str | None) -> str | None:
+    """Stored 24-hour "HH:MM" -> 12-hour display "h:MM AM/PM" (everything shown to people uses 12-hour time)."""
+    if not value:
+        return value
+    try:
+        return _hhmm(_minutes(value))
+    except (ValueError, TypeError, IndexError):
+        return value
 
 
 def parse_date(value: str) -> date:
@@ -99,71 +122,48 @@ def parse_date(value: str) -> date:
     raise FileError(f"Unrecognised date '{value}'.")
 
 
-def bizom_result(code: str, status: str, rules: Rules) -> tuple[str, str | None]:
-    """Bizom code -> (status, leave type)."""
-    status = (status or "").strip().upper()
-    if status == "P":
-        return "PRESENT", None
-    if status in ("A", ""):
-        return "ABSENT", None
-    if status == "WO":
-        return "WEEK_OFF", None
-    if status in {c.strip().upper() for c in rules.on_duty_codes}:
-        return "ON_DUTY", status
-    if status in {c.strip().upper() for c in rules.wfh_codes}:
-        return "WFH", status
-    if status in ("HD", "HALF", "HALF DAY"):
-        return "HALF_DAY", status
-    return "LEAVE", status
+def apply_permissions(results: list[EmployeeResult], perm_day, report_date: date, rules: Rules) -> dict:
+    """Apply the day's short-leave permissions (``daily.permissions.PermissionDay``). Returns counts."""
+    from daily.permissions import APPROVED, PENDING
 
-
-def merge_bizom(results: list[EmployeeResult], bizom, report_date: date, rules: Rules,
-                known_codes: set[str]) -> tuple[list[EmployeeResult], dict]:
-    """Combine HRMS results with a Bizom day (``daily.bizom.BizomDay``) by EMP_CODE.
-
-    * A punch (present / missing punch / half day / on duty) in HRMS wins.
-    * HRMS leave stays leave unless Bizom says present ("present in either counts as present").
-    * HRMS absent or not tracked -> Bizom's status.
-    * People only in Bizom are added when they are in the employee master (``known_codes``) or their
-      code matches ``rules.bizom_include_codes`` (e.g. AP promoters). Others are counted as skipped.
-    """
-    excludes = [re.compile(p, re.IGNORECASE) for p in rules.exclude_codes]
-    include = [re.compile(p, re.IGNORECASE) for p in rules.bizom_include_codes]
-    records = {code: r for code, r in bizom.records.items()
-               if not any(p.search(code) for p in excludes)
-               and (r.active or r.inactive_date is None or r.inactive_date >= report_date)}
-    stats = {"rows": len(bizom.records), "matched": 0, "decided": 0, "added": 0, "skipped": bizom.skipped_no_id,
-             "excluded": len(bizom.records) - len(records)}
-    seen = set()
-    for res in results:
-        rec = records.get(res.code.upper())
-        if rec is None:
+    todays = [p for p in perm_day.permissions if p.day == report_date]
+    stats = {"rows": len(perm_day.permissions), "today": len(todays), "approved": 0, "pending": 0, "other_dates": 0,
+             "excused_late": 0, "excused_early": 0, "not_in_file": 0}
+    stats["other_dates"] = stats["rows"] - stats["today"]
+    by_code = {r.code.upper(): r for r in results}
+    late_after, early_before = late_threshold(rules), _minutes(rules.early_before)
+    for perm in todays:
+        r = by_code.get(perm.code)
+        if r is None:
+            stats["not_in_file"] += 1
             continue
-        seen.add(rec.code)
-        stats["matched"] += 1
-        res.bizom_status, res.designation, res.hq = rec.status or None, rec.designation, rec.hq
-        bz_status, bz_leave = bizom_result(rec.code, rec.status, rules)
-        if res.status in ("PRESENT", "MISSING_PUNCH", "HALF_DAY", "ON_DUTY", "WFH"):
-            res.source = BOTH
+        if perm.status not in (APPROVED, PENDING):
             continue
-        if res.status == "LEAVE" and bz_status != "PRESENT":
-            res.source = BOTH
+        label = f"{'Approved' if perm.status == APPROVED else 'Pending'} {perm.window}"
+        r.permission = f"{r.permission}; {label}" if r.permission else label
+        if perm.status == PENDING:
+            stats["pending"] += 1
+            if "PERMISSION_PENDING" not in r.flags:
+                r.flags.append("PERMISSION_PENDING")
             continue
-        res.status, res.leave_type, res.source = bz_status, bz_leave or res.leave_type, BIZOM
-        res.flags = [f for f in res.flags if f != "MISSING_PUNCH"]
-        stats["decided"] += 1
-    for code, rec in records.items():
-        if code in seen:
-            continue
-        if code not in known_codes and not any(p.search(code) for p in include):
-            stats["skipped"] += 1
-            continue
-        status, leave = bizom_result(code, rec.status, rules)
-        results.append(EmployeeResult(code=code, name=rec.name, category="Sales", shift="", in_time=None, out_time=None,
-                                      punches=0, work_minutes=None, leave_type=leave, day_portion=None, status=status,
-                                      source=BIZOM, bizom_status=rec.status or None, designation=rec.designation, hq=rec.hq))
-        stats["added"] += 1
-    return results, stats
+        stats["approved"] += 1
+        start, end = _minutes(perm.start), _minutes(perm.end)
+        excused = False
+        if "LATE" in r.flags and start <= late_after + PERMISSION_GRACE_MIN and _minutes(r.in_time) <= end + PERMISSION_GRACE_MIN:
+            r.flags.remove("LATE")
+            r.late_minutes = 0
+            stats["excused_late"] += 1
+            excused = True
+        if "LEFT_EARLY" in r.flags and end >= early_before - PERMISSION_GRACE_MIN and _minutes(r.out_time) >= start - PERMISSION_GRACE_MIN:
+            r.flags.remove("LEFT_EARLY")
+            r.early_minutes = 0
+            stats["excused_early"] += 1
+            excused = True
+        if excused and "SHORT_HOURS" in r.flags:
+            r.flags.remove("SHORT_HOURS")
+        if "PERMISSION" not in r.flags:
+            r.flags.append("PERMISSION")
+    return stats
 
 
 def report_date_of(rows: list[dict]) -> date:
@@ -177,6 +177,12 @@ def report_date_of(rows: list[dict]) -> date:
     return parse_date(next(iter(dates)))
 
 
+def late_threshold(rules: Rules) -> int:
+    """Minutes after midnight after which a first punch is late: the latest punch-in (flexi_until) if set,
+    else the office opening time (late_after)."""
+    return _minutes(rules.flexi_until or rules.late_after)
+
+
 def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult], int]:
     """Rows from the reshaped AttendanceSummary -> (report date, results, excluded count)."""
     report_date = report_date_of(rows)
@@ -184,7 +190,9 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
     excludes = [re.compile(p, re.IGNORECASE) for p in rules.exclude_codes]
     on_duty = {c.strip().upper() for c in rules.on_duty_codes}
     wfh = {c.strip().upper() for c in rules.wfh_codes}
-    late_after, early_before = _minutes(rules.late_after), _minutes(rules.early_before)
+    late_after, early_before = late_threshold(rules), _minutes(rules.early_before)
+    office_opens = _minutes(rules.late_after) if rules.flexi_until else None
+    always_present = {c.strip().upper() for c in rules.always_present_codes if c.strip()}
     results, excluded = [], 0
     for r in rows:
         code = (r.get("Code") or "").strip()
@@ -199,8 +207,10 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
 
         if leave and leave in on_duty:
             status = "ON_DUTY"
-        elif leave and leave in wfh:
+        elif (leave and leave in wfh) or (r.get("WFH Remark") and not leave):
             status = "WFH"
+        elif leave in ("WO", "W/O", "WEEKOFF", "WEEK OFF"):
+            status = "WEEK_OFF"
         elif leave and portion and "half" in portion.lower():
             status = "HALF_DAY"
         elif leave:
@@ -220,12 +230,18 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
             work = b - a if b >= a else b + 24 * 60 - a       # overnight
         res = EmployeeResult(code=code, name=(r.get("Name") or "").strip(), category=(r.get("Category") or "Unassigned").strip()
                              or "Unassigned", shift=shift, in_time=in_t, out_time=out_t, punches=punches, work_minutes=work,
-                             leave_type=leave, day_portion=portion, status=status)
-        if in_t and status in ("PRESENT", "MISSING_PUNCH") and _minutes(in_t) > late_after:
-            res.late_minutes = _minutes(in_t) - late_after
-            res.flags.append("LATE")
-        if out_t and status == "PRESENT" and _minutes(out_t) < early_before:
-            res.early_minutes = early_before - _minutes(out_t)
+                             leave_type=leave or None, day_portion=portion,
+                             status=status, department=(r.get("Department") or None))
+        need = round(rules.min_work_hours * 60)
+        if in_t and status in ("PRESENT", "MISSING_PUNCH"):
+            if _minutes(in_t) > late_after:
+                res.late_minutes = _minutes(in_t) - late_after        # counted from the latest allowed punch-in
+                res.flags.append("LATE")
+            elif office_opens is not None and _minutes(in_t) > office_opens:
+                res.flags.append("FLEXI")                           # came in the flexible window: on time
+        if out_t and status == "PRESENT" and _minutes(out_t) < early_before and (work is None or work < need):
+            # left before office close WITHOUT completing the required hours (counted from their own punch-in)
+            res.early_minutes = min(early_before - _minutes(out_t), need - work if work is not None else early_before)
             res.flags.append("LEFT_EARLY")
         if work is not None and work < rules.min_work_hours * 60:
             res.flags.append("SHORT_HOURS")
@@ -233,6 +249,11 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
             res.flags.append("LONG_HOURS")
         if status == "MISSING_PUNCH":
             res.flags.append("MISSING_PUNCH")
+        if code.upper() in always_present:
+            if res.status in ("ABSENT", "MISSING_PUNCH", "NOT_TRACKED"):
+                res.status = "PRESENT"
+            res.flags = ["ALWAYS_PRESENT"]                 # never late / left early / short hours / missing punch
+            res.late_minutes = res.early_minutes = 0
         results.append(res)
     if not results:
         raise FileError("Every row was excluded; check the exclusion list in Settings.")
@@ -282,7 +303,7 @@ def in_time_buckets(results: list[EmployeeResult]) -> list[dict]:
     end = (ins[-1] // 30) * 30
     buckets = []
     for b in range(start, end + 30, 30):
-        buckets.append({"label": f"{_hhmm(b)}-{_hhmm(b + 30)}", "count": sum(1 for m in ins if b <= m < b + 30)})
+        buckets.append({"label": f"{_hhmm(b)} - {_hhmm(b + 30)}", "count": sum(1 for m in ins if b <= m < b + 30)})
     return buckets
 
 
@@ -319,22 +340,23 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
                     "text": f"{c['ABSENT']} absent ({s['absent_pct']}%){extra}"
                             f"{_fmt_delta(c['ABSENT'], (prev.get('counts') or {}).get('ABSENT'), '', 0)}."})
     if s["late"]:
-        out.append({"kind": "warn", "text": f"{s['late']} late arrivals after {rules.late_after} ({s['late_pct']}% of those who came in), "
+        rule = f"punch-in after {t12(rules.flexi_until or rules.late_after)}"
+        out.append({"kind": "warn", "text": f"{s['late']} late arrivals ({rule}; {s['late_pct']}% of those who came in), "
                                             f"on average {s['avg_late_minutes']} min late; latest in at {s['latest_in']}."})
     elif s["avg_in_time"]:
         out.append({"kind": "good", "text": f"No late arrivals; average arrival {s['avg_in_time']}."})
     if c["MISSING_PUNCH"]:
         out.append({"kind": "warn", "text": f"{c['MISSING_PUNCH']} employee(s) punched only once (missing punch) - please regularise."})
     if s["left_early"]:
-        out.append({"kind": "warn", "text": f"{s['left_early']} left before {rules.early_before}."})
+        out.append({"kind": "warn", "text": f"{s['left_early']} left before {t12(rules.early_before)} without completing {rules.min_work_hours:g} h."})
     if s["avg_work_hours"] is not None:
-        out.append({"kind": "info", "text": f"Average working time {s['avg_work_hours']} h; {s['short_hours']} worked less than "
+        out.append({"kind": "info", "text": f"Average working time {hm(s['avg_work_hours'])} (h:mm); {s['short_hours']} worked less than "
                                             f"{rules.min_work_hours:g} h, {s['long_hours']} more than {rules.long_work_hours:g} h."})
     if c["LEAVE"] or c["ON_DUTY"] or c["HALF_DAY"] or c["WFH"]:
         out.append({"kind": "info", "text": f"{c['LEAVE']} on leave, {c['HALF_DAY']} half day, {c['ON_DUTY']} on duty"
                                             + (f", {c['WFH']} working from home" if c["WFH"] else "") + "."})
     if c["WEEK_OFF"]:
-        out.append({"kind": "info", "text": f"{c['WEEK_OFF']} on week off (per Bizom); not counted in attendance %."})
+        out.append({"kind": "info", "text": f"{c['WEEK_OFF']} on week off; not counted in attendance %."})
     if c["NOT_TRACKED"]:
         biggest = max(by_category.items(), key=lambda kv: kv[1]["counts"]["NOT_TRACKED"])[0] if by_category else ""
         out.append({"kind": "info", "text": f"{c['NOT_TRACKED']} employee(s) not tracked (no punch, no shift assigned)"
@@ -394,17 +416,22 @@ def build_insights(report_date: date, results: list[EmployeeResult], rules: Rule
         if master.get("not_in_master"):
             extra.append({"kind": "warn", "text": f"{master['not_in_master']} employee(s) in the attendance file are not in the "
                                                   f"employee master - add them on the Employees screen so their HOD gets them."})
+        if master.get("out_of_scope"):
+            extra.append({"kind": "info", "text": f"{master['out_of_scope']} field staff who are not in the employee master were "
+                                                  f"left out (their attendance is handled by the Bizom tool)."})
         if master.get("missing_from_file"):
             extra.append({"kind": "info", "text": f"{master['missing_from_file']} active employee(s) in the master are not in "
-                                                  f"today's attendance file."})
+                                                  f"the attendance file of {report_date:%d-%b-%Y}."})
         scopes["ALL"]["highlights"] += extra
-    bz = (sources or {}).get("bizom")
-    if bz:
-        scopes["ALL"]["highlights"].append({"kind": "info", "text": (
-            f"Bizom: {bz['matched']} matched in Pocket HRMS, {bz['decided']} of them decided by Bizom (no punch), "
-            f"{bz['added']} added from Bizom only" + (f", {bz['skipped']} skipped (vacant / not in employee master)" if bz["skipped"] else "") + ".")})
-    elif sources is not None and sources.get("hrms") and not sources.get("bizom_file"):
-        scopes["ALL"]["highlights"].append({"kind": "warn", "text": "Bizom file not uploaded yet for this day - field sales staff show as not tracked."})
+    pm = (sources or {}).get("permissions")
+    if pm and pm["today"]:
+        excused = pm["excused_late"] + pm["excused_early"]
+        scopes["ALL"]["highlights"].append({"kind": "warn" if pm["pending"] else "info", "text": (
+            f"{pm['today']} short-leave permission(s) on {report_date:%d-%b-%Y}: {pm['approved']} approved"
+            + (f" (excused {excused} late / early)" if excused else "") + f", {pm['pending']} still pending approval.")})
+    elif sources is not None and sources.get("hrms") and not sources.get("permission_file"):
+        scopes["ALL"]["highlights"].append({"kind": "info", "text": "Permission Report not uploaded for this day - late / early "
+                                                                   "arrivals are shown without permissions."})
     for cat, rows in by_cat_rows.items():
         scopes[cat] = _scope_data(rows, rules, prev_of(cat), cat, use_master, "department")
     hods = []

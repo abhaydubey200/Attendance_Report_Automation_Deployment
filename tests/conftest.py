@@ -41,7 +41,7 @@ def isolated_env(tmp_path, monkeypatch) -> dict[str, str]:
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     for key in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_TRUSTED_CONNECTION", "DB_DRIVER", "AI_ENDPOINT", "APP_SECRET_KEY", "API_HOST", "API_PORT", "AUTH_MODE",
-                "SMTP_PASSWORD", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
+                "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
                 "GMAIL_REFRESH_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     # Never read the developer's real .env (mail secrets) during tests.
@@ -55,11 +55,14 @@ def isolated_env(tmp_path, monkeypatch) -> dict[str, str]:
 
 @pytest.fixture
 def settings(isolated_env) -> Settings:
-    """Most tests upload only a Pocket HRMS file, so auto-send does not wait for Bizom here
+    """Most tests upload only the Attendance Summary, so emails do not wait for the Permission Report here
     (tests of the waiting behaviour save their own email settings)."""
     s = load_settings()
+    # The synthetic data's unmatched codes are "Sales"; most tests expect them in the HR exception email,
+    # so the field-sales rule is off here (test_out_of_scope_field_sales covers it).
+    s = s.model_copy(update={"rules": s.rules.model_copy(update={"out_of_scope_categories": []})})
     return s.model_copy(update={"email": s.email.model_copy(update={
-        "wait_for_bizom": False, "approval_required": False, "director_emails": ["director@example.com"],
+        "wait_for_permission": False, "approval_required": False, "director_emails": ["director@example.com"],
         "hr_emails": ["hr@example.com"]})})
 
 

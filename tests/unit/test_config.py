@@ -84,3 +84,20 @@ def test_unknown_permission_in_role_rejected(isolated_env, config_copy):
 def test_missing_config_file_reported(config_copy):
     (config_copy / "security.yaml").unlink()
     assert any("security.yaml" in e for e in validate_all_configs(config_copy))
+
+
+
+def test_production_profile_on_sqlite(isolated_env, monkeypatch, tmp_path):
+    """The Windows Server setup: production on the sqlite_prod profile, sign-in, HTTPS cookie, data outside the code."""
+    from core.config import load_settings
+
+    for k, v in {"APP_ENV": "production", "DB_PROFILE": "sqlite_prod", "DB_SQLITE_PATH": str(tmp_path / "attendance.db"),
+                 "AUTH_MODE": "local", "APP_SECRET_KEY": "x" * 48, "API_COOKIE_SECURE": "true",
+                 "APP_INBOX_DIR": str(tmp_path / "inbox")}.items():
+        monkeypatch.setenv(k, v)
+    s = load_settings()
+    assert s.environment == "production" and s.database.production and s.api.cookie_secure
+    assert s.jobs.inbox_dir == tmp_path / "inbox"
+    monkeypatch.setenv("DB_PROFILE", "dev_sqlite")
+    with pytest.raises(Exception, match="development SQLite profile"):
+        load_settings()

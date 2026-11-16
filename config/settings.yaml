@@ -8,7 +8,7 @@ app:
   company: "APIS India Limited"
   timezone: "Asia/Kolkata"
   date_format: "%d-%b-%Y"           # 13-Nov-2026
-  datetime_format: "%d-%b-%Y %H:%M"
+  datetime_format: "%d-%b-%Y %I:%M %p"
   environment: development          # override: APP_ENV
   public_url: null                  # link to this app in emails (override: APP_PUBLIC_URL)
 
@@ -35,9 +35,10 @@ session:
 
 # How a day is counted (Pocket HRMS AttendanceSummary). Change in Settings.
 rules:
-  late_after: "09:30"               # first punch after this = late
-  early_before: "18:00"             # last punch before this = left early
-  min_work_hours: 8.0               # less = short hours
+  late_after: "09:30"               # office opens
+  flexi_until: "11:00"              # latest punch-in: first punch after this = late (minutes counted from 11:00)
+  early_before: "19:30"             # office closes: leaving before this without completing min_work_hours = left early
+  min_work_hours: 8.0               # mandatory for everyone, counted from punch-in to punch-out; less = short hours
   long_work_hours: 11.0             # more = long hours
   on_duty_codes: [LD, OD]           # Type codes that mean working (on duty); other codes = leave
   wfh_codes: [WFH, WH]              # Type codes that mean work from home (counted present)
@@ -45,20 +46,24 @@ rules:
   no_punch_no_shift: NOT_TRACKED    # no punch, "Shift Not Assigned" (mostly field Sales)
   single_punch_counts_present: true # one punch = present, flagged as missing punch
   exclude_codes: ["^test$", "DUMMY", "^CAND-", "^A001$", "^VACANT"]   # test/dummy records (regular expressions)
-  bizom_include_codes: ["^AP"]      # Bizom-only users reported besides the employee master (AP = promoters)
+  always_present_codes: [HO0034, HO0077, HO0098]
+  out_of_scope_categories: [Sales]  # field sales not in the employee master: left out (separate Bizom tool)   # Directors (Amit, Prem, Vimal Anand): always counted present
+
+jobs:                               # unattended jobs (Windows Task Scheduler) - see docs/DEPLOYMENT.md
+  inbox_dir: null                   # default <storage>/inbox; override APP_INBOX_DIR. Drop the day's Pocket HRMS files here.
+  permission_required: false        # 09:30 job: true = do not send until the Permission Report is in the inbox
+  lock_stale_minutes: 120           # a job lock older than this is considered abandoned
+  backup_keep_days: 30
+  keep_months: 2                    # months of daily attendance kept in the database (older: archived, then removed)
+  alert_emails: []                  # job failure alerts; empty = the HR mailbox (Settings -> Email)
 
 email:
-  mode: test                        # test = save to storage/outbox and show in app; live = deliver
-  provider: gmail                   # gmail (APIS uses the Gmail API) | smtp | graph. Secrets only via environment variables.
+  mode: test                        # test = save to storage/outbox and show in app; live = send via the Gmail API
   approval_required: true           # preview mode: emails wait for Approve on the "Approve emails" screen
   auto_send: true                   # when approval is off: send right after the upload
-  wait_for_bizom: true              # prepare emails only once both Pocket HRMS and Bizom files for the day are in
+  wait_for_permission: true         # prepare emails only once the day's Permission Report is uploaded too
   sender: null                      # one central mailbox, e.g. attendance@<company domain>
   reply_to: null
-  smtp_host: null                   # Microsoft 365: smtp.office365.com
-  smtp_port: 587
-  smtp_starttls: true
-  smtp_username: null               # password only via env SMTP_PASSWORD
   subject_prefix: "Daily Attendance"
   attach_excel: true
   attach_dashboard: true
@@ -69,6 +74,8 @@ email:
   hr_exceptions: true
   hod_cc_on_team: false             # needs HR approval
   hr_cc_on_hod_summary: false
+  test_recipient: null              # TESTING ONLY: every email goes to this one address instead
+  test_cc: []                       # TESTING ONLY: CC on every test email
   director_name: Director
   director_emails: []               # TBC
   hr_emails: []                     # HR attendance mailbox, TBC

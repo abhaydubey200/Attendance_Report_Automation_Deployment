@@ -10,9 +10,8 @@
           --ink:#2b2118; --muted:#6e6152; --line:#ecdfc9; --ok:#2e7d4f; --warn:#c88a00; --bad:#a52a1a; }
   * { box-sizing: border-box; }
   body { margin:0; font-family:"Segoe UI",system-ui,-apple-system,sans-serif; color:var(--ink); background:var(--cream); }
-  header { background:#fff; border-bottom:4px solid var(--honey); padding:18px 28px; display:flex; align-items:center; gap:16px; }
-  .oval { width:70px; height:40px; border-radius:50%; display:grid; place-items:center; flex-shrink:0;
-          background:radial-gradient(ellipse at 40% 30%,#ffd75e 0%,#f5b800 55%,#e09f00 100%); font:700 21px Georgia,serif; text-decoration:underline; }
+  header { background:#fff; border-bottom:4px solid var(--honey); padding:20px 28px 16px; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; }
+  header img.logo { width:150px; height:auto; display:block; }
   h1 { font:700 22px Georgia,serif; color:var(--brown-dark); margin:0; }
   .sub { color:var(--muted); font-size:13px; margin-top:2px; }
   main { max-width:1180px; margin:0 auto; padding:22px 24px 40px; }
@@ -46,7 +45,7 @@
 </head>
 <body>
 <header>
-  <div class="oval">apis</div>
+  <img class="logo" src="{{ logo }}" alt="apis">
   <div>
     <h1 id="title"></h1>
     <div class="sub" id="subtitle"></div>
@@ -63,8 +62,8 @@
   </div>
   <h2>Employees</h2>
   <div class="controls">
-    <input id="search" placeholder="Search name, code, team or manager…" aria-label="Search employees">
-    <select id="group" aria-label="Filter by department"></select>
+    <input id="search" placeholder="Search name or code…" aria-label="Search employees">
+    <select id="group" aria-label="Filter"></select>
     <span id="filters"></span>
     <span class="count" id="count"></span>
   </div>
@@ -81,7 +80,7 @@ document.getElementById("title").textContent = D.title;
 document.getElementById("subtitle").textContent = D.subtitle;
 const kpis = [["Attendance %", S.attendance_pct === null ? "–" : S.attendance_pct + "%", true], ["Employees", S.employees], ["Present", C.PRESENT],
   ["Absent", C.ABSENT], ["Late", S.late], ["Missing punch", C.MISSING_PUNCH], ["Leave", C.LEAVE + C.HALF_DAY], ["On duty", C.ON_DUTY],
-  ["Left early", S.left_early], ["Avg arrival", S.avg_in_time || "–"], ["Avg hours", S.avg_work_hours ?? "–"], ["Week off", C.WEEK_OFF || 0], ["Not tracked", C.NOT_TRACKED]];
+  ["Left early", S.left_early], ["Avg arrival", S.avg_in_time || "–"], ["Avg hours", hm(S.avg_work_hours) || "–"], ["Week off", C.WEEK_OFF || 0], ["Not tracked", C.NOT_TRACKED]];
 document.getElementById("kpis").innerHTML = kpis.map(([l, v, m]) => `<div class="kpi${m ? " main" : ""}"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join("");
 document.getElementById("highlights").innerHTML = D.highlights.map((h) => `<li class="${esc(h.kind)}">${esc(h.text)}</li>`).join("");
 
@@ -108,14 +107,29 @@ if (BD.rows.length > 1) {
         .map((c) => ({label: short(c.name), value: c.attendance_pct, color: c.attendance_pct < 75 ? "#a52a1a" : c.attendance_pct < 90 ? "#c88a00" : "#2e7d4f"})), 100, "%");
 } else { document.getElementById("catCard").style.display = "none"; }
 
+// decimal hours -> "h:mm" (9.47 -> "9:28")
+function hm(h) {
+  if (h === null || h === undefined || h === "") return "";
+  const m = Math.round(Number(h) * 60);
+  return Number.isFinite(m) ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : String(h);
+}
+// 24-hour "HH:MM" -> "h:MM AM/PM" (sorting still uses the stored 24-hour value)
+function t12(v) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(v || "");
+  if (!m) return v || "";
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+}
 const hasMaster = D.rows.some((r) => r.department || r.hod);
-const cols = [["code","Code"],["name","Name"], ...(hasMaster ? [["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]] : [["category","Category"]]),
+const emailed = D.routing_columns === false;          // emailed copy: "your team" only, no department / category filter
+const routingCols = D.routing_columns === false ? [] : [["hod","HOD"],["team","Team"],["manager","Reporting manager"]];
+const cols = [["code","Code"],["name","Name"], ...(hasMaster ? [["department","Department"], ...routingCols] : [["category","Category"]]),
               ["status_label","Status"],["in_time","In"],["out_time","Out"],
-              ["work_hours","Hours"],["late_minutes","Late min"],["early_minutes","Early min"],["leave_type","Leave"],["source","Source"]];
+              ["work_hours","Hours (h:mm)"],["late_minutes","Late min"],["early_minutes","Early min"],["leave_type","Leave"],["permission","Permission"]];
 const groupKey = hasMaster ? "department" : "category";
 const groups = [...new Set(D.rows.map((r) => r[groupKey]).filter(Boolean))].sort();
 const groupSel = document.getElementById("group");
-if (groups.length > 1) {
+if (groups.length > 1 && !emailed) {
   groupSel.innerHTML = `<option value="">All ${hasMaster ? "departments" : "categories"}</option>` + groups.map((g) => `<option>${esc(g)}</option>`).join("");
   groupSel.addEventListener("change", render);
 } else { groupSel.style.display = "none"; }
@@ -146,7 +160,7 @@ function render() {
     .sort((a, b) => { const x = a[sortKey] ?? "", y = b[sortKey] ?? ""; return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
   document.getElementById("tbody").innerHTML = rows.map((r) => `<tr>${cols.map(([k]) => k === "status_label"
     ? `<td><span class="st" style="background:${COLORS[r.status]}22;color:${COLORS[r.status]}">${esc(r.status_label)}</span></td>`
-    : `<td>${esc(r[k] === 0 && (k === "late_minutes" || k === "early_minutes") ? "" : r[k])}</td>`).join("")}</tr>`).join("");
+    : `<td>${esc(r[k] === 0 && (k === "late_minutes" || k === "early_minutes") ? "" : (k === "in_time" || k === "out_time") ? t12(r[k]) : k === "work_hours" ? hm(r[k]) : r[k])}</td>`).join("")}</tr>`).join("");
   document.getElementById("count").textContent = `${rows.length} of ${D.rows.length} employees`;
 }
 render();

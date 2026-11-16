@@ -4,6 +4,7 @@ Synthetic people, example.com addresses only."""
 from __future__ import annotations
 
 import email
+import email.policy
 import io
 import json
 import os
@@ -37,7 +38,7 @@ MASTER = [
 ATTENDANCE = [  # code, name, category, shift, times, type, portion
     ("T1", "Team One A", "Sales", "General Shift", ["09:05", "18:30"], "", ""),
     ("T2", "Team One B", "Sales", "General Shift", [], "", ""),                    # absent -> attention
-    ("T3", "Arun Direct", "Sales", "General Shift", ["10:20", "19:00"], "", ""),   # late -> attention
+    ("T3", "Arun Direct", "Sales", "General Shift", ["11:20", "19:30"], "", ""),   # late (after 11:00) -> attention
     ("T4", "No Sub Split", "Plant", "General Shift", [], "WFH", "Full Day"),
     ("D1", "Director Staff", "Head Office", "General Shift", ["09:00", "18:00"], "", ""),
     ("C1", "Conflict Person", "Head Office", "General Shift", ["09:00", "18:00"], "", ""),
@@ -86,7 +87,8 @@ def test_routing_rules_and_workbook(engine, settings):
     with session_scope(engine) as s:
         applied = load(s, settings)
         assert applied["coverage"] == {"checked": 6, "differences": 0, "examples": []}
-        assert applied["config"]["applied"] == {"team_emails": True, "sender": "attendance@example.com", "hod_cc_on_team": False}
+        assert applied["config"]["applied"] == {"team_emails": True, "sender": "attendance@example.com"}   # DISABLED rows never switch emails off
+        assert any("left on" in d for d in applied["config"]["disabled"])
         assert applied["recipients"]["imported"] == 1                       # placeholder address skipped
         r = {x.code: x for x in routing.routes(s)}
         assert (r["T1"].detail_to, r["T1"].summary_to) == ("lead.a@example.com", "arun@example.com")
@@ -109,7 +111,8 @@ def test_plan_content_and_privacy(engine, settings):
         assert "ready" in note and {i.status for i in items} == {mail.PENDING}
         by = {i.recipient_key: i for i in items}
         assert set(by) == {"lead.a@example.com", "arun@example.com", "rahul@example.com", "DIRECTOR", "HR"}
-        assert by["lead.a@example.com"].subject == "Daily Attendance | 13-Nov-2026 | Lead A"
+        assert by["lead.a@example.com"].subject == "Daily Attendance | 13-Nov-2026 | Lead A | 1 absent"
+        assert by["HR"].subject.endswith("| 2 record(s) to fix")
         hr = json.loads(by["HR"].content)["exceptions"]
         assert {x["code"]: x["issue"] for x in hr} == {"C1": "HOD_EMAIL_CONFLICT", "X9": mail.NOT_IN_MASTER}
         c = json.loads(by["lead.a@example.com"].counts)["team"]
@@ -122,10 +125,13 @@ def test_plan_content_and_privacy(engine, settings):
         roster = load_workbook(io.BytesIO(files[0].content))["Team roster"]
         assert [roster.cell(r, 1).value for r in range(4, roster.max_row + 1)] == ["T2", "T1"]   # attention first
         html, _, files = mail.render(s, settings, by["arun@example.com"])
-        assert "Department summary" in html and "Your team (1)" in html
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Team roster", "Department summary", "Department roster"]
+        assert "Your wider team" in html and "Your team" in html and "department" not in html.lower() and "today" not in html.lower()
+        assert "1 of 1 people in your team need attention on 13-Nov-2026: 1 late." in html                  # headline
+        assert "2 of 3 people in your wider team need attention on 13-Nov-2026: 1 absent, 1 late." in html
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Team roster", "Wider team roster"]   # no per-team summary in emails
         html, _, _ = mail.render(s, settings, by["DIRECTOR"])
-        assert "Company (6 employees)" in html and "Director Office staff (1)" in html
+        assert "Company &ndash; 13-Nov-2026" in html and "Director Office staff" in html
+        assert "All 1 people in the Director Office are accounted for on 13-Nov-2026" in html
         dash = files[1].content
         assert b"Team One A" in dash and b"Unknown Code" not in dash
 
@@ -169,26 +175,26 @@ def test_switches_held_cc_and_recipient_off(engine, settings):
         assert mail.approve(s, settings, DAY, "x") and by["DIRECTOR"].status == mail.HELD
 
 
-def test_providers_use_their_apis(monkeypatch, tmp_path):
+def test_live_mail_goes_through_the_gmail_api(monkeypatch, tmp_path):
     calls = []
 
     def fake(method, url, **kw):
         calls.append((method, url, kw))
-        return httpx.Response(200, json={"access_token": "tok"}) if "token" in url else httpx.Response(202)
+        return httpx.Response(200, json={"access_token": "tok"}) if "token" in url else httpx.Response(200, json={"id": "m1"})
 
     monkeypatch.setattr(httpx, "request", fake)
     msg = mailer.build_message("attendance@example.com", ["a@example.com"], "S", "<p>x</p>", "x", [])
-    for k, v in {"GRAPH_TENANT_ID": "t", "GRAPH_CLIENT_ID": "c", "GRAPH_CLIENT_SECRET": "s", "GMAIL_CLIENT_ID": "c",
-                 "GMAIL_CLIENT_SECRET": "s", "GMAIL_REFRESH_TOKEN": "r"}.items():
+    for k, v in {"GMAIL_CLIENT_ID": "c", "GMAIL_CLIENT_SECRET": "s", "GMAIL_REFRESH_TOKEN": "r"}.items():
         monkeypatch.setenv(k, v)
-    assert mailer.send(EmailSettings(mode="live", provider="graph", sender="attendance@example.com"), msg, tmp_path).status == "SENT"
-    assert calls[1][1] == "https://graph.microsoft.com/v1.0/users/attendance@example.com/sendMail"
-    assert calls[1][2]["headers"]["Authorization"] == "Bearer tok"
-    assert mailer.send(EmailSettings(mode="live", provider="gmail", sender="attendance@example.com"), msg, tmp_path).status == "SENT"
-    assert calls[3][1].endswith("/gmail/v1/users/me/messages/send") and "raw" in calls[3][2]["json"]
-    monkeypatch.delenv("GRAPH_CLIENT_SECRET")
-    with pytest.raises(mailer.MailError, match="GRAPH_CLIENT_SECRET"):
-        mailer.send(EmailSettings(mode="live", provider="graph", sender="attendance@example.com"), msg, tmp_path)
+    assert mailer.send(EmailSettings(mode="live", sender="attendance@example.com"), msg, tmp_path).status == "SENT"
+    assert calls[0][1] == "https://oauth2.googleapis.com/token" and calls[0][2]["data"]["grant_type"] == "refresh_token"
+    assert calls[1][1] == "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    assert calls[1][2]["headers"]["Authorization"] == "Bearer tok" and "raw" in calls[1][2]["json"]
+    monkeypatch.delenv("GMAIL_REFRESH_TOKEN")
+    with pytest.raises(mailer.MailError, match="GMAIL_REFRESH_TOKEN"):
+        mailer.send(EmailSettings(mode="live", sender="attendance@example.com"), msg, tmp_path)
+    assert mailer.send(EmailSettings(mode="test"), msg, tmp_path).status == "SAVED"      # test mode never calls Gmail
+    assert len(calls) == 2
 
 
 def test_dashboard_json_cannot_break_out_of_script():
@@ -253,3 +259,136 @@ def test_watch_folder(isolated_env, tmp_path, capsys):
     main.main(["watch", str(folder), "--once"])
     assert (folder / "failed" / "AttendanceSummary.xlsx").exists()
     assert "already uploaded" in (folder / "failed" / "AttendanceSummary.xlsx.txt").read_text(encoding="utf-8")
+
+
+def test_three_dataset_upload_with_manual_or_auto_sending(api, engine, settings):
+    from demo.synthetic import build_permission_xlsx
+
+    with session_scope(engine) as s:
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"approval_required": True}), "tester")
+    opts = api.get("/api/v1/upload/options").json()
+    assert opts["default_mode"] == "manual" and opts["can_import_master"] and opts["employees"] == 0
+    # master only: imported, nothing else happens
+    r = api.post("/api/v1/days/upload", headers=H, files={"master": ("APIS_Email_Routing_Master.xlsx", routing_workbook())}).json()
+    assert r["master_import"]["added"] == 6 and r["report_date"] is None and "Employee master updated" in r["send_note"]
+    # a file in the wrong box is refused
+    bad = api.post("/api/v1/days/upload", headers=H, files={"permission": ("s.xlsx", summary_file(ATTENDANCE))})
+    assert bad.status_code == 422 and "put in the Pocket HRMS Permission Report box" in bad.json()["detail"]
+    # all three at once, manual: emails wait for approval
+    r = api.post("/api/v1/days/upload", headers=H, data={"send_mode": "manual"}, files={
+        "master": ("routing.xlsx", routing_workbook()), "hrms": ("s.xlsx", summary_file(ATTENDANCE)),
+        "permission": ("p.xlsx", build_permission_xlsx(DAY))}).json()
+    assert r["master_import"]["unchanged"] == 6 and r["file"] == "s.xlsx" and r["permission_file"] == "p.xlsx"
+    assert r["send_mode"] == "manual" and not r["auto_sent"] and {m["status"] for m in r["mail"]} == {"PENDING"}
+    # same day again with auto: replaces the files and sends at once (nobody was sent yet)
+    r = api.post("/api/v1/days/upload", headers=H, data={"send_mode": "auto", "replace": "true"}, files={
+        "hrms": ("s.xlsx", summary_file(ATTENDANCE)), "permission": ("p.xlsx", build_permission_xlsx(DAY))}).json()
+    assert r["send_mode"] == "auto" and r["auto_sent"] and {m["status"] for m in r["mail"]} == {"SAVED"}
+    assert api.post("/api/v1/days/upload", headers=H, data={"send_mode": "later"},
+                    files={"hrms": ("s.xlsx", summary_file(ATTENDANCE))}).status_code == 422
+
+
+def test_testing_address_receives_every_email_and_real_send_still_happens_later(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True, director_emails=[], test_recipient="tester@example.com",
+             test_cc=["boss@example.com"])
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        by = {i.recipient_key: i for i in items}
+        assert by["DIRECTOR"].status == mail.PENDING and "Testing" in by["DIRECTOR"].note    # no address yet, still testable
+        done = mail.approve(s, settings, DAY, "tester")
+        assert {i.status for i in done} == {mail.TEST_SENT} and len(done) == 5
+        msgs = [email.message_from_bytes(p.read_bytes(), policy=email.policy.default)
+                for p in (settings.storage.area("outbox") / "2026-11-13").glob("*.eml")]
+        assert len(msgs) == 5 and {m["To"] for m in msgs} == {"tester@example.com"} and {m["Cc"] for m in msgs} == {"boss@example.com"}
+        lead = next(m for m in msgs if "Lead A" in m["Subject"])
+        assert lead["Subject"].startswith("[TEST] Daily Attendance")
+        body = lead.get_body(("html",)).get_content()
+        assert "TEST EMAIL - in live use this goes to To: lead.a@example.com" in body
+        # Testing again is allowed; switching the test address off sends to the real people (not "already sent").
+        assert len(mail.approve(s, settings, DAY, "tester")) == 5
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"test_recipient": None,
+                                                                                  "director_emails": ["director@example.com"]}), "tester")
+        _, items2, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester", replace=True)
+        assert {i.status for i in items2} == {mail.PENDING}
+        assert len(mail.items_for(s, DAY)) == 5                      # the earlier test sends are replaced, not listed twice
+        real = mail.approve(s, settings, DAY, "tester")
+        assert {i.status for i in real} == {mail.SAVED}
+        assert next(i for i in real if i.recipient_key == "lead.a@example.com").to_addrs == "lead.a@example.com"
+
+
+def _r(status, *flags):
+    return {"status": status, "flags": list(flags), "late_minutes": 30 if "LATE" in flags else 0, "early_minutes": 0}
+
+
+def test_headline_subject_change_and_patterns():
+    c = mail.counts([_r("ABSENT"), _r("PRESENT", "LATE"), _r("PRESENT"),
+                     _r(mail.NO_RECORD), _r("NOT_TRACKED")])
+    assert (c["attention"], c["no_record"], c["not_tracked"]) == (2, 1, 1)                 # "no record" is a count, not attention
+    assert mail.headline(c, "your team", "13-Nov-2026") == "2 of 5 people in your team need attention on 13-Nov-2026: 1 absent, 1 late."
+    assert "today" not in (mail.headline(c, "your team", "13-Nov-2026") or "")
+    assert mail.headline(mail.counts([_r("PRESENT")]), "your team").startswith("All 1 people")
+    assert mail.subject_numbers({"team": c, "summary": None, "company": None, "exceptions": 0}) == "1 absent · 1 late"
+    assert mail.subject_numbers({"team": mail.counts([_r("PRESENT")]), "exceptions": 0}) == "all present"
+    before = mail.counts([_r("ABSENT"), _r("ABSENT"), _r("PRESENT")])
+    ch = mail.change(c, before)
+    assert ch["absent"] == -1 and ch["late"] == 1 and ch["attendance_pct"] == 33.4
+    assert mail.change(c, None) == {"absent": None, "late": None, "missing_punch": None, "attendance_pct": None}
+    day = lambda status, *flags: {"date": None, "status": status, "flags": list(flags)}  # noqa: E731
+    assert mail.pattern([day("ABSENT"), day("ABSENT"), day("ABSENT"), day("PRESENT")]) == "absent on the last 3 report days"
+    assert mail.pattern([day("PRESENT", "LATE"), day("PRESENT", "LATE"), day("PRESENT"), day("PRESENT", "LATE")]) == "late on 3 of the last 4 report days"
+    assert mail.pattern([day("MISSING_PUNCH"), day("PRESENT"), day("MISSING_PUNCH")]) == "missing punch on 2 of the last 3 report days"
+    assert mail.pattern([day("ABSENT")]) is None                                               # one day is not a pattern
+
+
+def test_email_shows_change_and_pattern_across_days(engine, settings):
+    from datetime import timedelta
+
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        for i in (2, 1):                                     # T2 absent on the two days before as well
+            d = DAY - timedelta(days=i)
+            service.process_upload(s, settings, "s.xlsx", summary_file(ATTENDANCE, day=d.strftime("%d/%m/%Y")), "tester")
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
+        html, text, _ = mail.render(s, settings, lead)
+    assert "absent on the last 3 report days" in html and "(absent on the last 3 report days)" in text
+    assert "compared with 12-Nov-2026" in html and "= same" in html
+
+
+def test_emails_do_not_show_hod_team_or_manager_per_person():
+    from daily import mail as m
+    from daily.render import dashboard_html_for
+    assert not {"hod", "team", "manager"} & {k for _, k, _ in m.ROSTER_COLS}
+    row = {"code": "E1", "name": "A", "department": "D", "hod": "Secret HOD", "team": "Secret team", "manager": "Secret manager",
+           "status": "PRESENT", "status_label": "Present", "flags": []}
+    html = dashboard_html_for("APIS", date(2026, 11, 14), "t", {}, [], [], {"by": "Team", "rows": []}, [row], "%d-%b-%Y",
+                              routing_columns=False).decode()
+    assert "Secret" not in html
+    assert "Secret HOD" in dashboard_html_for("APIS", date(2026, 11, 14), "t", {}, [], [], {"by": "Team", "rows": []}, [row],
+                                              "%d-%b-%Y").decode()          # the in-app dashboard keeps them
+
+
+def test_email_body_has_no_hod_or_team_breakdown():
+    from pathlib import Path
+    tpl = (Path(__file__).parents[2] / "daily" / "templates" / "mail.html").read_text(encoding="utf-8")
+    assert "company_by_hod" not in tpl and "summary_by_team" not in tpl
+
+
+def test_logo_is_embedded_and_centred():
+    from email import message_from_bytes
+    from daily import branding
+    from daily.mailer import build_message
+    html = '<td align="center"><img src="cid:apis-logo"></td>'
+    msg = build_message("a@x.com", ["b@x.com"], "s", html, "t", [])
+    parts = {p.get_content_type(): p for p in message_from_bytes(msg.as_bytes()).walk()}
+    assert "multipart/related" in parts and parts["image/png"]["Content-ID"] == "<apis-logo>"
+    assert parts["image/png"].get_payload(decode=True) == branding.logo_png()
+    assert "image/png" not in {p.get_content_type() for p in build_message("a@x.com", ["b@x.com"], "s", "<p>x</p>", "t", []).walk()}
+    assert branding.inline_logo_for_browser(html).count("data:image/png;base64,") == 1
+
+
+def test_no_hod_name_goes_to_director_even_with_an_email():
+    from daily import routing
+    from database.models.daily import Employee
+    e = Employee(code="HO0034", name="Amit Anand", department="Director Office", hod_name=None, hod_email="amit@example.com")
+    assert routing.route_employee(e).detail_to == routing.DIRECTOR

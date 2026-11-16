@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{{ subject }}</title></head>
+<body style="margin:0;padding:0;background:#f6efe3;font-family:Segoe UI,Arial,sans-serif;color:#2b2118;">
+{% set t = b.totals %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6efe3;"><tr><td align="center" style="padding:18px 8px;">
+<table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border:1px solid #ecdfc9;">
+  <tr><td align="center" style="padding:22px 24px 14px;background:#ffffff;">
+    <img src="cid:apis-logo" width="150" height="81" alt="apis" style="display:block;margin:0 auto;border:0;outline:none;width:150px;height:auto;">
+  </td></tr>
+  <tr><td style="padding:0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td height="4" style="height:4px;line-height:4px;font-size:0;background:#5e3c0f;">&nbsp;</td>
+    <td height="4" style="height:4px;line-height:4px;font-size:0;background:#f5b800;" width="60%">&nbsp;</td>
+    <td height="4" style="height:4px;line-height:4px;font-size:0;background:#5e3c0f;">&nbsp;</td>
+  </tr></table></td></tr>
+  <tr><td align="center" style="padding:18px 24px 2px;">
+    <div style="font:bold 21px Georgia,serif;color:#5e3c0f;letter-spacing:.3px;">Monthly Attendance</div>
+    <div style="font-size:13px;color:#9f7b49;padding-top:3px;">{{ month }}</div>
+  </td></tr>
+  <tr><td style="padding:14px 24px 6px;">
+    <p style="font-size:14px;margin:10px 0 4px;">{{ greeting }},</p>
+    <p style="font-size:14px;margin:0 0 6px;color:#4a3b2c;">
+      {% if b.is_director %}Here is the company's attendance for {{ month }}.{% else %}Here is your team's attendance for {{ month }}.{% endif %}
+      {{ t.working_days }} working day(s) were uploaded; {{ t.employees }} employee(s).
+    </p>
+  </td></tr>
+  <tr><td style="padding:0 18px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;">
+      <tr>
+      {% for lbl, value, color in [("Avg attendance", ("–" if t.attendance_pct is none else t.attendance_pct ~ "%"), "#835415"), ("Absences", t.absent, "#a52a1a"), ("Leave", t.leave + t.half_day, "#9f7b49"), ("Late arrivals", t.late, "#c88a00")] %}
+        <td width="25%" style="background:#fffbf6;border:1px solid #ecdfc9;border-top:3px solid {{ color }};padding:8px 10px;">
+          <div style="font-size:11px;color:#6e6152;text-transform:uppercase;">{{ lbl }}</div>
+          <div style="font:bold 21px Georgia,serif;color:{{ color }};">{{ value }}</div></td>
+      {% endfor %}
+      </tr>
+      <tr>
+      {% for lbl, value, color in [("Employees", t.employees, "#5e3c0f"), ("On duty", t.od, "#3b6fb6"), ("WFH", t.wfh, "#5a7fc0"), ("Missing punches", t.missing_punch, "#c88a00")] %}
+        <td width="25%" style="background:#fffbf6;border:1px solid #ecdfc9;border-top:3px solid {{ color }};padding:8px 10px;">
+          <div style="font-size:11px;color:#6e6152;text-transform:uppercase;">{{ lbl }}</div>
+          <div style="font:bold 21px Georgia,serif;color:{{ color }};">{{ value }}</div></td>
+      {% endfor %}
+      </tr>
+    </table>
+  </td></tr>
+
+  {% if b.groups|length > 1 %}
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">By {{ b.group_by|lower }}</td></tr>
+  <tr><td style="padding:0 24px 10px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+      <tr style="background:#835415;color:#ffffff;"><th align="left">{{ b.group_by }}</th><th align="right">Employees</th><th align="right">Attendance</th><th align="right">Absences</th><th align="right">Late</th><th align="right">Need attention</th></tr>
+      {% for g in b.groups %}
+      <tr style="border-bottom:1px solid #ecdfc9;"><td>{{ g.name }}</td><td align="right">{{ g.employees }}</td><td align="right">{{ "–" if g.attendance_pct is none else g.attendance_pct ~ "%" }}</td><td align="right">{{ g.absent }}</td><td align="right">{{ g.late }}</td><td align="right">{{ g.attention }}</td></tr>
+      {% endfor %}
+    </table>
+  </td></tr>
+  {% endif %}
+
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">Needs attention this month</td></tr>
+  <tr><td style="padding:0 24px 10px;">
+    {% if b.attention %}
+    <div style="font-size:12px;color:#6e6152;padding-bottom:4px;">{{ thresholds.absent }}+ absences, {{ thresholds.late }}+ late arrivals or {{ thresholds.missing_punch }}+ missing punches.</div>
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+      <tr style="background:#fbe4e1;color:#5e3c0f;"><th align="left">Code</th><th align="left">Name</th><th align="left">Pattern</th><th align="right">Attendance</th></tr>
+      {% for p in b.attention %}
+      <tr style="border-bottom:1px solid #ecdfc9;"><td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.reason }}</td><td align="right">{{ "–" if p.attendance_pct is none else p.attendance_pct ~ "%" }}</td></tr>
+      {% endfor %}
+    </table>
+    {% if b.attention_more %}<div style="font-size:12px;color:#6e6152;padding-top:4px;">… and {{ b.attention_more }} more in the attachment.</div>{% endif %}
+    {% else %}<div style="font-size:13px;color:#2e7d4f;">No recurring absence, late-arrival or missing-punch patterns this month.</div>{% endif %}
+  </td></tr>
+
+  <tr><td style="padding:10px 24px 2px;font:bold 16px Georgia,serif;color:#5e3c0f;">Next month planning</td></tr>
+  <tr><td style="padding:0 24px 12px;font-size:13px;">
+    <ul style="margin:4px 0;padding-left:18px;">{% for n in b.planning %}<li style="margin-bottom:4px;">{{ n }}</li>{% endfor %}</ul>
+  </td></tr>
+  <tr><td style="padding:8px 24px 16px;font-size:13px;color:#6e6152;">
+    Attached: <b>{{ attach_name }}</b> (summary, every employee's month and a day-by-day grid).<br>
+    Attendance is a workforce-availability indicator, not a measure of productivity.
+  </td></tr>
+  <tr><td style="padding:12px 24px;border-top:1px solid #ecdfc9;font-size:11px;color:#9f7b49;">
+    This is an automated email from the APIS Daily Attendance tool. Please do not forward or reply.
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

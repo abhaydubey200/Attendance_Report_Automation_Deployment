@@ -26,7 +26,10 @@ class DayUpload(Base):
     sha256: Mapped[str | None] = mapped_column(String(64))
     bizom_filename: Mapped[str | None] = mapped_column(String(255))        # Bizom attendance report
     bizom_path: Mapped[str | None] = mapped_column(String(500))
-    bizom_sha256: Mapped[str | None] = mapped_column(String(64))
+    bizom_sha256: Mapped[str | None] = mapped_column(String(64))           # (Bizom is no longer used; kept for old days)
+    permission_filename: Mapped[str | None] = mapped_column(String(255))   # Pocket HRMS Permission Report
+    permission_path: Mapped[str | None] = mapped_column(String(500))
+    permission_sha256: Mapped[str | None] = mapped_column(String(64))
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     employees: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     insights: Mapped[str] = mapped_column(Text, nullable=False)          # JSON computed at upload
@@ -64,6 +67,7 @@ class EmployeeDay(Base):
     bizom_status: Mapped[str | None] = mapped_column(String(10))
     designation: Mapped[str | None] = mapped_column(String(60))
     hq: Mapped[str | None] = mapped_column(String(100))
+    permission: Mapped[str | None] = mapped_column(String(80))            # e.g. "Approved 16:00-18:00"
 
 
 class AppSetting(Base):
@@ -171,3 +175,40 @@ class MailItem(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
     approved_by: Mapped[str | None] = mapped_column(String(100))
     sent_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class JobRun(Base):
+    """One run of an unattended job (daily / monthly / backup / cleanup), for the Automation screen."""
+
+    __tablename__ = "job_run"
+    __table_args__ = (Index("ix_job_run_started", "started_at"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(String(20), nullable=False)          # DAILY | MONTHLY | BACKUP | CLEANUP
+    target: Mapped[str | None] = mapped_column(String(20))                # 2026-11-14 / 2026-11
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)      # SCHEDULED | MANUAL | CLI
+    status: Mapped[str] = mapped_column(String(10), nullable=False)       # RUNNING | SUCCESS | PARTIAL | FAILED | SKIPPED
+    summary: Mapped[str | None] = mapped_column(Text)                     # JSON
+    error: Mapped[str | None] = mapped_column(String(1000))
+    started_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class MonthlySummary(Base):
+    """Month-end result: kept permanently, even after that month's daily rows are cleaned up."""
+
+    __tablename__ = "monthly_summary"
+    __table_args__ = {"schema": SCHEMA}
+
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)        # YYYY-MM
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    employees: Mapped[int] = mapped_column(Integer, nullable=False)
+    attendance_pct: Mapped[str | None] = mapped_column(String(10))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)              # JSON: totals, by HOD, trend
+    archive_path: Mapped[str | None] = mapped_column(String(500))           # full daily export of the month (.xlsx)
+    archive_sha256: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(12), nullable=False)        # GENERATED | ARCHIVED | CLEANED
+    generated_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+    cleaned_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

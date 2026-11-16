@@ -14,7 +14,7 @@ import io
 import json
 import time
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import xlsxwriter
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from core.config import Settings
 from core.timeutils import now_utc
 from daily import analysis, employees, routing
+from daily.branding import excel_banner
 from daily.mailer import Attachment, MailError, build_message, send
 from daily.settings_store import get_email_settings, get_rules
 from database.models.daily import DayUpload, EmailLog, EmployeeDay, MailItem
@@ -33,11 +34,14 @@ from security.audit import record_activity
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PENDING, SENT, SAVED, FAILED, HELD, DISABLED, DUPLICATE, SUPERSEDED = (
     "PENDING", "SENT", "SAVED", "FAILED", "HELD", "DISABLED", "DUPLICATE", "SUPERSEDED")
+TEST_SENT = "TEST_SENT"          # delivered only to the testing address; the real recipient has NOT received it
 DELIVERED = (SENT, SAVED)
+SENDABLE = (PENDING, FAILED, TEST_SENT)
 NO_RECORD = "NO_RECORD"
 NOT_IN_MASTER = "NOT_IN_EMPLOYEE_MASTER"
 LABELS = {**analysis.STATUS_LABEL, NO_RECORD: "No attendance record"}
 _env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=select_autoescape(["html"]))
+_env.filters["t12"] = analysis.t12
 SLEEP = time.sleep          # patched in tests
 
 
@@ -51,7 +55,7 @@ def _rows(session: Session, upload_id: int) -> dict[str, dict]:
             "status_label": LABELS.get(e.status, e.status), "in_time": e.in_time, "out_time": e.out_time,
             "work_hours": round(e.work_minutes / 60, 2) if e.work_minutes is not None else None,
             "late_minutes": e.late_minutes, "early_minutes": e.early_minutes, "leave_type": e.leave_type,
-            "source": e.source or "HRMS", "bizom_status": e.bizom_status or "", "flags": (e.flags or "").split(",") if e.flags else []}
+            "source": e.source or "HRMS", "permission": e.permission or "", "flags": (e.flags or "").split(",") if e.flags else []}
     return out
 
 
@@ -60,23 +64,29 @@ def _row_for(r: routing.Route, rows: dict[str, dict]) -> dict:
     if row is None:
         row = {"code": r.code, "name": r.name, "category": "", "status": NO_RECORD, "status_label": LABELS[NO_RECORD], "in_time": None,
                "out_time": None, "work_hours": None, "late_minutes": 0, "early_minutes": 0, "leave_type": None, "source": "",
-               "bizom_status": "", "flags": []}
+               "permission": "", "flags": []}
     return {**row, "name": r.name or row["name"], "department": r.department, "hod": r.hod, "team": r.team, "manager": r.manager}
 
 
 def attention(row: dict) -> str | None:
     """Why this employee needs a look today (None = fine, covered by the counts)."""
+    reason = _attention(row)
+    if reason and "PERMISSION_PENDING" in row.get("flags", []):
+        pending = [p for p in (row.get("permission") or "").split("; ") if p.startswith("Pending")]
+        reason += f" (permission pending{pending[0][len('Pending'):]})" if pending else " (permission pending)"
+    return reason
+
+
+def _attention(row: dict) -> str | None:
     if row["status"] == "ABSENT":
         return "Absent"
-    if row["status"] == NO_RECORD:
-        return "No attendance record"
     if row["status"] == "MISSING_PUNCH":
         return "Missing punch" + (f", late {row['late_minutes']} min" if "LATE" in row["flags"] else "")
     reasons = []
     if "LATE" in row["flags"]:
         reasons.append(f"Late {row['late_minutes']} min")
     if "LEFT_EARLY" in row["flags"]:
-        reasons.append(f"Left early {row['early_minutes']} min")
+        reasons.append(f"Left early, {row['early_minutes']} min short of the required hours")
     return ", ".join(reasons) or None
 
 
@@ -86,9 +96,92 @@ def counts(rows: list[dict], single_punch_counts: bool = True) -> dict:
     present_eq = c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + (c["MISSING_PUNCH"] if single_punch_counts else 0) + 0.5 * c["HALF_DAY"]
     return {"total": len(rows), "present": c["PRESENT"], "absent": c["ABSENT"], "leave": c["LEAVE"] + c["HALF_DAY"],
             "od": c["ON_DUTY"], "wfh": c["WFH"], "late": sum(1 for r in rows if "LATE" in r["flags"]),
+            "left_early": sum(1 for r in rows if "LEFT_EARLY" in r["flags"]),
             "missing_punch": c["MISSING_PUNCH"], "week_off": c["WEEK_OFF"], "not_tracked": c["NOT_TRACKED"], "no_record": c[NO_RECORD],
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
             "attention": sum(1 for r in rows if attention(r))}
+
+
+HISTORY_DAYS = 5          # uploaded days looked at for patterns (absent in a row, repeatedly late, ...)
+HISTORY_WINDOW = 7        # ... and only those within this many calendar days of the report date
+
+
+def headline(c: dict | None, who: str, day: str = "") -> str | None:
+    """One sentence a busy manager can act on (always names the date, never "today")."""
+    if not c or not c["total"]:
+        return None
+    on = f" on {day}" if day else ""
+    if not c["attention"]:
+        return f"All {c['total']} people in {who} are accounted for{on} - nobody needs attention."
+    parts = [f"{c['absent']} absent" if c["absent"] else "", f"{c['missing_punch']} missing punch" if c["missing_punch"] else "",
+             f"{c['late']} late" if c["late"] else "", f"{c['left_early']} left early" if c.get("left_early") else ""]
+    return f"{c['attention']} of {c['total']} people in {who} need attention{on}: " + ", ".join(x for x in parts if x) + "."
+
+
+def subject_numbers(c: dict) -> str:
+    """'2 absent · 3 late' for the subject line (the most useful counts only)."""
+    if c.get("exceptions"):
+        return f"{c['exceptions']} record(s) to fix"
+    main = c["team"] if c["team"]["total"] else (c.get("summary") or c.get("company") or c["team"])
+    parts = [f"{main[k]} {label}" for k, label in (("absent", "absent"), ("late", "late"), ("missing_punch", "missing punch")) if main.get(k)]
+    return " · ".join(parts) if parts else ("all present" if main.get("total") else "no attendance")
+
+
+def _previous_upload(session: Session, day: date) -> DayUpload | None:
+    return session.scalar(select(DayUpload).where(DayUpload.report_date < day, DayUpload.is_current.is_(True))
+                          .order_by(DayUpload.report_date.desc()))
+
+
+def change(now: dict | None, before: dict | None) -> dict:
+    """Differences with the previous uploaded day (None when there is nothing to compare)."""
+    out = {"absent": None, "late": None, "missing_punch": None, "attendance_pct": None}
+    if not now or not before or not before.get("total"):
+        return out
+    for k in ("absent", "late", "missing_punch"):
+        out[k] = now[k] - before[k]
+    if now.get("attendance_pct") is not None and before.get("attendance_pct") is not None:
+        out["attendance_pct"] = round(now["attendance_pct"] - before["attendance_pct"], 1)
+    return out
+
+
+def _history(session: Session, day: date, codes: set[str]) -> dict[str, list[dict]]:
+    """code -> statuses of the last HISTORY_DAYS uploaded days up to `day` (newest first)."""
+    ups = list(session.execute(select(DayUpload.upload_id, DayUpload.report_date).where(
+        DayUpload.report_date <= day, DayUpload.report_date > day - timedelta(days=HISTORY_WINDOW),
+        DayUpload.is_current.is_(True)).order_by(DayUpload.report_date.desc()).limit(HISTORY_DAYS)))
+    if not ups or not codes:
+        return {}
+    when = {u: d for u, d in ups}
+    out: dict[str, list[dict]] = defaultdict(list)
+    q = select(EmployeeDay.upload_id, EmployeeDay.employee_code, EmployeeDay.status, EmployeeDay.flags).where(
+        EmployeeDay.upload_id.in_(list(when)))
+    for upload_id, code, status, flags in session.execute(q):
+        if code.upper() in codes:
+            out[code.upper()].append({"date": when[upload_id], "status": status, "flags": (flags or "").split(",")})
+    for v in out.values():
+        v.sort(key=lambda x: x["date"], reverse=True)
+    return out
+
+
+def pattern(days: list[dict]) -> str | None:
+    """'absent 3 days in a row', 'late 4 of the last 5 days' ... (needs at least 2 days of history)."""
+    if len(days) < 2:
+        return None
+    notes = []
+    streak = 0
+    for d in days:
+        if d["status"] != "ABSENT":
+            break
+        streak += 1
+    if streak >= 2:
+        notes.append(f"absent on the last {streak} report days")
+    late = sum(1 for d in days if "LATE" in d["flags"])
+    if late >= 3:
+        notes.append(f"late on {late} of the last {len(days)} report days")
+    mp = sum(1 for d in days if d["status"] == "MISSING_PUNCH")
+    if mp >= 2:
+        notes.append(f"missing punch on {mp} of the last {len(days)} report days")
+    return "; ".join(notes) or None
 
 
 def _sort_attention_first(rows: list[dict]) -> list[dict]:
@@ -101,7 +194,8 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
     recipients already sent for the day are marked DUPLICATE (sent once per recipient per day)."""
     cfg = get_email_settings(session, settings)
     day = upload.report_date
-    for old in session.scalars(select(MailItem).where(MailItem.report_date == day, MailItem.status.in_((PENDING, FAILED, HELD)))):
+    for old in session.scalars(select(MailItem).where(MailItem.report_date == day, ~MailItem.recipient_key.like("MONTHLY:%"),
+                                                     MailItem.status.in_((PENDING, FAILED, HELD, TEST_SENT)))):
         old.status, old.note = SUPERSEDED, "Replaced by a newer upload of this day."
     delivered = {k for (k,) in session.execute(select(MailItem.recipient_key).where(MailItem.report_date == day,
                                                                                    MailItem.status.in_(DELIVERED)))}
@@ -126,12 +220,14 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
              "company": counts(company_rows) if company_rows else None,
              "exceptions": len(content.get("exceptions", []))}
         status, note = (PENDING, None) if rec.status == "OK" else (rec.status, rec.note)
+        if status == HELD and cfg.test_recipient:
+            status, note = PENDING, f"Testing: {rec.note} Goes to the test address only."
         if status == PENDING and rec.key in delivered:
             status, note = DUPLICATE, "Already sent for this day (sent once per recipient per day)."
         name = rec.name
         item = MailItem(upload_id=upload.upload_id, report_date=day, recipient_key=rec.key, recipient_name=name, role=rec.role,
                         to_addrs=", ".join(rec.to) or None, cc_addrs=", ".join(rec.cc) or None,
-                        subject=f"{cfg.subject_prefix} | {day:%d-%b-%Y} | {name}", content=json.dumps(content),
+                        subject=f"{cfg.subject_prefix} | {day:%d-%b-%Y} | {name} | {subject_numbers(c)}", content=json.dumps(content),
                         counts=json.dumps(c), status=status, note=note, attempts=0)
         session.add(item)
         items.append(item)
@@ -143,7 +239,7 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
 
 
 def items_for(session: Session, day: date, include_old: bool = False) -> list[MailItem]:
-    stmt = select(MailItem).where(MailItem.report_date == day)
+    stmt = select(MailItem).where(MailItem.report_date == day, ~MailItem.recipient_key.like("MONTHLY:%"))
     if not include_old:
         stmt = stmt.where(MailItem.status != SUPERSEDED)
     return list(session.scalars(stmt.order_by(MailItem.id)))
@@ -189,37 +285,46 @@ def _sections(session: Session, item: MailItem) -> dict:
     return {"team": team, "summary": summary, "company": company, "exceptions": exceptions}
 
 
-def _group_table(rows: list[dict], key: str, label_of=None) -> list[dict]:
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for r in rows:
-        groups[r.get(key) or "—"].append(r)
-    out = []
-    for name, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-        c = counts(rs)
-        out.append({"name": label_of(name, rs) if label_of else name, **c})
-    return out
-
-
-def _team_label(team: str, rs: list[dict]) -> str:
-    mgr = Counter(r["manager"] for r in rs if r.get("manager")).most_common(1)
-    who = mgr[0][0].title() if mgr and mgr[0][0].isupper() else (mgr[0][0] if mgr else "")
-    return f"{team} ({who})" if who and team != employees.DIRECT else team
-
-
 def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, str, list[Attachment]]:
     """(html, text, attachments) for one mail item."""
+    if json.loads(item.content).get("kind") == "monthly":
+        from daily import monthly
+
+        return monthly.render(session, settings, item)
     cfg = get_email_settings(session, settings)
     s = _sections(session, item)
     day = item.report_date.strftime(settings.app.date_format)
-    team_att = [dict(r, reason=attention(r)) for r in _sort_attention_first(s["team"]) if attention(r)]
+    prev_up = _previous_upload(session, item.report_date)
+    prev_rows = _rows(session, prev_up.upload_id) if prev_up else {}
+
+    def before(rows: list[dict]) -> dict | None:
+        if not prev_up:
+            return None
+        return counts([dict(r, **{k: prev_rows[r["code"].upper()][k] for k in ("status", "flags")}) for r in rows
+                       if r["code"].upper() in prev_rows])
+
+    hist = _history(session, item.report_date, {r["code"].upper() for r in s["team"] + s["summary"]})
+
+    def with_pattern(r: dict) -> dict:
+        return dict(r, reason=attention(r), pattern=pattern(hist.get(r["code"].upper(), [])))
+
+    team_att = [with_pattern(r) for r in _sort_attention_first(s["team"]) if attention(r)]
+    team_codes = {r["code"] for r in s["team"]}
+    # department: only the recurring patterns of people outside the HOD's own team (the counts cover the rest)
+    dept_patterns = [p for p in (with_pattern(r) for r in s["summary"] if r["code"] not in team_codes) if p["pattern"]]
+    team_c = counts(s["team"]) if s["team"] else None
+    summary_c = counts(s["summary"]) if s["summary"] else None
+    company_c = counts(s["company"]) if s["company"] else None
     blocks = {
-        "team": counts(s["team"]) if s["team"] else None,
+        "team": team_c, "team_change": change(team_c, before(s["team"]) if team_c else None),
+        "team_headline": headline(team_c, "your team" if not company_c else "the Director Office", day),
         "team_attention": team_att[:60], "team_attention_more": max(0, len(team_att) - 60),
-        "summary": counts(s["summary"]) if s["summary"] else None,
-        "summary_by_team": _group_table(s["summary"], "team", _team_label) if s["summary"] else [],
-        "company": counts(s["company"]) if s["company"] else None,
-        "company_by_hod": _group_table(s["company"], "hod") if s["company"] else [],
+        "summary": summary_c, "summary_change": change(summary_c, before(s["summary"]) if summary_c else None),
+        "summary_headline": headline(summary_c, "your wider team", day),
+        "dept_patterns": sorted(dept_patterns, key=lambda p: p["name"])[:25],
+        "company": company_c, "company_change": change(company_c, before(s["company"]) if company_c else None),
         "exceptions": s["exceptions"][:200], "exceptions_more": max(0, len(s["exceptions"]) - 200),
+        "previous_day": prev_up.report_date.strftime(settings.app.date_format) if prev_up else None,
     }
     greeting = "Dear HR team" if item.recipient_key == routing.HR else f"Dear {item.recipient_name}"
     stem = f"Attendance_{item.report_date:%Y-%m-%d}_{''.join(ch if ch.isalnum() else '_' for ch in item.recipient_name).strip('_')}"
@@ -244,26 +349,25 @@ def _kpi_line(c: dict) -> str:
 
 def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
     lines = [f"{greeting},", "", f"Daily attendance for {day}.", ""]
+    for key in ("team_headline", "summary_headline"):
+        if b.get(key):
+            lines.append(b[key])
+    lines.append("")
     if b["team"]:
         lines += ["YOUR TEAM", _kpi_line(b["team"]), ""]
         if b["team_attention"]:
             lines.append("Needs attention:")
-            lines += [f"- {r['code']} {r['name']}: {r['reason']}" for r in b["team_attention"]]
+            lines += [f"- {r['code']} {r['name']}: {r['reason']}" + (f" ({r['pattern']})" if r.get("pattern") else "")
+                      for r in b["team_attention"]]
             if b["team_attention_more"]:
                 lines.append(f"- ... and {b['team_attention_more']} more in the attachment")
         else:
-            lines.append("Nobody needs attention today.")
+            lines.append(f"Nobody needs attention on {day}.")
         lines.append("")
     if b["summary"]:
-        lines += ["DEPARTMENT SUMMARY (everyone under you)", _kpi_line(b["summary"]), ""]
-        lines += [f"- {t['name']}: {t['total']} employees, {t['present']} present, {t['absent']} absent, {t['late']} late"
-                  for t in b["summary_by_team"]]
-        lines.append("")
+        lines += ["YOUR WIDER TEAM (everyone under you)", _kpi_line(b["summary"]), ""]
     if b["company"]:
-        lines += ["COMPANY SUMMARY BY HOD", _kpi_line(b["company"]), ""]
-        lines += [f"- {t['name']}: {t['total']} employees, {t['present']} present, {t['absent']} absent, "
-                  f"attendance {t['attendance_pct'] if t['attendance_pct'] is not None else '-'}%" for t in b["company_by_hod"]]
-        lines.append("")
+        lines += ["COMPANY SUMMARY", _kpi_line(b["company"]), ""]
     if b["exceptions"]:
         lines += ["RECORDS THAT COULD NOT BE ROUTED"]
         lines += [f"- {x['code']} {x['name']}: {x['issue']}" for x in b["exceptions"]]
@@ -274,9 +378,9 @@ def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
 
 
 ROSTER_COLS = [("Code", "code", 11), ("Name", "name", 26), ("Needs attention", "reason", 22), ("Status", "status_label", 15),
-               ("In", "in_time", 7), ("Out", "out_time", 7), ("Hours", "work_hours", 7), ("Late (min)", "late_minutes", 9),
-               ("Left early (min)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Department", "department", 18),
-               ("HOD", "hod", 16), ("Team", "team", 14), ("Reporting manager", "manager", 18), ("Source", "source", 11)]
+               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 9),
+               ("Left early (min)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Permission", "permission", 20)]
+# (department, HOD, team and reporting manager are not shown in emails)
 
 
 def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
@@ -290,47 +394,31 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
 
     def roster(name: str, rows: list[dict], heading: str) -> None:
         ws = wb.add_worksheet(name[:31])
-        ws.write(0, 0, heading, title)
+        excel_banner(wb, ws, [w for _, _, w in ROSTER_COLS], heading)
         for j, (h, _, w) in enumerate(ROSTER_COLS):
             ws.write(2, j, h, head)
             ws.set_column(j, j, w)
         for i, r in enumerate(_sort_attention_first(rows), start=3):
             reason = attention(r)
             for j, (_, k, _) in enumerate(ROSTER_COLS):
-                v = reason if k == "reason" else r.get(k)
+                v = (reason if k == "reason" else analysis.t12(r.get(k)) if k in ("in_time", "out_time")
+                     else analysis.hm(r.get(k)) if k == "work_hours" else r.get(k))
                 ws.write(i, j, "" if v in (None, 0) and k in ("late_minutes", "early_minutes", "in_time", "out_time", "work_hours",
-                                                              "leave_type", "reason") else ("" if v is None else v),
+                                                              "leave_type", "reason", "permission") else ("" if v is None else v),
                          flag if reason else cell)
         ws.freeze_panes(3, 2)
         if rows:
             ws.autofilter(2, 0, 2 + len(rows), len(ROSTER_COLS) - 1)
 
-    def table(name: str, groups: list[dict], first: str, heading: str) -> None:
-        ws = wb.add_worksheet(name[:31])
-        ws.write(0, 0, heading, title)
-        cols = [(first, "name", 34), ("Employees", "total", 10), ("Present", "present", 9), ("Absent", "absent", 9),
-                ("Leave", "leave", 8), ("OD", "od", 6), ("WFH", "wfh", 6), ("Late", "late", 7), ("Missing punch", "missing_punch", 9),
-                ("Week off", "week_off", 8), ("Not tracked", "not_tracked", 9), ("Attendance %", "attendance_pct", 11)]
-        for j, (h, _, w) in enumerate(cols):
-            ws.write(2, j, h, head)
-            ws.set_column(j, j, w)
-        for i, g in enumerate(groups, start=3):
-            for j, (_, k, _) in enumerate(cols):
-                ws.write(i, j, "" if g.get(k) is None else g[k], cell)
-
     if s["team"]:
         roster("Team roster", s["team"], f"{item.recipient_name} - team attendance - {day}")
     if s["summary"]:
-        table("Department summary", _group_table(s["summary"], "team", _team_label), "Team",
-              f"Department summary (everyone under {item.recipient_name}) - {day}")
-        roster("Department roster", s["summary"], f"Everyone under {item.recipient_name} - {day}")
-    if s["company"]:
-        table("Company by HOD", _group_table(s["company"], "hod"), "HOD", f"Company summary by HOD - {day}")
+        roster("Wider team roster", s["summary"], f"Everyone under {item.recipient_name} - {day}")
     if s["exceptions"]:
         ws = wb.add_worksheet("Exceptions")
-        ws.write(0, 0, f"Records that could not be routed - {day}", title)
-        cols = [("Code", "code", 12), ("Name", "name", 26), ("Issue", "issue", 30), ("Department", "department", 18),
-                ("HOD", "hod", 18), ("Attendance today", "status_label", 18), ("Source", "source", 11)]
+        cols = [("Code", "code", 12), ("Name", "name", 26), ("Issue", "issue", 30),
+                (f"Attendance {day}", "status_label", 20), ("Category", "category", 12)]
+        excel_banner(wb, ws, [w for _, _, w in cols], f"Records that could not be routed - {day}")
         for j, (h, _, w) in enumerate(cols):
             ws.write(2, j, h, head)
             ws.set_column(j, j, w)
@@ -354,19 +442,26 @@ def dashboard(session: Session, settings: Settings, item: MailItem, people: list
                                        status=r["status"] if r["status"] in analysis.STATUSES else "NOT_TRACKED",
                                        late_minutes=r["late_minutes"], early_minutes=r["early_minutes"], flags=list(r["flags"]),
                                        department=r.get("department"), hod=r.get("hod"), team=r.get("team"), manager=r.get("manager"),
-                                       source=r.get("source") or "HRMS") for r in people]
-    groups = defaultdict(list)
-    for res in results:
-        groups[res.team or "—"].append(res)
-    sums = {k: analysis.summarize(v, rules) for k, v in groups.items()}
+                                       source=r.get("source") or "HRMS", permission=r.get("permission") or None) for r in people]
     summary = analysis.summarize(results, rules)
-    breakdown = {"by": "Team", "rows": [analysis._breakdown_row(k, v) for k, v in sorted(sums.items())] if len(sums) > 1 else []}
+    breakdown = {"by": "Team", "rows": []}          # no per-team / per-HOD breakdown in emailed dashboards
     return dashboard_html_for(settings.app.company, item.report_date, f"Daily Attendance - {item.recipient_name}", summary,
-                              analysis.highlights(summary, sums if len(sums) > 1 else {}, rules, None, item.recipient_name),
-                              analysis.in_time_buckets(results), breakdown, people, settings.app.date_format)
+                              analysis.highlights(summary, {}, rules, None, item.recipient_name),
+                              analysis.in_time_buckets(results), breakdown, people, settings.app.date_format,
+                              routing_columns=False)
 
 
 # ---------------------------------------------------------------------------- sending
+def _with_banner(html: str, would: str) -> str:
+    """Put a red TEST banner at the top of the email body, naming the real recipient(s)."""
+    from markupsafe import escape
+
+    banner = ('<div style="background:#a52a1a;color:#ffffff;padding:10px 16px;font:bold 14px Segoe UI,Arial,sans-serif;">'
+              f"TEST EMAIL - in live use this goes to {escape(would)}</div>")
+    at = html.find(">", html.find("<body"))
+    return html[:at + 1] + banner + html[at + 1:] if at > 0 else banner + html
+
+
 def _already_delivered(session: Session, item: MailItem) -> bool:
     return session.scalar(select(MailItem.id).where(MailItem.report_date == item.report_date, MailItem.id != item.id,
                                                     MailItem.recipient_key == item.recipient_key,
@@ -380,7 +475,7 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
     outbox = settings.storage.area("outbox") / (items[0].report_date.isoformat() if items else "misc")
     done = []
     for item in items:
-        sendable = item.status in (PENDING, FAILED) or (force and item.status in (DUPLICATE, SENT, SAVED))
+        sendable = item.status in SENDABLE or (force and item.status in (DUPLICATE, SENT, SAVED))
         if not sendable:
             continue
         if not force and _already_delivered(session, item):
@@ -388,11 +483,19 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
             continue
         to = [a.strip() for a in (item.to_addrs or "").split(",") if a.strip()]
         cc = [a.strip() for a in (item.cc_addrs or "").split(",") if a.strip()]
-        if not to:
+        testing = cfg.test_recipient
+        if not to and not testing:
             item.status, item.note = HELD, item.note or "No address."
             continue
         html, text, attachments = render(session, settings, item)
-        message = build_message(cfg.sender or "attendance@localhost", to, item.subject, html, text, attachments, cc=cc,
+        subject = item.subject
+        if testing:
+            would = f"To: {', '.join(to) or '(address not set yet)'}" + (f" | CC: {', '.join(cc)}" if cc else "")
+            html = _with_banner(html, would)
+            text = f"*** TEST EMAIL - in live use this goes to {would} ***\n\n" + text
+            subject = f"[TEST] {item.subject}"
+            to, cc = [testing], [a for a in cfg.test_cc if a.lower() != testing.lower()]
+        message = build_message(cfg.sender or "attendance@localhost", to, subject, html, text, attachments, cc=cc,
                                 reply_to=cfg.reply_to)
         error = None
         for attempt in range(1, cfg.retry_attempts + 1):
@@ -400,6 +503,11 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
             try:
                 result = send(cfg, message, outbox)
                 item.status, item.note, item.outbox_file = result.status, None, result.outbox_file
+                if testing:
+                    item.status = TEST_SENT
+                    who = testing + (f" (CC {', '.join(cc)})" if cc else "")
+                    item.note = (f"Test only: {'delivered to' if result.status == SENT else 'saved to the outbox for'} {who}. "
+                                 f"The real recipient has not received it.")
                 item.sent_at, item.approved_by = now_utc(), actor
                 error = None
                 break
@@ -410,7 +518,7 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
         if error:
             item.status, item.note = FAILED, error[:500]
         session.add(EmailLog(upload_id=item.upload_id, scope=item.recipient_key[:100], recipients=", ".join(to + cc)[:2000],
-                             subject=item.subject[:300], mode="LIVE" if cfg.mode == "live" else "TEST", status=item.status,
+                             subject=subject[:300], mode="LIVE" if cfg.mode == "live" else "TEST", status=item.status,
                              error=item.note if item.status == FAILED else None, outbox_file=item.outbox_file, sent_by=actor))
         done.append(item)
     session.flush()
@@ -422,5 +530,5 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
 
 
 def approve(session: Session, settings: Settings, day: date, actor: str, ids: list[int] | None = None) -> list[MailItem]:
-    items = [i for i in items_for(session, day) if i.status in (PENDING, FAILED) and (ids is None or i.id in ids)]
+    items = [i for i in items_for(session, day) if i.status in SENDABLE and (ids is None or i.id in ids)]
     return send_items(session, settings, items, actor)

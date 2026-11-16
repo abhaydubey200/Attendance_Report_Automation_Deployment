@@ -7,7 +7,9 @@ from datetime import date
 
 import xlsxwriter
 
+from daily import analysis
 from daily.analysis import STATUS_LABEL
+from daily.branding import excel_banner
 from daily.render import breakdown, scope_label, scoped_rows, sources_label
 
 BROWN, HONEY, CREAM, INK = "#835415", "#F5B800", "#FFF4E3", "#2B2118"
@@ -16,16 +18,16 @@ STATUS_FILL = {"PRESENT": "#E4F1E8", "MISSING_PUNCH": "#FFF1D6", "ON_DUTY": "#E8
 
 DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "category", 12), ("Department", "department", 18),
                ("HOD", "hod", 18), ("Team", "team", 14), ("Reporting manager", "manager", 20), ("Status", "status_label", 15),
-               ("In", "in_time", 8), ("Out", "out_time", 8), ("Hours", "work_hours", 8), ("Late (min)", "late_minutes", 10),
-               ("Left early (min)", "early_minutes", 14), ("Leave type", "leave_type", 10), ("Source", "source", 12),
-               ("Bizom", "bizom_status", 8), ("Designation", "designation", 12), ("Shift", "shift", 18)]
+               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 10),
+               ("Left early (min)", "early_minutes", 14), ("Leave type", "leave_type", 10), ("Permission", "permission", 20),
+               ("Shift", "shift", 18)]
 
 
 def build_excel(company: str, report_date: date, scope: str, insights: dict, rows: list[dict], date_format: str) -> bytes:
     data = insights["scopes"][scope]
     s, c = data["summary"], data["summary"]["counts"]
     rows = sorted(scoped_rows(rows, scope), key=lambda r: (r.get("department") or r["category"], r["code"]))
-    title = f"{company} - Daily Attendance - {scope_label(scope)}"
+    title = f"Daily Attendance - {scope_label(scope)}"
 
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
@@ -46,13 +48,13 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
     ws = wb.add_worksheet("Summary")
     ws.set_column(0, 0, 30)
     ws.set_column(1, 6, 16)
-    ws.write(0, 0, title, f_title)
-    ws.write(1, 0, f"Date: {report_date.strftime(date_format)}   |   Generated automatically from {sources_label(insights)}", f_sub)
+    excel_banner(wb, ws, [30] + [16] * 6, title,
+                 f"Date: {report_date.strftime(date_format)}   |   Generated automatically from {sources_label(insights)}")
     kpis = [("Employees", s["employees"]), ("Tracked", s["tracked"]), ("Attendance %", "" if s["attendance_pct"] is None else s["attendance_pct"]),
             ("Present", c["PRESENT"]), ("Absent", c["ABSENT"]), ("Late arrivals", s["late"]), ("Missing punch", c["MISSING_PUNCH"]),
             ("Leave", c["LEAVE"]), ("Half day", c["HALF_DAY"]), ("On duty", c["ON_DUTY"]), ("Work from home", c.get("WFH", 0)), ("Left early", s["left_early"]),
             ("Week off", c.get("WEEK_OFF", 0)), ("Not tracked", c["NOT_TRACKED"]), ("Average arrival", s["avg_in_time"] or "-"),
-            ("Average working hours", s["avg_work_hours"] if s["avg_work_hours"] is not None else "-")]
+            ("Average working hours (h:mm)", analysis.hm(s["avg_work_hours"]) or "-")]
     ws.write(3, 0, "Key figures", f_section)
     for i, (k, v) in enumerate(kpis):
         ws.write(4 + i, 0, k, f_label)
@@ -78,13 +80,19 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
         r = r + 3 + len(bd["rows"])
     rules = insights["rules"]
     ws.write(r, 0, "How this is counted", f_section)
-    notes = [f"Late = first punch after {rules['late_after']}; left early = last punch before {rules['early_before']}.",
+    tt = analysis.t12
+    notes = [(f"Office opens {tt(rules['late_after'])}; the latest punch-in is {tt(rules['flexi_until'])}. A first punch after "
+              f"{tt(rules['flexi_until'])} is late (minutes counted from {tt(rules['flexi_until'])})."
+              if rules.get("flexi_until") else f"Late = first punch after {tt(rules['late_after'])}.")
+             + f" Everyone must work {rules['min_work_hours']:g} h, counted from their own punch-in to punch-out (less = short hours)."
+             + f" Left early = left before {tt(rules['early_before'])} without completing {rules['min_work_hours']:g} h.",
              f"Attendance % = (present + on duty + {'missing punch + ' if rules['single_punch_counts_present'] else ''}half of half-days) / tracked employees.",
              "Not tracked = no punch and no shift assigned (not counted in attendance %)." if rules["no_punch_no_shift"] == "NOT_TRACKED"
              else "No punch counts as absent.",
-             "Sources: Pocket HRMS punches and leave first; with no punch, the Bizom status is used (P present, A absent, WO week off "
-             "- not counted in attendance %, other codes leave). Present in either source counts as present.",
-             f"On-duty codes: {', '.join(rules['on_duty_codes']) or 'none'}; other leave codes count as leave."]
+             "Source: Pocket HRMS only. Approved short-leave permissions (Permission Report) excuse late arrival / early "
+             "leaving within their time window; pending ones are shown but excuse nothing.",
+             f"On-duty codes: {', '.join(rules['on_duty_codes']) or 'none'}; other leave codes count as leave.",
+             f"Always counted present (Directors): {', '.join(rules.get('always_present_codes') or []) or 'none'}."]
     for i, n in enumerate(notes):
         ws.write(r + 1 + i, 0, n, f_sub)
 
@@ -97,7 +105,8 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
         data_rows = sorted(subset, key=extra_sort) if extra_sort else subset
         for i, row in enumerate(data_rows, start=1):
             for j, (_, key, _) in enumerate(DETAIL_COLS):
-                v = row.get(key)
+                v = (analysis.t12(row.get(key)) if key in ("in_time", "out_time")
+                     else analysis.hm(row.get(key)) if key == "work_hours" else row.get(key))
                 fmt = status_fmt.get(row["status"], f_cell) if key == "status_label" else f_cell
                 w.write(i, j, "" if v is None else v, fmt)
         if not data_rows:

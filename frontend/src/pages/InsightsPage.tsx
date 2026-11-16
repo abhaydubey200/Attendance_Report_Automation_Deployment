@@ -3,11 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { apiUrl } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { BreakdownRow, DayDetail, DayListItem, EmployeeRow, Highlight, Insights } from "../api/types";
-import { SOURCE_LABELS, scopeLabel } from "../api/types";
+import { scopeLabel } from "../api/types";
 import { Link } from "react-router-dom";
 import { HBars, LineChart, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
-import { formatDate } from "../format";
+import { formatDate, formatHours, formatTime } from "../format";
 
 export function HighlightList({ items }: { items: Highlight[] }) {
   return (
@@ -19,7 +19,7 @@ export function HighlightList({ items }: { items: Highlight[] }) {
 
 const FILTERS: [string, string][] = [["ALL", "All"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"],
   ["LEFT_EARLY", "Left early"], ["LEAVE", "Leave / on duty / week off"], ["SHORT_HOURS", "Short hours"], ["NOT_TRACKED", "Not tracked"],
-  ["BIZOM", "From Bizom"]];
+  ["PERMISSION", "Permissions"]];
 
 function inScope(r: EmployeeRow, scope: string): boolean {
   if (scope === "ALL") return true;
@@ -43,7 +43,7 @@ const pctColor = (v: number) => (v < 75 ? "#a52a1a" : v < 90 ? "#c88a00" : "#2e7
 function matches(r: EmployeeRow, f: string): boolean {
   if (f === "ALL") return true;
   if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF"].includes(r.status);
-  if (f === "BIZOM") return r.source === "BIZOM";
+  if (f === "PERMISSION") return !!r.permission;
   if (["LATE", "LEFT_EARLY", "SHORT_HOURS"].includes(f)) return r.flags.includes(f);
   return r.status === f;
 }
@@ -123,13 +123,13 @@ export function InsightsPage() {
             <KpiCard label="On duty" value={s.counts.ON_DUTY} />
             <KpiCard label="Left early" value={s.left_early} />
             <KpiCard label="Avg arrival" value={s.avg_in_time ?? "—"} />
-            <KpiCard label="Avg hours" value={s.avg_work_hours ?? "—"} />
+            <KpiCard label="Avg hours (h:mm)" value={formatHours(s.avg_work_hours) || "—"} />
             <KpiCard label="Week off" value={s.counts.WEEK_OFF ?? 0} />
             <KpiCard label="Not tracked" value={s.counts.NOT_TRACKED} />
           </div>
           {day.data && (
             <p className="muted small">
-              Files: {day.data.file ? `Pocket HRMS (${day.data.file})` : "Pocket HRMS not uploaded"} · {day.data.bizom_file ? `Bizom (${day.data.bizom_file})` : "Bizom not uploaded"}
+              Files: {day.data.file ? `Pocket HRMS (${day.data.file})` : "Pocket HRMS not uploaded"} · {day.data.permission_file ? `Permission Report (${day.data.permission_file})` : "Permission Report not uploaded"}
             </p>
           )}
 
@@ -211,13 +211,13 @@ export function InsightsPage() {
                 { header: "Manager", render: (r: EmployeeRow) => r.manager ?? "" },
               ] : [{ header: "Category", render: (r: EmployeeRow) => r.category }]),
               { header: "Status", render: (r) => <span className="st" style={{ background: `${STATUS_COLORS[r.status]}22`, color: STATUS_COLORS[r.status] }}>{r.status_label}</span> },
-              { header: "In", render: (r) => r.in_time ?? "" },
-              { header: "Out", render: (r) => r.out_time ?? "" },
-              { header: "Hours", render: (r) => r.work_hours ?? "" },
+              { header: "In", render: (r) => formatTime(r.in_time) },
+              { header: "Out", render: (r) => formatTime(r.out_time) },
+              { header: "Hours", render: (r) => formatHours(r.work_hours) },
               { header: "Late", render: (r) => (r.late_minutes ? `${r.late_minutes} min` : "") },
               { header: "Left early", render: (r) => (r.early_minutes ? `${r.early_minutes} min` : "") },
               { header: "Leave", render: (r) => r.leave_type ?? "" },
-              { header: "Source", render: (r) => SOURCE_LABELS[r.source ?? "HRMS"] ?? r.source },
+              { header: "Permission", render: (r) => r.permission ?? "" },
             ]} />
           </Card>
 

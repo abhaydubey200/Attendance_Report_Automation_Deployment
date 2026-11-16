@@ -83,11 +83,15 @@ def check_email(settings: Settings, engine: Engine | None) -> HealthCheck:
             pass
     if cfg.mode == "test":
         return HealthCheck("Email", Status.WARN, "test mode: emails are saved to the outbox, not sent")
-    if not (cfg.smtp_host and cfg.sender):
-        return HealthCheck("Email", Status.FAIL, "live mode without SMTP server/sender")
-    if cfg.smtp_username and not os.environ.get("SMTP_PASSWORD"):
-        return HealthCheck("Email", Status.FAIL, "SMTP_PASSWORD is not set")
-    return HealthCheck("Email", Status.OK, f"live via {cfg.smtp_host}:{cfg.smtp_port} as {cfg.sender}")
+    if not cfg.sender:
+        return HealthCheck("Email", Status.FAIL, "live mode without a sender mailbox")
+    from daily.mailer import missing_secrets
+
+    missing = missing_secrets()
+    if missing:
+        return HealthCheck("Email", Status.FAIL, f"Gmail API: missing {', '.join(missing)} in .env (run main.py gmail-auth)")
+    test = f" - TESTING: everything goes only to {cfg.test_recipient}" if cfg.test_recipient else ""
+    return HealthCheck("Email", Status.WARN if test else Status.OK, f"live via the Gmail API as {cfg.sender}{test}")
 
 
 def run_all(settings: Settings, engine: Engine | None) -> list[HealthCheck]:

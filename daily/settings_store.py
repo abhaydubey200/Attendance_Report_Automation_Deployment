@@ -30,7 +30,10 @@ def _put(session: Session, key: str, value: dict, actor: str) -> None:
 
 def get_rules(session: Session, settings: Settings) -> Rules:
     saved = _get(session, "rules")
-    return Rules.model_validate({**settings.rules.model_dump(), **saved}) if saved else settings.rules
+    if not saved:
+        return settings.rules
+    known = set(Rules.model_fields)          # settings saved by older versions may hold retired keys
+    return Rules.model_validate({**settings.rules.model_dump(), **{k: v for k, v in saved.items() if k in known}})
 
 
 def save_rules(session: Session, rules: Rules, actor: str) -> Rules:

@@ -3,12 +3,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { apiUrl } from "../api/client";
 import { useApi, withQuery } from "../api/useApi";
 import type { AttendanceReport, EmployeeList, EmployeeReport, ReportDay, Tally } from "../api/types";
-import { SOURCE_LABELS } from "../api/types";
 import { STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
-import { formatDate } from "../format";
+import { formatDate, formatHours, formatTime } from "../format";
 
-const FILTER_KEYS = ["from", "to", "hod", "department", "team", "manager", "category", "status", "source", "q"] as const;
+const FILTER_KEYS = ["from", "to", "hod", "department", "team", "manager", "category", "status", "q"] as const;
 const STATUS_OPTIONS: [string, string][] = [["", "Any status"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"],
   ["LEAVE", "Leave"], ["HALF_DAY", "Half day"], ["ON_DUTY", "On duty"], ["WEEK_OFF", "Week off"], ["NOT_TRACKED", "Not tracked"], ["PRESENT", "Present"]];
 
@@ -32,7 +31,7 @@ function TallyKpis({ t, extra }: { t: Tally; extra?: [string, string | number][]
       <KpiCard label="Week off" value={t.week_off} />
       <KpiCard label="Not tracked" value={t.not_tracked} />
       <KpiCard label="Avg arrival" value={t.avg_in_time ?? "—"} />
-      <KpiCard label="Avg hours" value={t.avg_work_hours ?? "—"} />
+      <KpiCard label="Avg hours (h:mm)" value={formatHours(t.avg_work_hours) || "—"} />
     </div>
   );
 }
@@ -47,13 +46,12 @@ function dayColumns(withPerson: boolean) {
       { header: "HOD", render: (d: ReportDay) => d.hod },
     ] : []),
     { header: "Status", render: (d: ReportDay) => <StatusPill status={d.status} label={d.status_label} /> },
-    { header: "In", render: (d: ReportDay) => d.in_time ?? "" },
-    { header: "Out", render: (d: ReportDay) => d.out_time ?? "" },
-    { header: "Hours", render: (d: ReportDay) => d.work_hours ?? "" },
+    { header: "In", render: (d: ReportDay) => formatTime(d.in_time) },
+    { header: "Out", render: (d: ReportDay) => formatTime(d.out_time) },
+    { header: "Hours", render: (d: ReportDay) => formatHours(d.work_hours) },
     { header: "Late", render: (d: ReportDay) => (d.late_minutes ? `${d.late_minutes} min` : "") },
     { header: "Leave", render: (d: ReportDay) => d.leave_type ?? "" },
-    { header: "Source", render: (d: ReportDay) => SOURCE_LABELS[d.source] ?? d.source },
-    { header: "Bizom", render: (d: ReportDay) => d.bizom_status },
+    { header: "Permission", render: (d: ReportDay) => d.permission },
   ];
 }
 
@@ -75,13 +73,13 @@ export function ReportsPage() {
   const to = filters.to || data?.to || "";
   const anyFilter = FILTER_KEYS.some((k) => k !== "from" && k !== "to" && filters[k]);
 
-  function select(label: string, key: "hod" | "department" | "team" | "manager" | "category" | "source") {
+  function select(label: string, key: "hod" | "department" | "team" | "manager" | "category") {
     const opts = data?.options[key] ?? [];
     return (
       <Field label={label}>
         <select value={filters[key]} onChange={(e) => set(key, e.target.value)}>
           <option value="">All</option>
-          {[...new Set([...opts, ...(filters[key] ? [filters[key]] : [])])].map((o) => <option key={o} value={o}>{key === "source" ? SOURCE_LABELS[o] ?? o : o}</option>)}
+          {[...new Set([...opts, ...(filters[key] ? [filters[key]] : [])])].map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       </Field>
     );
@@ -95,7 +93,7 @@ export function ReportsPage() {
 
   return (
     <>
-      <PageHeader title="Attendance report" subtitle="Any date range, filtered by HOD, department, team, manager, status or source. Share the link or download Excel." />
+      <PageHeader title="Attendance report" subtitle="Any date range, filtered by HOD, department, team, manager or status. Share the link or download Excel." />
       <Card>
         <div className="filter-grid">
           <Field label="From"><input type="date" value={from} onChange={(e) => set("from", e.target.value)} /></Field>
@@ -105,7 +103,6 @@ export function ReportsPage() {
           {select("Team", "team")}
           {select("Reporting manager", "manager")}
           {select("Category", "category")}
-          {select("Source", "source")}
           <Field label="Status (at least once)">
             <select value={filters.status} onChange={(e) => set("status", e.target.value)}>
               {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -141,6 +138,7 @@ export function ReportsPage() {
                 { header: "Days", render: (p) => p.days },
                 { header: "Present", render: (p) => p.present },
                 { header: "Absent", render: (p) => p.absent },
+                { header: "Missing punch", render: (p) => p.missing_punch },
                 { header: "Leave", render: (p) => p.leave + p.half_day },
                 { header: "Late", render: (p) => p.late },
                 { header: "Week off", render: (p) => p.week_off },
@@ -183,7 +181,7 @@ export function EmployeeReportPage() {
 
   return (
     <>
-      <PageHeader title="Employee report" subtitle="Day-by-day attendance of one employee (Pocket HRMS + Bizom)" />
+      <PageHeader title="Employee report" subtitle="Day-by-day attendance of one employee (Pocket HRMS)" />
       <Toolbar>
         <Field label="Employee">
           <input list="dl-emp" value={typed} placeholder="Type a code or name" onChange={(e) => choose(e.target.value)}

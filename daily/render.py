@@ -6,7 +6,8 @@ import json
 from datetime import date
 from pathlib import Path
 
-from daily.analysis import HOD_PREFIX, in_scope
+from daily.analysis import HOD_PREFIX, in_scope, t12
+from daily.branding import logo_data_uri
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=select_autoescape(["html"]))
@@ -23,8 +24,9 @@ def scope_label(scope: str) -> str:
 
 def sources_label(insights: dict) -> str:
     src = insights.get("sources") or {"hrms": True}
-    names = [n for n, on in (("Pocket HRMS", src.get("hrms", True)), ("Bizom", src.get("bizom_file"))) if on]
-    return " + ".join(names) or "Pocket HRMS"
+    if src.get("bizom_file"):                   # days analysed while Bizom was still used
+        return "Pocket HRMS + Bizom"
+    return "Pocket HRMS (attendance + permissions)" if src.get("permission_file") else "Pocket HRMS"
 
 
 def scoped_rows(rows: list[dict], scope: str) -> list[dict]:
@@ -54,21 +56,25 @@ def breakdown(insights: dict, scope: str) -> dict:
 
 def dashboard_html_for(company: str, report_date: date, title: str, summary: dict, highlights: list[dict], arrivals: list[dict],
                        breakdown_: dict, rows: list[dict], date_format: str, sources: str = "Pocket HRMS",
-                       late_after: str | None = None) -> bytes:
-    """The self-contained interactive dashboard for any set of people."""
+                       late_after: str | None = None, routing_columns: bool = True) -> bytes:
+    """The self-contained interactive dashboard for any set of people. routing_columns=False (emailed dashboards)
+    leaves out each person's HOD, team and reporting manager."""
+    keys = ("code", "name", "category", "department", "hod", "team", "manager", "permission", "status", "status_label",
+            "in_time", "out_time", "work_hours", "late_minutes", "early_minutes", "leave_type", "flags")
+    if not routing_columns:
+        keys = tuple(k for k in keys if k not in ("department", "hod", "team", "manager"))
     payload = {
         "title": title,
-        "subtitle": f"{report_date.strftime(date_format)} · {company} · source: {sources}",
+        "subtitle": f"{report_date.strftime(date_format)} · source: {sources}",
         "summary": summary, "highlights": highlights, "arrivals": arrivals, "breakdown": breakdown_,
-        "rows": [{k: r.get(k, "") for k in ("code", "name", "category", "department", "hod", "team", "manager", "source", "bizom_status",
-                                          "status", "status_label", "in_time", "out_time", "work_hours", "late_minutes", "early_minutes",
-                                          "leave_type", "flags")} for r in rows],
+        "rows": [{k: r.get(k, "") for k in keys} for r in rows],
+        "routing_columns": routing_columns,
         "footer": f"Generated automatically from {sources} for {report_date.strftime(date_format)}."
-                  + (f" Late = first punch after {late_after}." if late_after else ""),
+                  + (f" Office opens {t12(late_after)}; late rules as in the attendance settings." if late_after else ""),
     }
     # Safe to embed inside <script>: no "</" or "<!--" can appear in the JSON text.
     data_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return _env.get_template("dashboard.html").render(title=title, data_json=data_json).encode("utf-8")
+    return _env.get_template("dashboard.html").render(title=title, data_json=data_json, logo=logo_data_uri()).encode("utf-8")
 
 
 def dashboard_html(company: str, report_date: date, scope: str, insights: dict, rows: list[dict], date_format: str) -> bytes:

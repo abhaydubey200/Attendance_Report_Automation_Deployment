@@ -36,7 +36,7 @@ def common(start: date | None = Query(None, alias="from"), end: date | None = Qu
 
 
 @router.get("/reports/attendance")
-def attendance(f: reports.Filters = Depends(common), days: bool = False, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+def attendance(f: reports.Filters = Depends(common), days: bool = False, principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
                settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
     out = reports.attendance_report(db, f, get_rules(db, settings), with_days=days)
     if days and len(out["days"]) > 5000:
@@ -45,7 +45,7 @@ def attendance(f: reports.Filters = Depends(common), days: bool = False, _: Prin
 
 
 @router.get("/reports/attendance/excel")
-def attendance_xlsx(f: reports.Filters = Depends(common), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+def attendance_xlsx(f: reports.Filters = Depends(common), principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
                     settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> Response:
     report = reports.attendance_report(db, f, get_rules(db, settings), with_days=True)
     content = reports.attendance_excel(settings.app.company, report, f, settings.app.date_format)
@@ -63,14 +63,14 @@ def _employee(db: Session, settings: Settings, code: str, start: date | None, en
 
 @router.get("/reports/employee/{code}")
 def employee(code: str, start: date | None = Query(None, alias="from"), end: date | None = Query(None, alias="to"),
-             _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
+             principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
              db: Session = Depends(get_db)) -> dict:
     return _employee(db, settings, code, start, end)
 
 
 @router.get("/reports/employee/{code}/excel")
 def employee_xlsx(code: str, start: date | None = Query(None, alias="from"), end: date | None = Query(None, alias="to"),
-                  _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
+                  principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
                   db: Session = Depends(get_db)) -> Response:
     report = _employee(db, settings, code, start, end)
     content = reports.employee_excel(settings.app.company, report, settings.app.date_format)

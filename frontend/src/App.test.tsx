@@ -21,6 +21,7 @@ const NAV = [
   { section: "Reports", title: "Attendance report", slug: "reports", implemented: true, phase: null },
   { section: "Reports", title: "Employee report", slug: "employee-report", implemented: true, phase: null },
   { section: "Setup", title: "Employees", slug: "employees", implemented: true, phase: null },
+  { section: "Setup", title: "Automation", slug: "automation", implemented: true, phase: null },
   { section: "Setup", title: "Settings", slug: "settings", implemented: true, phase: null },
 ];
 
@@ -50,7 +51,7 @@ const DAY: DayDetail = {
       "HOD:Ravi Kumar": { summary: SUMMARY, highlights: [{ kind: "info", text: "Ravi highlight." }], arrivals: [] },
     },
     hods: [{ name: "Ravi Kumar", scope: "HOD:Ravi Kumar", employees: 2, departments: ["Production"], attendance_pct: 50 }],
-    rules: { late_after: "09:30", early_before: "18:00", min_work_hours: 8, long_work_hours: 11, on_duty_codes: ["LD"],
+    rules: { late_after: "09:30", early_before: "19:30", min_work_hours: 8, long_work_hours: 11, on_duty_codes: ["LD"],
       no_punch_with_shift: "ABSENT", no_punch_no_shift: "NOT_TRACKED", single_punch_counts_present: true, exclude_codes: [] },
   },
   rows: [
@@ -129,38 +130,72 @@ test("viewers do not see upload, settings or the send button", async () => {
   expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 });
 
-test("upload shows the result and offers Replace when the day exists", async () => {
+test("upload: three dataset boxes, manual mode by default, Replace when the day exists", async () => {
   let calls = 0;
   const spy = mockFetch(api(OPERATOR, (url, init) => {
+    if (url.endsWith("/v1/upload/options")) return json(200, { default_mode: "manual", wait_for_permission: true, mode: "test", can_import_master: true, employees: 729 });
     if (url.endsWith("/v1/days/upload")) {
       calls += 1;
       const replace = (init?.body as FormData).get("replace");
-      if (replace === "false") return json(409, { detail: "13-Nov-2026 is already uploaded. Upload again with 'Replace' to use this file instead." });
-      return json(200, { ...DAY, auto_sent: false, send_note: "2 email(s) ready - review and approve them on the Approve emails screen.",
+      if (replace === "false") return json(409, { detail: "Pocket HRMS file for 13-Nov-2026 is already uploaded. Upload again with 'Replace' to use this file instead." });
+      return json(200, { ...DAY, permission_file: "PermissionReportAdmin.xlsx", auto_sent: false, send_mode: "manual",
+        send_note: "2 email(s) ready - review and approve them on the Approve emails screen.",
         mail: [MAIL_ITEM("lead.a@example.com", "Lead A", "PENDING"), MAIL_ITEM("DIRECTOR", "Director", "PENDING")] });
     }
     return json(404, {});
   }));
   renderApp("/upload");
-  const file = new File(["x"], "AttendanceSummary.xlsx");
-  const input = (await screen.findByText(/Drop the Pocket HRMS and.or Bizom file/)).closest(".dropzone")!.querySelector("input")!;
-  await userEvent.upload(input, file);
-  await userEvent.click(await screen.findByRole("button", { name: "Replace and send again" }));
+  expect(await screen.findByLabelText(/Manual/)).toBeChecked();
+  expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+  await userEvent.upload(screen.getByLabelText("Attendance Summary file"), new File(["x"], "AttendanceSummary.xlsx"));
+  await userEvent.upload(screen.getByLabelText("Permission Report file"), new File(["y"], "PermissionReportAdmin.xlsx"));
+  expect(screen.getByText("AttendanceSummary.xlsx")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Replace with these files" }));
   expect(await screen.findByText(/13-Nov-2026 processed: 9 employees/)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Review and approve 2 email(s) →" })).toHaveAttribute("href", "/mail?date=2026-11-13");
   expect(calls).toBe(2);
-  const uploadCall = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/days/upload"))!;
+  const uploadCall = spy.mock.calls.filter(([u]) => String(u).endsWith("/v1/days/upload")).pop()!;
+  const form = uploadCall[1]!.body as FormData;
+  expect((form.get("hrms") as File).name).toBe("AttendanceSummary.xlsx");
+  expect((form.get("permission") as File).name).toBe("PermissionReportAdmin.xlsx");
+  expect(form.get("master")).toBeNull();
+  expect(form.get("send_mode")).toBe("manual");
   expect((uploadCall[1]!.headers as Record<string, string>)["X-APIS-Request"]).toBe("1");
 });
 
+test("upload: auto mode sends at once and master-only upload just updates the employees", async () => {
+  const spy = mockFetch(api(OPERATOR, (url, init) => {
+    if (url.endsWith("/v1/upload/options")) return json(200, { default_mode: "manual", wait_for_permission: false, mode: "test", can_import_master: true, employees: 0 });
+    if (url.endsWith("/v1/days/upload")) {
+      const form = init!.body as FormData;
+      if (!form.get("hrms")) return json(200, { report_date: null, mail: [], auto_sent: false, send_note: "Employee master updated. Upload the attendance files to prepare the emails.",
+        master_import: { rows: 729, added: 729, updated: 0, unchanged: 0, kept_left: 0, not_in_file: 0, problems: [], problem_count: 0,
+          routing: { coverage: { checked: 729, differences: 0, examples: [] } } } });
+      return json(200, { ...DAY, auto_sent: true, send_mode: "auto", send_note: null, mail: [MAIL_ITEM("lead.a@example.com", "Lead A", "SAVED")] });
+    }
+    return json(404, {});
+  }));
+  renderApp("/upload");
+  await userEvent.upload(await screen.findByLabelText("Employee master file"), new File(["m"], "APIS_Email_Routing_Master.xlsx"));
+  await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+  expect(await screen.findByText(/729 added/)).toBeInTheDocument();
+  expect(screen.getByText(/matches the coverage sheet/)).toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText(/Auto/));
+  await userEvent.upload(screen.getByLabelText("Attendance Summary file"), new File(["x"], "AttendanceSummary.xlsx"));
+  await userEvent.click(screen.getByRole("button", { name: "Upload and send emails" }));
+  expect(await screen.findByText(/Auto: 1 email\(s\) saved to the outbox/)).toBeInTheDocument();
+  const last = spy.mock.calls.filter(([u]) => String(u).endsWith("/v1/days/upload")).pop()!;
+  expect((last[1]!.body as FormData).get("send_mode")).toBe("auto");
+});
+
 test("settings: Director and HR mailboxes are saved as lists with the routing switches", async () => {
-  const email = { mode: "test", provider: "smtp", approval_required: true, auto_send: true, wait_for_bizom: true, sender: null, reply_to: null,
-    smtp_host: null, smtp_port: 587, smtp_starttls: true, smtp_username: null, subject_prefix: "Daily Attendance", attach_excel: true,
+  const email = { mode: "test", approval_required: true, auto_send: true, wait_for_permission: true, sender: null, reply_to: null,
+    subject_prefix: "Daily Attendance", attach_excel: true,
     attach_dashboard: true, retry_attempts: 3, team_emails: true, hod_summary: true, director_report: true, hr_exceptions: true,
-    hod_cc_on_team: false, hr_cc_on_hod_summary: false, director_name: "Director", director_emails: [], hr_emails: [] };
+    hod_cc_on_team: false, hr_cc_on_hod_summary: false, test_recipient: null, test_cc: [], director_name: "Director", director_emails: [], hr_emails: [] };
   const spy = mockFetch(api(OPERATOR, (url) => {
-    if (url.endsWith("/v1/settings")) return json(200, { rules: DAY.insights.rules, email, smtp_password_set: false,
-      secrets: { SMTP_PASSWORD: false }, categories: [], public_url: null });
+    if (url.endsWith("/v1/settings")) return json(200, { rules: DAY.insights.rules, email, secrets: { GMAIL_CLIENT_ID: true, GMAIL_CLIENT_SECRET: true, GMAIL_REFRESH_TOKEN: false }, categories: [], public_url: null });
     if (url.endsWith("/v1/settings/email")) return json(200, email);
     return json(404, {});
   }));
@@ -168,7 +203,7 @@ test("settings: Director and HR mailboxes are saved as lists with the routing sw
   await userEvent.type(await screen.findByPlaceholderText("director@apisindia.com"), "md@example.com, cfo@example.com");
   await userEvent.type(screen.getByPlaceholderText("hr.attendance@apisindia.com"), "hr@example.com");
   await userEvent.click(screen.getByLabelText(/CC the HOD on team-lead emails/));
-  expect(screen.getByText(/SMTP_PASSWORD ✗ not set/)).toBeInTheDocument();
+  expect(screen.getByText(/GMAIL_REFRESH_TOKEN ✗ not set/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Save email settings" }));
   expect(await screen.findByText("Email settings saved.")).toBeInTheDocument();
   const put = spy.mock.calls.find(([u, i]) => String(u).endsWith("/v1/settings/email") && i?.method === "PUT")!;
@@ -262,16 +297,16 @@ test("viewers see employees read-only", async () => {
 
 const TALLY: Tally = { days: 3, tracked: 3, present: 2, missing_punch: 0, half_day: 0, leave: 0, absent: 1, week_off: 0, not_tracked: 0,
   late: 1, left_early: 0, attendance_pct: 66.7, avg_in_time: "09:40", avg_work_hours: 8.9 };
-const RDAY = (date: string, status: ReportDay["status"], label: string, source = "HRMS"): ReportDay => ({
+const RDAY = (date: string, status: ReportDay["status"], label: string, permission?: string): ReportDay => ({
   date, code: "SL1", name: "Asha Synth", category: "Sales", department: "Production", hod: "Ravi Kumar", team: "lead.one", manager: "Mohan",
   status, status_label: label, in_time: status === "PRESENT" ? "09:40" : null, out_time: null, work_hours: null, late_minutes: 0,
-  early_minutes: 0, leave_type: null, source, bizom_status: source === "BIZOM" ? "P" : "", flags: [] });
+  early_minutes: 0, leave_type: null, source: "HRMS", permission: permission ?? "", flags: [] });
 const REPORT: AttendanceReport = {
   from: "2026-10-15", to: "2026-11-13", dates: ["2026-11-12", "2026-11-13"],
-  options: { hod: ["Meena Rao", "Ravi Kumar"], department: ["Production"], team: ["lead.one"], manager: ["Mohan"], category: ["Sales"], source: ["BIZOM", "HRMS"] },
+  options: { hod: ["Meena Rao", "Ravi Kumar"], department: ["Production"], team: ["lead.one"], manager: ["Mohan"], category: ["Sales"], source: ["HRMS"] },
   totals: { ...TALLY, employees: 1 },
   employees: [{ code: "SL1", name: "Asha Synth", category: "Sales", department: "Production", hod: "Ravi Kumar", team: "lead.one", manager: "Mohan", ...TALLY }],
-  days: [RDAY("2026-11-12", "PRESENT", "Present", "BIZOM"), RDAY("2026-11-13", "ABSENT", "Absent")],
+  days: [RDAY("2026-11-12", "PRESENT", "Present", "Approved 09:30-11:30"), RDAY("2026-11-13", "ABSENT", "Absent")],
 };
 
 test("attendance report: filters go into the link and the Excel download", async () => {
@@ -283,14 +318,14 @@ test("attendance report: filters go into the link and the Excel download", async
   expect(screen.getByRole("link", { name: "Download Excel" }).getAttribute("href")).toContain("hod=Ravi%20Kumar");
   await userEvent.click(screen.getByRole("button", { name: "Day by day" }));
   expect(await screen.findByText("Day by day", { selector: "h3" })).toBeInTheDocument();
-  expect(screen.getAllByText("Bizom").length).toBeGreaterThan(1);   // source column + Source filter option
+  expect(screen.getByText("Approved 09:30-11:30")).toBeInTheDocument();   // Permission column
   expect(screen.getAllByRole("link", { name: "Asha Synth" })[0]).toHaveAttribute("href", expect.stringContaining("/employee-report?code=SL1"));
 });
 
 test("employee report shows each day with its source", async () => {
   const body: EmployeeReport = { employee: { code: "SL1", name: "Asha Synth", department: "Production", hod_name: "Ravi Kumar", team: "lead.one",
     reporting_manager: "Mohan", status: "ACTIVE" }, in_master: true, from: "2026-10-15", to: "2026-11-13", summary: TALLY,
-    days: [RDAY("2026-11-12", "PRESENT", "Present", "BIZOM"), RDAY("2026-11-13", "ABSENT", "Absent")] };
+    days: [RDAY("2026-11-12", "PRESENT", "Present", "Approved 09:30-11:30"), RDAY("2026-11-13", "ABSENT", "Absent")] };
   mockFetch(api(OPERATOR, (url) => {
     if (url.includes("/v1/reports/employee/SL1")) return json(200, body);
     if (url.endsWith("/v1/employees")) return json(200, EMPLOYEES);
@@ -306,7 +341,7 @@ test("employee report shows each day with its source", async () => {
 test("approve emails: preview mode lists every recipient and approves all or selected", async () => {
   let items = [MAIL_ITEM("lead.a@example.com", "Lead A", "PENDING"), MAIL_ITEM("rahul@example.com", "Rahul Sharma", "PENDING"),
     MAIL_ITEM("DIRECTOR", "Director", "HELD", { note: "Director email not set (Settings -> Email)." })];
-  const dayMail = (): DayMail => ({ report_date: "2026-11-13", mode: "test", approval_required: true, provider: "smtp", items,
+  const dayMail = (): DayMail => ({ report_date: "2026-11-13", mode: "test", approval_required: true, test_recipient: null, items,
     status: items.reduce((acc, i) => ({ ...acc, [i.status]: (acc[i.status] ?? 0) + 1 }), {} as DayMail["status"]), planned: true });
   const spy = mockFetch(api(OPERATOR, (url, init) => {
     if (url.endsWith("/mail/approve")) {
@@ -329,4 +364,25 @@ test("approve emails: preview mode lists every recipient and approves all or sel
   await waitFor(() => expect(screen.getAllByText("Saved (test mode)").length).toBe(2));
   await userEvent.click(screen.getAllByRole("button", { name: "Preview" })[0]);
   expect(screen.getByTitle("Email preview")).toHaveAttribute("src", expect.stringContaining("/preview"));
+});
+
+test("automation: job history, run the daily job, month-end list", async () => {
+  const runs = [{ id: 2, job: "DAILY", target: "2026-11-13", trigger: "SCHEDULED", status: "PARTIAL", started_by: "scheduler",
+    summary: { employees: 717, processed: ["a.xlsx"], emails: { SENT: 29, FAILED: 2 }, send_mode: "auto" }, error: null,
+    started_at: "2026-11-14T04:00:00Z", finished_at: "2026-11-14T04:01:30Z", seconds: 90 }];
+  const spy = mockFetch(api(OPERATOR, (url) => {
+    if (url.endsWith("/v1/jobs")) return json(200, { runs, inbox: "D:\inbox", yesterday: "2026-11-13", keep_months: 2, backup_keep_days: 30,
+      database: "sqlite", previous_month: "2026-10" });
+    if (url.endsWith("/v1/jobs/daily")) return json(200, { status: "SUCCESS" });
+    if (url.endsWith("/v1/monthly")) return json(200, [{ month: "2026-10", label: "Oct-2026", days: 26, employees: 717, attendance_pct: "81.5",
+      status: "ARCHIVED", archive: true, generated_at: "2026-11-01T05:00:00Z", generated_by: "scheduler", cleaned_at: null }]);
+    return json(404, {});
+  }));
+  renderApp("/automation");
+  expect(await screen.findByText(/717 employees · 1 new file\(s\) · 29 sent, 2 failed/)).toBeInTheDocument();
+  expect(screen.getByText("Oct-2026")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Run daily job" }));
+  expect(await screen.findByText("Daily job: success")).toBeInTheDocument();
+  const call = spy.mock.calls.find(([u]) => String(u).endsWith("/v1/jobs/daily"))!;
+  expect(JSON.parse(String(call[1]!.body))).toEqual({ report_date: "2026-11-13", send_mode: "manual" });
 });

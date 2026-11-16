@@ -62,7 +62,7 @@ def cmd_create_user(args: argparse.Namespace) -> int:
     from security.permissions import Role
 
     settings = get_settings()
-    roles = [r.upper() for r in args.role]
+    roles = [r.upper() for r in (args.role or ["ADMIN"])]
     invalid = [r for r in roles if r not in Role.__members__]
     if invalid:
         print(f"Unknown role(s): {invalid}. Valid: {list(Role.__members__)}")
@@ -122,17 +122,30 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def _upload(paths, replace: bool) -> int:
+def _upload(paths, replace: bool, mode: str | None = None, master=None) -> int:
     from daily import mail
     from daily.analysis import FileError
     from daily.service import AlreadyUploaded, upload_files_and_send
     from database.connection import session_scope
 
     settings = get_settings()
+    actor = f"cli:{getpass.getuser()}"
     try:
         with session_scope(_engine()) as session:
+            if master is not None:
+                from daily import employees as emp
+                from daily import routing
+
+                data = master.read_bytes()
+                res = emp.import_rows(session, emp.read_master_file(master.name, data), actor)
+                extras = emp.read_routing_extras(master.name, data)
+                if extras:
+                    routing.apply_workbook(session, settings, extras, actor)
+                print(f"Employee master: {res.added} added, {res.updated} updated, {res.unchanged} unchanged.")
+                if not paths:
+                    return 0
             upload, items, note = upload_files_and_send(session, settings, [(p.name, p.read_bytes()) for p in paths],
-                                                        f"cli:{getpass.getuser()}", replace=replace)
+                                                        actor, replace=replace, mode=mode)
             print(f"{upload.report_date:%d-%b-%Y}: {upload.employees} employees processed.")
             for i in items:
                 print(f"  email {i.recipient_name} <{i.to_addrs or '-'}>: {i.status} {i.note or ''}".rstrip())
@@ -142,20 +155,31 @@ def _upload(paths, replace: bool) -> int:
     except (FileError, AlreadyUploaded) as exc:
         print(f"Not processed: {exc}")
         return 3
+    except Exception as exc:  # employee master problems
+        from daily.employees import EmployeeError
+
+        if not isinstance(exc, EmployeeError):
+            raise
+        print(f"Employee master not imported: {exc}")
+        return 3
     return 1 if failed else 0
 
 
 def cmd_upload(args: argparse.Namespace) -> int:
-    """Upload one day's Pocket HRMS Attendance Summary and/or Bizom attendance report from the command
+    """Upload one day's Pocket HRMS Attendance Summary and/or Permission Report from the command
     line (for scheduling). Emails are prepared and - unless approval is required - sent."""
     from pathlib import Path
 
     paths = [Path(f) for f in args.files]
-    missing = [p for p in paths if not p.is_file()]
+    master = Path(args.master) if args.master else None
+    missing = [p for p in paths + ([master] if master else []) if not p.is_file()]
     if missing:
         print(f"File not found: {missing[0]}")
         return 2
-    return _upload(paths, args.replace)
+    if not paths and master is None:
+        print("Give at least one file.")
+        return 2
+    return _upload(paths, args.replace, args.send, master)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
@@ -175,7 +199,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     done.mkdir(exist_ok=True)
     failed.mkdir(exist_ok=True)
     sizes: dict[Path, int] = {}
-    print(f"Watching {folder} every {args.interval}s for Pocket HRMS / Bizom files (Ctrl+C to stop).")
+    print(f"Watching {folder} every {args.interval}s for Pocket HRMS files (Ctrl+C to stop).")
     while True:
         for f in sorted(folder.iterdir()):
             if not f.is_file() or f.suffix.lower() not in (".xlsx", ".csv") or f.name.startswith("~$"):
@@ -225,7 +249,7 @@ def cmd_gmail_auth(args: argparse.Namespace) -> int:
     if not args.no_browser:
         webbrowser.open(url)
     try:
-        code = ga.wait_for_code(args.port, state)
+        code = ga.wait_for_code(args.port, state, timeout=args.timeout)
         refresh, mailbox = ga.exchange(client, code, redirect, verifier)
     except ga.GmailAuthError as exc:
         print(f"Not connected: {exc}")
@@ -242,8 +266,85 @@ def cmd_gmail_auth(args: argparse.Namespace) -> int:
         settings = get_settings()
         with session_scope(_engine()) as session:
             cfg = get_email_settings(session, settings)
-            save_email_settings(session, cfg.model_copy(update={"provider": "gmail", "sender": mailbox}), "cli:gmail-auth")
-        print(f"Settings: provider = Gmail API, sender = {mailbox}. Restart the app so it reads the new token.")
+            save_email_settings(session, cfg.model_copy(update={"sender": mailbox}), "cli:gmail-auth")
+        print(f"Settings: sender = {mailbox}. Restart the app so it reads the new token.")
+    return 0
+
+
+def _date_arg(value: str | None):
+    from datetime import date
+
+    return date.fromisoformat(value) if value else None
+
+
+def cmd_run_daily(args: argparse.Namespace) -> int:
+    """The 09:30 job (Windows Task Scheduler): yesterday's files from the inbox -> analyse -> verify -> send.
+    Exit 0 = success, 1 = some emails failed (retry later), 3 = failed (alert sent), 4 = already running."""
+    from pathlib import Path
+
+    from daily import jobs
+
+    try:
+        r = jobs.run_daily(get_settings(), _engine(), _date_arg(args.date), Path(args.inbox) if args.inbox else None,
+                           args.send, trigger="CLI" if args.manual else "SCHEDULED", actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    except Exception as exc:
+        print(f"Daily job failed: {type(exc).__name__}: {exc}")
+        return 3
+    print(f"Daily job {r['date']}: {r['status']} | processed {r.get('processed', [])} | emails {r.get('emails', {})}"
+          + (f" | {r['problem']}" if r.get("problem") else ""))
+    return {"SUCCESS": 0, "PARTIAL": 1}.get(r["status"], 3)
+
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    from daily import jobs
+
+    try:
+        r = jobs.backup(get_settings(), _engine(), trigger="CLI" if args.manual else "SCHEDULED", actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    except Exception as exc:
+        print(f"Backup failed: {type(exc).__name__}: {exc}")
+        return 3
+    print(f"Backup OK: {r['file']} ({r['bytes']:,} bytes, integrity {r['integrity']}, {r['pruned']} old copies removed)")
+    return 0
+
+
+def cmd_monthly(args: argparse.Namespace) -> int:
+    from daily import jobs, monthly
+
+    try:
+        r = monthly.generate(get_settings(), _engine(), args.month, args.send, trigger="CLI" if args.manual else "SCHEDULED",
+                             actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    print(f"Monthly {r['month']}: {r['status']} | days {r.get('days')} | employees {r.get('employees')} | "
+          f"attendance {r.get('attendance_pct')}% | emails {r.get('emails')}" + (f" | {r['problem']}" if r.get("problem") else ""))
+    return {"SUCCESS": 0, "PARTIAL": 1}.get(r["status"], 3)
+
+
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    from daily import jobs, monthly
+
+    try:
+        r = monthly.cleanup(get_settings(), _engine(), args.month, args.confirm, trigger="CLI", actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    if r["status"] == "BLOCKED":
+        print(f"Cleanup of {args.month} NOT allowed:")
+        for p in r["problems"]:
+            print(f"  - {p}")
+        return 3
+    if r["status"] == "PREVIEW":
+        print(f"Cleanup of {args.month} is allowed: {r['days']} day(s) of daily rows and stored files would be removed. "
+              f"Run again with --confirm to do it.")
+        return 0
+    print(f"Cleanup of {args.month} done: {r['rows_deleted']} daily rows deleted, {r['upload_folders_removed']} upload folders removed.")
     return 0
 
 
@@ -267,7 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
     cu.add_argument("--username", required=True)
     cu.add_argument("--display-name")
     cu.add_argument("--email")
-    cu.add_argument("--role", action="append", required=True, help="repeatable, e.g. --role HR_ADMIN")
+    cu.add_argument("--role", action="append", help="default ADMIN - the application has one user (HR) who does everything")
     cu.add_argument("--department", action="append", help="department code scope (repeatable)")
     cu.set_defaults(func=cmd_create_user)
 
@@ -278,8 +379,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--demo", action="store_true", help="use the synthetic demo database (storage/demo)")
     serve.set_defaults(func=cmd_serve)
 
-    up = sub.add_parser("upload", help="process one day's Pocket HRMS and/or Bizom file and email the reports")
-    up.add_argument("files", nargs="+", help="Pocket HRMS AttendanceSummary and/or Bizom attendance report (.xlsx/.csv)")
+    up = sub.add_parser("upload", help="process one day's Pocket HRMS Attendance Summary and/or Permission Report and email the reports")
+    up.add_argument("files", nargs="*", help="Pocket HRMS AttendanceSummary and/or PermissionReport (.xlsx/.csv)")
+    up.add_argument("--master", help="employee master / routing workbook to import first (optional)")
+    up.add_argument("--send", choices=["auto", "manual"], help="auto = send the emails now; manual = wait for approval "
+                                                                "(default: Settings)")
     up.add_argument("--replace", action="store_true", help="replace an existing upload for the same date")
     up.set_defaults(func=cmd_upload)
 
@@ -288,7 +392,30 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--client-json", help="OAuth client JSON downloaded from Google Cloud (instead of .env values)")
     g.add_argument("--login-hint", help="sender mailbox address, pre-filled on Google's sign-in page")
     g.add_argument("--no-browser", action="store_true", help="only print the sign-in address")
+    g.add_argument("--timeout", type=int, default=600, help="seconds to wait for the sign-in (default 600)")
     g.set_defaults(func=cmd_gmail_auth)
+
+    rd = sub.add_parser("run-daily", help="the 09:30 job: yesterday's files from the inbox -> emails (Task Scheduler)")
+    rd.add_argument("--date", help="report date YYYY-MM-DD (default: yesterday, IST)")
+    rd.add_argument("--inbox", help="folder with the day's Pocket HRMS files (default: jobs.inbox_dir)")
+    rd.add_argument("--send", choices=["auto", "manual"], help="default: Settings (preview mode -> manual)")
+    rd.add_argument("--manual", action="store_true", help="record as a manual run instead of SCHEDULED")
+    rd.set_defaults(func=cmd_run_daily)
+
+    bk = sub.add_parser("backup", help="online backup of the SQLite database (integrity-checked; old copies pruned)")
+    bk.add_argument("--manual", action="store_true")
+    bk.set_defaults(func=cmd_backup)
+
+    mo = sub.add_parser("monthly", help="month-end reports + archive (default: previous month)")
+    mo.add_argument("--month", help="YYYY-MM (default: previous month)")
+    mo.add_argument("--send", choices=["auto", "manual"])
+    mo.add_argument("--manual", action="store_true")
+    mo.set_defaults(func=cmd_monthly)
+
+    cl = sub.add_parser("cleanup", help="remove a month's daily rows after its archive and a later backup are verified")
+    cl.add_argument("--month", required=True, help="YYYY-MM")
+    cl.add_argument("--confirm", action="store_true", help="actually delete (without it: only check and preview)")
+    cl.set_defaults(func=cmd_cleanup)
 
     w = sub.add_parser("watch", help="watch a folder and process each attendance file dropped there")
     w.add_argument("folder")

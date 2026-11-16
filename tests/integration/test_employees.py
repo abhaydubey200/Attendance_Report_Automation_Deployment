@@ -17,6 +17,7 @@ from daily import employees as emp
 from daily import service
 from daily.render import scope_label
 from database.connection import session_scope
+from database.models.daily import Employee
 from tests.integration.test_daily import CASES, summary_file
 
 H = {CSRF_HEADER: "1"}
@@ -114,7 +115,7 @@ def test_attendance_uses_master(engine, settings):
         up = service.process_upload(s, settings, "summary.xlsx", summary_file(CASES), "tester")
         ins = json.loads(up.insights)
         rows = service.rows_for(s, up.upload_id)
-    assert ins["master"] == {"matched": 7, "not_in_master": 1, "left_excluded": 1, "missing_from_file": 0}
+    assert ins["master"] == {"matched": 7, "not_in_master": 1, "left_excluded": 1, "missing_from_file": 0, "out_of_scope": 0}
     assert ins["excluded"] == 2                                     # 'test' + the leaver
     assert {h["name"] for h in ins["hods"]} == {"Asha Rao", "Vikram Shah", "Meera Iyer"}
     assert ins["scopes"]["HOD:Vikram Shah"]["summary"]["employees"] == 3
@@ -181,3 +182,20 @@ def test_employee_api(api):
     assert api.post("/api/v1/employees", json={"code": "N2", "name": "x"}).status_code == 403
     nav = [p["slug"] for p in api.get("/api/v1/auth/me").json()["navigation"]]
     assert "employees" in nav
+
+
+def test_out_of_scope_field_sales(engine):
+    """Field sales (category Sales) who are not in the employee master are left out; listed employees always count."""
+    from daily import service
+    from daily.analysis import EmployeeResult
+    with session_scope(engine) as s:
+        s.add(Employee(code="SL0001", name="Listed Sales", status="ACTIVE", hod_name="H", hod_email="h@example.com"))
+        s.add(Employee(code="HO0001", name="Office", status="ACTIVE", hod_name="H", hod_email="h@example.com"))
+        s.flush()
+        mk = lambda code, cat: EmployeeResult(code=code, name=code, category=cat, shift="", in_time=None, out_time=None,  # noqa: E731
+                                             punches=0, work_minutes=None, leave_type=None, day_portion=None, status="ABSENT")
+        kept, match = service.apply_master(s, date(2026, 11, 13), [mk("SL0001", "Sales"), mk("SL9999", "Sales"),
+                                                                  mk("HO0001", "Head Office"), mk("HO9999", "Head Office")],
+                                           ["Sales"])
+    assert [r.code for r in kept] == ["SL0001", "HO0001", "HO9999"]
+    assert match["out_of_scope"] == 1 and match["not_in_master"] == 1

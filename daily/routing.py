@@ -56,6 +56,8 @@ def route_employee(e: Employee) -> Route:
     summary = hod_mails[0] if len(hod_mails) == 1 and not held else None
     if held:
         return Route(**base, detail_to=HR, rule="Held for HR", summary_to=None, issue=e.routing_issue)
+    if not (e.hod_name or "").strip() and not sub_raw:
+        return Route(**base, detail_to=DIRECTOR, rule="No HOD: Director", summary_to=None)
     if len(sub) == 1:
         return Route(**base, detail_to=sub[0], rule="Sub split ID", summary_to=summary)
     if sub_raw:
@@ -127,7 +129,11 @@ def recipients(session: Session, cfg: EmailSettings, day: date | None = None, al
     out: list[Recipient] = []
     for key in sorted((set(team) | set(summary)) - {DIRECTOR, HR}, key=lambda k: (-len(team.get(k, [])), k)):
         t, s = team.get(key, []), summary.get(key, [])
-        role = "HOD + Team lead" if t and s else "HOD" if s else "Team lead"
+        if t and s and {r.code for r in s} <= {r.code for r in t}:
+            s = []                      # no team leads under this HOD: one "Your team" section, not the same people twice
+            role = "HOD"
+        else:
+            role = "HOD + Team lead" if t and s else "HOD" if s else "Team lead"
         rec = Recipient(key, _display_name(key, t, names, overrides), role, [key], team=t, summary=s)
         if not cfg.team_emails:
             rec.team = []
@@ -236,8 +242,9 @@ def apply_workbook(session: Session, settings, extras: dict, actor: str) -> dict
                     if status in ON_WORDS:
                         applied[key] = True
                     elif status in OFF_WORDS:
-                        applied[key] = False
-                        disabled.append(f"{row.get('report type')} -> {row.get('recipient role')}")
+                        # Not applied: the workbook marks reports DISABLED until addresses are confirmed, and
+                        # re-importing it must not silently stop the daily emails. Switch off in Settings instead.
+                        disabled.append(f"{row.get('report type')} -> {row.get('recipient role')} (left on; switch off in Settings)")
                     break
             sender = emp._clean(row.get("sender email")).lower()
             reply = emp._clean(row.get("reply to")).lower()

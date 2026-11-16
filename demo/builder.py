@@ -22,7 +22,7 @@ from daily.settings_store import get_email_settings, save_email_settings
 from database.connection import create_db_engine, session_scope
 from database.migrate import upgrade_to_head
 from database.repositories.security_repository import SecurityRepository
-from demo.synthetic import build_bizom_csv, build_master_xlsx, build_summary_xlsx
+from demo.synthetic import build_master_xlsx, build_permission_xlsx, build_summary_xlsx
 
 DEMO_DIR = PROJECT_ROOT / "storage" / "demo"
 DEMO_DB = DEMO_DIR / "apis_attendance_demo.db"
@@ -62,7 +62,7 @@ def build(settings: Settings, days: int = 10, end: date | None = None, log=print
         with session_scope(engine) as s:
             up, items, _ = upload_files_and_send(s, settings, [
                 (f"AttendanceSummary_{day:%Y%m%d}_SYNTHETIC.xlsx", build_summary_xlsx(day)),
-                (f"BizomAttendance_{day:%Y%m%d}_SYNTHETIC.csv", build_bizom_csv(day))], ACTOR)
+                (f"PermissionReport_{day:%Y%m%d}_SYNTHETIC.xlsx", build_permission_xlsx(day))], ACTOR)
             if i < days - 1:                      # earlier days approved; the latest waits on the Approve screen
                 mail.approve(s, settings, day, ACTOR)
             sent = sum(1 for m in items if m.status in mail.DELIVERED)

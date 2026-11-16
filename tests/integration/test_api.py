@@ -50,7 +50,7 @@ def test_login_sets_httponly_cookie_and_returns_navigation(client, make_user, se
     r = login(client, "HR.User")
     assert r.status_code == 200
     body = r.json()
-    assert body["roles"] == ["HR"] and {p["slug"] for p in body["navigation"]} == {"upload", "insights", "mail", "emails", "reports", "employee-report", "employees"}
+    assert body["roles"] == ["HR"] and {p["slug"] for p in body["navigation"]} == {"upload", "insights", "mail", "emails", "reports", "employee-report", "employees", "automation"}
     cookie = r.headers["set-cookie"].lower()
     assert settings.api.cookie_name in cookie and "httponly" in cookie and "samesite=strict" in cookie
 
@@ -93,7 +93,7 @@ def test_viewer_cannot_upload_or_change_settings(client, make_user):
 def test_no_login_mode_acts_as_local_admin(open_client, settings):
     body = open_client.get("/api/v1/auth/me").json()
     assert body["auth_mode"] == "none" and body["username"] == settings.auth.default_user.username
-    assert {p["slug"] for p in body["navigation"]} == {"upload", "insights", "mail", "emails", "reports", "employee-report", "employees", "settings"}
+    assert {p["slug"] for p in body["navigation"]} == {"upload", "insights", "mail", "emails", "reports", "employee-report", "employees", "automation", "settings"}
     assert open_client.post("/api/v1/auth/login", json={"username": "x", "password": "y"}, headers=H).status_code == 404
 
 
@@ -112,9 +112,9 @@ def test_docs_disabled_in_production_like_settings(settings, engine, tmp_path):
 
 def test_navigation_filtered_by_permission():
     viewer = Principal(1, "u", "U", permissions=frozenset({Perm.VIEW_INSIGHTS.value}))
-    assert {p.slug for p in visible_pages(viewer)} == {"insights", "mail", "emails", "reports", "employee-report", "employees"}
+    assert {p.slug for p in visible_pages(viewer)} == {"insights", "mail", "emails", "reports", "employee-report", "employees", "automation"}
     assert visible_pages(Principal(1, "u", "U")) == []
-    assert len({p.slug for p in PAGES}) == len(PAGES) == 8
+    assert len({p.slug for p in PAGES}) == len(PAGES) == 9
 
 
 def test_spa_served_with_fallback_and_no_traversal(settings, engine, tmp_path):

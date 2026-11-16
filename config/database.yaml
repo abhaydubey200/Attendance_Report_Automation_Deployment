@@ -3,7 +3,7 @@
 #
 # Select the active profile with DB_PROFILE (default below).
 
-default_profile: dev_sqlite
+default_profile: dev_sqlite             # production: DB_PROFILE=sqlite_prod
 
 profiles:
   # Temporary development database. NOT a production substitute (PRD 10.1).
@@ -11,6 +11,12 @@ profiles:
   dev_sqlite:
     backend: sqlite
     path: storage/dev/apis_mis_dev.db     # override: DB_SQLITE_PATH
+
+  # Production on a single Windows Server (WAL mode, busy timeout, daily backups - see docs/DEPLOYMENT.md).
+  sqlite_prod:
+    backend: sqlite
+    production: true
+    path: data/database/attendance.db     # override: DB_SQLITE_PATH (e.g. D:\APIS_Attendance_Automation\data\database\attendance.db)
 
   # Primary target: Microsoft SQL Server.
   # Required env vars: DB_HOST, DB_NAME and either DB_TRUSTED_CONNECTION=yes

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Loading, Notice, PageHeader } from "./components/ui";
+import { AutomationPage } from "./pages/AutomationPage";
 import { EmailsPage } from "./pages/EmailsPage";
 import { MailPage } from "./pages/MailPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
@@ -19,6 +20,7 @@ const SCREENS: Record<string, ComponentType> = {
   mail: MailPage,
   emails: EmailsPage,
   employees: EmployeesPage,
+  automation: AutomationPage,
   reports: ReportsPage,
   "employee-report": EmployeeReportPage,
   settings: SettingsPage,

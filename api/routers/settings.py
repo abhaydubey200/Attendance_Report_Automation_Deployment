@@ -1,4 +1,4 @@
-"""Settings: counting rules and email (sender, provider, routing switches). Changes are audited."""
+"""Settings: counting rules and email (Gmail sender, routing switches). Changes are audited."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.deps import get_db, get_settings, require
 from core.config import EmailSettings, Rules, Settings
-from daily.mailer import MailError, build_message, send
+from daily.mailer import GMAIL_SECRETS, MailError, build_message, send
 from daily.settings_store import get_email_settings, get_rules, save_email_settings, save_rules, valid_email
 from database.models.daily import DayUpload
 from security.audit import record_activity
@@ -35,10 +35,7 @@ def get_all(_: Principal = Depends(require(Perm.MANAGE_SETTINGS)), settings: Set
     return {
         "rules": get_rules(db, settings).model_dump(),
         "email": get_email_settings(db, settings).model_dump(),
-        "smtp_password_set": bool(os.environ.get("SMTP_PASSWORD")),
-        "secrets": {name: bool(os.environ.get(name)) for name in ("SMTP_PASSWORD", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID",
-                                                                   "GRAPH_CLIENT_SECRET", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET",
-                                                                   "GMAIL_REFRESH_TOKEN")},
+        "secrets": {name: bool(os.environ.get(name)) for name in GMAIL_SECRETS},
         "categories": _known_categories(db),
         "public_url": settings.app.public_url,
     }
@@ -66,15 +63,16 @@ def put_email(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
         cfg = EmailSettings.model_validate(body)
         cfg.director_emails = [a.strip().lower() for a in cfg.director_emails if a.strip()]
         cfg.hr_emails = [a.strip().lower() for a in cfg.hr_emails if a.strip()]
-        for label, addrs in (("Sender", [cfg.sender] if cfg.sender else []), ("Reply-to", [cfg.reply_to] if cfg.reply_to else []),
+        cfg.test_recipient = (cfg.test_recipient or "").strip().lower() or None
+        cfg.test_cc = [a.strip().lower() for a in cfg.test_cc if a.strip()] if cfg.test_recipient else []
+        for label, addrs in (("Test address", [cfg.test_recipient] if cfg.test_recipient else []), ("Test CC", cfg.test_cc),
+                             ("Sender", [cfg.sender] if cfg.sender else []), ("Reply-to", [cfg.reply_to] if cfg.reply_to else []),
                              ("Director", cfg.director_emails), ("HR mailbox", cfg.hr_emails)):
             bad = [a for a in addrs if not valid_email(a)]
             if bad:
                 raise ValueError(f"{label} is not a valid email address: {', '.join(bad)}")
         if cfg.mode == "live" and not cfg.sender:
             raise ValueError("Live mode needs the sender mailbox.")
-        if cfg.mode == "live" and cfg.provider == "smtp" and not cfg.smtp_host:
-            raise ValueError("Live mode with SMTP needs the SMTP server.")
     except (ValidationError, ValueError) as exc:
         raise _bad(exc) from None
     save_email_settings(db, cfg, principal.username)

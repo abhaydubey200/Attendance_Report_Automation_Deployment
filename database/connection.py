@@ -64,8 +64,13 @@ def build_url(profile: DatabaseProfile, env: Mapping[str, str] | None = None) ->
 
 
 def _enable_sqlite_foreign_keys(dbapi_conn, _record) -> None:
+    """Every SQLite connection: foreign keys on, WAL journal (readers never block the writer), a busy timeout
+    so the web app and the scheduled job wait for each other instead of failing, and NORMAL sync (safe with WAL)."""
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA foreign_keys=ON")
+    cur.execute("PRAGMA busy_timeout=15000")
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
     cur.close()
 
 

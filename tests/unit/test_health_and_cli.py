@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from demo.synthetic import build_bizom_csv, build_summary_xlsx
+from demo.synthetic import build_permission_xlsx, build_summary_xlsx
 from monitoring.health import Status, check_storage, run_all
 
 
@@ -47,14 +47,28 @@ def test_cli_upload_processes_and_saves_emails(isolated_env, tmp_path, capsys):
     main.main(["init-db"])
     f = tmp_path / "AttendanceSummary.xlsx"
     f.write_bytes(build_summary_xlsx(date(2026, 11, 13)))
-    b = tmp_path / "BizomAttendance.csv"
-    b.write_bytes(build_bizom_csv(date(2026, 11, 13)))
+    b = tmp_path / "PermissionReport.xlsx"
+    b.write_bytes(build_permission_xlsx(date(2026, 11, 13)))
     assert main.main(["upload", str(f)]) == 0
     out = capsys.readouterr().out
-    assert "13-Nov-2026: 42 employees processed." in out and "Waiting for the Bizom file" in out
-    assert main.main(["upload", str(b)]) == 0                       # second source merges and triggers the emails
+    assert "13-Nov-2026: 42 employees processed." in out and "Waiting for the Permission Report" in out
+    assert main.main(["upload", str(b)]) == 0                       # second file merges and triggers the emails
     out = capsys.readouterr().out
-    assert "44 employees processed" in out and "Director email not set" in out   # emails prepared, held until set up
+    assert "42 employees processed" in out and "Director email not set" in out   # emails prepared, held until set up
     assert main.main(["upload", str(f)]) == 3                       # same date again without --replace
     assert "already uploaded" in capsys.readouterr().out
     assert main.main(["upload", str(f), "--replace"]) == 0
+
+
+def test_cli_upload_three_datasets_auto(isolated_env, tmp_path, capsys):
+    import main
+    from demo.synthetic import build_master_xlsx
+
+    main.main(["init-db"])
+    m, f, b = tmp_path / "master.xlsx", tmp_path / "AttendanceSummary.xlsx", tmp_path / "PermissionReport.xlsx"
+    m.write_bytes(build_master_xlsx())
+    f.write_bytes(build_summary_xlsx(date(2026, 11, 13)))
+    b.write_bytes(build_permission_xlsx(date(2026, 11, 13)))
+    assert main.main(["upload", "--master", str(m), str(f), str(b), "--send", "auto"]) == 0
+    out = capsys.readouterr().out
+    assert "Employee master: 41 added" in out and ": SAVED" in out and "ready - review" not in out

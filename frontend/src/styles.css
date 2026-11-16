@@ -286,3 +286,19 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; }
 .upload-slot.done { border-style: solid; border-color: var(--ok-fg); background: var(--ok-bg); }
 .legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 3px; vertical-align: middle; }
+
+/* ---- Upload: three datasets + sending mode */
+.upload-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.upload-box { border: 2px dashed var(--gold); border-radius: var(--radius); padding: .9rem 1rem; background: var(--white); }
+.upload-box.drag { background: var(--cream-2); border-color: var(--brown); }
+.upload-box.chosen { border-style: solid; border-color: var(--ok-fg); background: var(--ok-bg); }
+.upload-box.off { opacity: .6; }
+.upload-box-head { display: flex; align-items: center; gap: .4rem; }
+.upload-box .step { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--brown); color: #fff;
+  align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; }
+.upload-file { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .88rem; word-break: break-all; }
+.mode-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .6rem; }
+.mode-option { display: flex; gap: .6rem; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius); padding: .7rem .8rem;
+  cursor: pointer; background: var(--white); font-size: .9rem; }
+.mode-option.on { border-color: var(--brown); background: var(--cream-2); }
+.mode-option input { margin-top: .2rem; }

@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from core.config import Rules
 from daily import employees
-from daily.analysis import STATUS_LABEL, UNCOUNTED
+from daily.analysis import STATUS_LABEL, UNCOUNTED, _hhmm, hm, t12
+from daily.branding import excel_banner
 from database.models.daily import DayUpload, EmployeeDay
 
 MAX_DAYS = 186
@@ -30,7 +31,7 @@ class Filters:
     manager: str = ""
     category: str = ""
     status: str = ""          # a status code, LATE, or "" for all
-    source: str = ""          # HRMS | BIZOM | HRMS+BIZOM
+    source: str = ""          # (kept for old links; Pocket HRMS is the only source now)
     q: str = ""
 
     def check(self) -> None:
@@ -67,7 +68,7 @@ def day_dict(d: date, e: EmployeeDay) -> dict:
             "status": e.status, "status_label": STATUS_LABEL.get(e.status, e.status), "in_time": e.in_time, "out_time": e.out_time,
             "work_hours": round(e.work_minutes / 60, 2) if e.work_minutes is not None else None, "late_minutes": e.late_minutes,
             "early_minutes": e.early_minutes, "leave_type": e.leave_type, "source": e.source or "HRMS",
-            "bizom_status": e.bizom_status or "", "flags": (e.flags or "").split(",") if e.flags else []}
+            "permission": e.permission or "", "flags": (e.flags or "").split(",") if e.flags else []}
 
 
 def _tally(days: list[dict], rules: Rules) -> dict:
@@ -83,7 +84,7 @@ def _tally(days: list[dict], rules: Rules) -> dict:
             "half_day": c["HALF_DAY"], "leave": c["LEAVE"], "absent": c["ABSENT"], "week_off": c["WEEK_OFF"],
             "not_tracked": c["NOT_TRACKED"], "late": len(late), "left_early": sum(1 for x in days if "LEFT_EARLY" in x["flags"]),
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
-            "avg_in_time": f"{avg_in // 60:02d}:{avg_in % 60:02d}" if avg_in is not None else None,
+            "avg_in_time": _hhmm(avg_in),
             "avg_work_hours": round(sum(hours) / len(hours), 2) if hours else None}
 
 
@@ -166,20 +167,20 @@ def attendance_excel(company: str, report: dict, f: Filters, date_format: str) -
     fmt_d = lambda iso: date.fromisoformat(iso).strftime(date_format)  # noqa: E731
 
     ws = wb.add_worksheet("Summary")
-    ws.write(0, 0, f"{company} - Attendance report", title)
-    ws.write(1, 0, f"{fmt_d(report['from'])} to {fmt_d(report['to'])} · {len(report['dates'])} uploaded day(s) · "
-                   f"{report['totals']['employees']} employees · filters: {f.as_text()}", sub)
     cols = [("Code", "code", 12), ("Name", "name", 26), ("Department", "department", 18), ("HOD", "hod", 18), ("Team", "team", 14),
             ("Reporting manager", "manager", 20), ("Category", "category", 12), ("Days", "days", 7), ("Present", "present", 9),
             ("Missing punch", "missing_punch", 9), ("Half day", "half_day", 8), ("Leave", "leave", 8), ("Absent", "absent", 8),
             ("Week off", "week_off", 8), ("Not tracked", "not_tracked", 9), ("Late", "late", 7), ("Left early", "left_early", 8),
-            ("Attendance %", "attendance_pct", 11), ("Avg arrival", "avg_in_time", 10), ("Avg hours", "avg_work_hours", 9)]
+            ("Attendance %", "attendance_pct", 11), ("Avg arrival", "avg_in_time", 10), ("Avg hours (h:mm)", "avg_work_hours", 11)]
+    excel_banner(wb, ws, [w for _, _, w in cols], "Attendance report",
+                 f"{fmt_d(report['from'])} to {fmt_d(report['to'])} · {len(report['dates'])} uploaded day(s) · "
+                 f"{report['totals']['employees']} employees · filters: {f.as_text()}")
     for j, (h, _, w) in enumerate(cols):
         ws.write(3, j, h, head)
         ws.set_column(j, j, w)
     for i, p in enumerate(report["employees"], start=4):
         for j, (_, k, _) in enumerate(cols):
-            v = p.get(k)
+            v = hm(p.get(k)) if k == "avg_work_hours" else p.get(k)
             ws.write(i, j, "" if v is None else v, cell)
     ws.freeze_panes(4, 2)
     if report["employees"]:
@@ -187,15 +188,16 @@ def attendance_excel(company: str, report: dict, f: Filters, date_format: str) -
 
     ws2 = wb.add_worksheet("Daily")
     dcols = [("Date", "date", 12), ("Code", "code", 12), ("Name", "name", 26), ("Department", "department", 18), ("HOD", "hod", 18),
-             ("Team", "team", 14), ("Status", "status_label", 13), ("In", "in_time", 7), ("Out", "out_time", 7),
-             ("Hours", "work_hours", 7), ("Late (min)", "late_minutes", 9), ("Leave type", "leave_type", 9),
-             ("Source", "source", 12), ("Bizom", "bizom_status", 7)]
+             ("Team", "team", 14), ("Status", "status_label", 13), ("In", "in_time", 10), ("Out", "out_time", 10),
+             ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 9), ("Leave type", "leave_type", 9),
+             ("Permission", "permission", 20)]
     for j, (h, _, w) in enumerate(dcols):
         ws2.write(0, j, h, head)
         ws2.set_column(j, j, w)
     for i, x in enumerate(report.get("days", []), start=1):
         for j, (_, k, _) in enumerate(dcols):
-            v = fmt_d(x[k]) if k == "date" else x.get(k)
+            v = (fmt_d(x[k]) if k == "date" else t12(x.get(k)) if k in ("in_time", "out_time")
+                 else hm(x.get(k)) if k == "work_hours" else x.get(k))
             ws2.write(i, j, "" if v is None or v == 0 and k == "late_minutes" else v, cell)
     ws2.freeze_panes(1, 3)
     if report.get("days"):

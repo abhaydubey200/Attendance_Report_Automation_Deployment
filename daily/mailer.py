@@ -1,19 +1,14 @@
-"""Delivery. Test mode saves each email as a .eml file in the outbox (nothing leaves the machine).
-Live mode uses the provider chosen in Settings (adapter pattern):
+"""Delivery through the Gmail API - the only way this application sends email.
 
-* smtp  - any SMTP server (e.g. Microsoft 365 smtp.office365.com:587). Password: env SMTP_PASSWORD.
-* graph - Microsoft Graph sendMail as the sender mailbox (app registration with Mail.Send).
-          Env GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET.
-* gmail - Gmail API users.messages.send. Env GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN.
-
-Secrets are only ever read from the environment, never stored in the app or database.
+* live: Gmail API users.messages.send as the sender mailbox. Secrets only in the environment (.env):
+  GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (written by ``main.py gmail-auth``).
+* test: nothing leaves the machine; each email is saved as a .eml file in the outbox.
 """
 
 from __future__ import annotations
 
 import base64
 import os
-import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
@@ -23,8 +18,10 @@ import httpx
 
 from core.config import EmailSettings
 from core.timeutils import now_utc
+from daily.branding import LOGO_CID, LOGO_SRC, logo_png
 
 TIMEOUT = 30
+GMAIL_SECRETS = ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN")
 
 
 class MailError(Exception):
@@ -55,72 +52,40 @@ def build_message(sender: str, to: list[str], subject: str, html: str, text: str
     msg["Date"], msg["Message-ID"] = formatdate(localtime=True), make_msgid(domain="apis-attendance.local")
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
+    if LOGO_SRC in html:                     # embed the logo (multipart/related) so it shows without "load images"
+        msg.get_payload()[1].add_related(logo_png(), maintype="image", subtype="png", cid=f"<{LOGO_CID}>",
+                                         filename="apis-logo.png", disposition="inline")
     for a in attachments:
         maintype, subtype = a.mime.split("/", 1)
         msg.add_attachment(a.content, maintype=maintype, subtype=subtype, filename=a.filename)
     return msg
 
 
-# ---------------------------------------------------------------------------- providers
-def _env(*names: str) -> list[str]:
-    values = [os.environ.get(n, "") for n in names]
-    missing = [n for n, v in zip(names, values) if not v]
-    if missing:
-        raise MailError(f"Missing environment variable(s): {', '.join(missing)}.")
-    return values
-
-
-def _smtp(cfg: EmailSettings, message: EmailMessage) -> None:
-    if not cfg.smtp_host:
-        raise MailError("SMTP needs the server name (Settings -> Email).")
-    password = os.environ.get("SMTP_PASSWORD")
-    try:
-        with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=TIMEOUT) as smtp:
-            if cfg.smtp_starttls:
-                smtp.starttls()
-            if cfg.smtp_username:
-                if not password:
-                    raise MailError("SMTP_PASSWORD is not set in the environment.")
-                smtp.login(cfg.smtp_username, password)
-            smtp.send_message(message)
-    except smtplib.SMTPAuthenticationError as exc:
-        raise MailError("The SMTP server rejected the username/password.") from exc
-    except (smtplib.SMTPException, OSError) as exc:
-        raise MailError(f"Could not send: {type(exc).__name__}: {exc}"[:300]) from exc
+def missing_secrets() -> list[str]:
+    return [n for n in GMAIL_SECRETS if not os.environ.get(n)]
 
 
 def _http(method: str, url: str, **kw) -> httpx.Response:
     try:
         r = httpx.request(method, url, timeout=TIMEOUT, **kw)
     except httpx.HTTPError as exc:
-        raise MailError(f"Could not reach the mail service: {type(exc).__name__}") from exc
+        raise MailError(f"Could not reach Gmail: {type(exc).__name__}") from exc
     if r.status_code >= 400:
-        raise MailError(f"Mail service answered {r.status_code}: {r.text[:200]}")
+        raise MailError(f"Gmail answered {r.status_code}: {r.text[:200]}")
     return r
 
 
-def _graph(cfg: EmailSettings, message: EmailMessage) -> None:
-    tenant, client_id, secret = _env("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET")
-    token = _http("POST", f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-                  data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret,
-                        "scope": "https://graph.microsoft.com/.default"}).json()["access_token"]
-    # sendMail accepts the whole MIME message, base64-encoded, as text/plain.
-    _http("POST", f"https://graph.microsoft.com/v1.0/users/{cfg.sender}/sendMail",
-          headers={"Authorization": f"Bearer {token}", "Content-Type": "text/plain"},
-          content=base64.b64encode(bytes(message)))
-
-
-def _gmail(cfg: EmailSettings, message: EmailMessage) -> None:
-    client_id, secret, refresh = _env("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN")
+def _gmail(message: EmailMessage) -> None:
+    missing = missing_secrets()
+    if missing:
+        raise MailError(f"Missing environment variable(s): {', '.join(missing)} (run main.py gmail-auth).")
     token = _http("POST", "https://oauth2.googleapis.com/token",
-                  data={"grant_type": "refresh_token", "client_id": client_id, "client_secret": secret,
-                        "refresh_token": refresh}).json()["access_token"]
+                  data={"grant_type": "refresh_token", "client_id": os.environ["GMAIL_CLIENT_ID"],
+                        "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+                        "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"]}).json()["access_token"]
     _http("POST", "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
           headers={"Authorization": f"Bearer {token}"},
           json={"raw": base64.urlsafe_b64encode(bytes(message)).decode()})
-
-
-PROVIDERS = {"smtp": _smtp, "graph": _graph, "gmail": _gmail}
 
 
 def send(cfg: EmailSettings, message: EmailMessage, outbox: Path) -> SendResult:
@@ -131,5 +96,5 @@ def send(cfg: EmailSettings, message: EmailMessage, outbox: Path) -> SendResult:
         return SendResult("SAVED", str(path))
     if not cfg.sender:
         raise MailError("Live email needs the sender mailbox (Settings -> Email).")
-    PROVIDERS[cfg.provider](cfg, message)
+    _gmail(message)
     return SendResult("SENT")

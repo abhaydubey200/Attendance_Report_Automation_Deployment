@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from api.deps import get_db, get_settings, require
 from core.config import Settings
 from daily import mail, routing, service
+from daily.branding import inline_logo_for_browser
 from daily.settings_store import get_email_settings
 from database.models.daily import MailItem
 from security.permissions import Perm, Principal
@@ -48,7 +49,8 @@ def _day_items(db: Session, settings: Settings, day: date) -> dict:
     items = mail.items_for(db, day)
     cfg = get_email_settings(db, settings)
     return {"report_date": day.isoformat(), "mode": cfg.mode, "approval_required": cfg.approval_required,
-            "provider": cfg.provider, "items": [mail.item_dict(i) for i in items],
+            "test_recipient": cfg.test_recipient, "test_cc": cfg.test_cc,
+            "items": [mail.item_dict(i) for i in items],
             "status": dict(Counter(i.status for i in items)), "planned": bool(items)}
 
 
@@ -102,6 +104,7 @@ def resend(item_id: int, principal: Principal = Depends(require(Perm.MANAGE_SETT
 def preview(item_id: int, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
             db: Session = Depends(get_db)) -> HTMLResponse:
     html, _, _ = mail.render(db, settings, _item(db, item_id))
+    html = inline_logo_for_browser(html)          # cid: images only resolve inside a real email
     return HTMLResponse(html, headers={"Content-Security-Policy": PREVIEW_CSP})
 
 

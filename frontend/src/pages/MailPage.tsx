@@ -16,6 +16,7 @@ const STATUS_TEXT: Record<MailStatus, [string, string]> = {
   DISABLED: ["Switched off", "info"],
   DUPLICATE: ["Already sent today", "info"],
   SUPERSEDED: ["Replaced", "info"],
+  TEST_SENT: ["Sent to test address", "warn"],
 };
 
 function MailBadge({ status }: { status: MailStatus }) {
@@ -95,7 +96,8 @@ export function MailPage() {
   useEffect(() => { setSelected(new Set()); setPreview(null); }, [date]);
 
   const items = day.data?.items ?? [];
-  const pending = items.filter((i) => i.status === "PENDING" || i.status === "FAILED");
+  const pending = items.filter((i) => i.status === "PENDING" || i.status === "FAILED" || i.status === "TEST_SENT");
+  const testing = day.data?.test_recipient;
   const count = (s: MailStatus) => day.data?.status[s] ?? 0;
 
   async function approve(ids: number[] | null) {
@@ -121,7 +123,7 @@ export function MailPage() {
 
   return (
     <>
-      <PageHeader title="Daily emails" subtitle="One email per team lead / HOD, plus the Director and the HR exception report. Check, then approve." />
+      <PageHeader title="Daily emails" subtitle="One email per HOD, plus the Director and the HR exception report. Check, then approve." />
       <Toolbar>
         <Field label="Day">
           <select value={date} onChange={(e) => setParams({ date: e.target.value })}>
@@ -137,7 +139,7 @@ export function MailPage() {
             <button className="btn btn-ghost btn-inline" disabled={act.busy} onClick={() => void replan()}>Prepare again</button>
             {selected.size > 0 && <button className="btn btn-ghost btn-inline" disabled={act.busy} onClick={() => void approve([...selected])}>Approve selected ({selected.size})</button>}
             <button className="btn btn-primary btn-inline" disabled={act.busy || !pending.length} onClick={() => void approve(null)}>
-              {act.busy ? "Sending…" : `Approve & send all (${pending.length})`}
+              {act.busy ? "Sending…" : testing ? `Send all to test address (${pending.length})` : `Approve & send all (${pending.length})`}
             </button>
           </div>
         )}
@@ -153,6 +155,12 @@ export function MailPage() {
           {day.loading && !day.data && <Loading />}
           {day.data && (
             <>
+              {testing && (
+                <Notice kind="fail">
+                  <strong>Testing:</strong> every email goes ONLY to <strong>{testing}</strong>{day.data.test_cc?.length ? <> (CC <strong>{day.data.test_cc.join(", ")}</strong>)</> : null}, marked [TEST] and showing who would normally get it.
+                  The real managers receive nothing until the test address is cleared in <Link to="/settings">Settings</Link>.
+                </Notice>
+              )}
               {day.data.mode === "test" && <Notice kind="warn">Test mode: approved emails are saved to the outbox folder, not delivered. Switch to live in <Link to="/settings">Settings</Link>.</Notice>}
               {!day.data.planned && <Notice>No emails prepared for this day yet{canSend ? " – they are prepared after the upload (once both files are in), or use “Prepare again”." : "."}</Notice>}
               {day.data.planned && (
@@ -169,7 +177,7 @@ export function MailPage() {
               {items.length > 0 && (
                 <Card title="Emails">
                   <DataTable rows={items} rowKey={(i) => String(i.id)} columns={[
-                    ...(canSend ? [{ header: "", render: (i: MailItem) => (i.status === "PENDING" || i.status === "FAILED")
+                    ...(canSend ? [{ header: "", render: (i: MailItem) => (i.status === "PENDING" || i.status === "FAILED" || i.status === "TEST_SENT")
                       ? <input type="checkbox" aria-label={`Select ${i.name}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /> : null }] : []),
                     { header: "Recipient", render: (i) => <><strong>{i.name}</strong><br /><span className="muted small">{i.role}</span></> },
                     { header: "To", render: (i) => <span className="small">{i.to || "—"}{i.cc && <><br />CC {i.cc}</>}</span> },

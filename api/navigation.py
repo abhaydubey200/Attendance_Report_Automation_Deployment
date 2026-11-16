@@ -26,6 +26,7 @@ PAGES: tuple[PageSpec, ...] = (
     PageSpec("Reports", "Attendance report", "reports", Perm.VIEW_INSIGHTS),
     PageSpec("Reports", "Employee report", "employee-report", Perm.VIEW_INSIGHTS),
     PageSpec("Setup", "Employees", "employees", Perm.VIEW_INSIGHTS),
+    PageSpec("Setup", "Automation", "automation", Perm.VIEW_INSIGHTS),
     PageSpec("Setup", "Settings", "settings", Perm.MANAGE_SETTINGS),
 )
 

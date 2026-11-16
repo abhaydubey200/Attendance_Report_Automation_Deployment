@@ -4,6 +4,7 @@ import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { Loading, Notice, PageHeader } from "./components/ui";
 import { AutomationPage } from "./pages/AutomationPage";
+import { DatabasePage } from "./pages/DatabasePage";
 import { EmailsPage } from "./pages/EmailsPage";
 import { MailPage } from "./pages/MailPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
@@ -24,6 +25,7 @@ const SCREENS: Record<string, ComponentType> = {
   reports: ReportsPage,
   "employee-report": EmployeeReportPage,
   settings: SettingsPage,
+  database: DatabasePage,
 };
 
 function NotFoundPage() {

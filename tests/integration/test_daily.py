@@ -67,7 +67,7 @@ def test_reshaper_pairs_rows_and_drops_remarks():
     raw, _ = read_raw(build_summary_xlsx(DAY), "xlsx")
     t = reshape_attendance_summary(raw)
     assert len(t.rows) == 44 and "Remarks" not in t.columns
-    with pytest.raises(ReadError, match="Header row not found"):
+    with pytest.raises(ReadError, match="not a Pocket HRMS Attendance Summary"):
         reshape_attendance_summary([["a", "b"]])
 
 
@@ -366,3 +366,12 @@ def test_times_are_shown_in_12_hour_format():
     s = analysis.summarize(results, Rules(exclude_codes=["^test$"]))
     assert s["avg_in_time"].endswith(("AM", "PM")) and s["latest_in"] == "11:15 AM"
     assert all(b["label"].count("M") == 2 for b in analysis.in_time_buckets(results))
+
+
+def test_wrong_file_message_names_the_current_layout():
+    from ingestion.file_reader import ReadError
+    from ingestion.reshapers import reshape_attendance_summary
+
+    with pytest.raises(ReadError, match="In Time, Out Time and Type") as exc:
+        reshape_attendance_summary([["a", "b"], ["1", "2"]])
+    assert "In-Out Time" not in str(exc.value)

@@ -111,7 +111,11 @@ def reshape_attendance_summary_v2(raw_rows: list[list[str]], first_row_number: i
 def reshape_attendance_summary(raw_rows: list[list[str]], first_row_number: int = 1, sheets: list[str] | None = None) -> Table:
     if _is_v2(raw_rows):
         return reshape_attendance_summary_v2(raw_rows, first_row_number, sheets)
-    h = find_header(raw_rows, SUMMARY_HEADER)
+    try:
+        h = find_header(raw_rows, SUMMARY_HEADER)                # the older two-rows-per-employee layout
+    except ReadError:
+        raise ReadError("This is not a Pocket HRMS Attendance Summary: the columns Code, Name, Category, Date, Shift Name, "
+                        "In Time, Out Time and Type were not found.") from None
     header = [str(c).strip() for c in raw_rows[h]]
     idx = {name: header.index(name) for name in SUMMARY_HEADER}
 

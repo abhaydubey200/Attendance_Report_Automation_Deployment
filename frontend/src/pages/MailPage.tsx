@@ -14,7 +14,7 @@ const STATUS_TEXT: Record<MailStatus, [string, string]> = {
   FAILED: ["Failed", "fail"],
   HELD: ["Held", "fail"],
   DISABLED: ["Switched off", "info"],
-  DUPLICATE: ["Already sent today", "info"],
+  DUPLICATE: ["Already sent for this day", "info"],
   SUPERSEDED: ["Replaced", "info"],
   TEST_SENT: ["Sent to test address", "warn"],
 };
@@ -111,7 +111,7 @@ export function MailPage() {
     if (r) day.reload();
   }
   async function resend(i: MailItem) {
-    if (!window.confirm(`Send ${i.name} today's email again? They already received it.`)) return;
+    if (!window.confirm(`Send ${i.name} the email for ${formatDate(i.report_date)} again? They already received it.`)) return;
     const r = await act.run(() => api.post<MailItem>(`/v1/mail/${i.id}/resend`), `Sent again to ${i.name}.`);
     if (r) day.reload();
   }

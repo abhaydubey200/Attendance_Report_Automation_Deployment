@@ -225,7 +225,7 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
     recipients already sent for the day are marked DUPLICATE (sent once per recipient per day)."""
     cfg = get_email_settings(session, settings)
     day = upload.report_date
-    undelivered = (HELD,) + sendable_statuses(cfg)
+    undelivered = (HELD, DUPLICATE, DISABLED) + sendable_statuses(cfg)   # earlier rows of this day that were not delivered
     for old in session.scalars(select(MailItem).where(MailItem.report_date == day, ~MailItem.recipient_key.like("MONTHLY:%"),
                                                      MailItem.status.in_(undelivered))):
         old.status, old.note = SUPERSEDED, "Replaced by a newer upload of this day."

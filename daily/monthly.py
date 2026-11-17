@@ -190,7 +190,7 @@ def _generate(s: Session, settings: Settings, month: str, mode: str | None, acto
 
     # monthly emails: one per recipient, same routing as the daily emails
     for old in s.scalars(select(MailItem).where(MailItem.recipient_key.like(f"{PREFIX}%"), MailItem.report_date == end,
-                                                MailItem.status.in_((mail.HELD,) + mail.sendable_statuses(cfg)))):
+                                                MailItem.status.in_((mail.HELD, mail.DUPLICATE, mail.DISABLED) + mail.sendable_statuses(cfg)))):
         old.status, old.note = mail.SUPERSEDED, "Replaced by a newer monthly run."
     delivered = {k for (k,) in s.execute(select(MailItem.recipient_key).where(MailItem.report_date == end,
                                                                               MailItem.status.in_(mail.delivered_statuses(cfg))))}

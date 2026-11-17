@@ -536,3 +536,16 @@ def test_email_has_action_column(engine, settings):
         html, text, _ = mail.render(s, settings, lead)
     assert ">Action</th>" in html and "Follow up; apply leave or regularise in Pocket HRMS" in html
     assert "-> Follow up" in text and "Download it and open it in Chrome or Edge" in html
+
+
+def test_prepare_again_does_not_pile_up_already_sent_rows(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        up, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
+        mail.approve(s, settings, DAY, "tester", ids=[lead.id])
+        for _ in range(3):                                           # HR clicks "Prepare again" three times
+            mail.build_plan(s, settings, up, "tester")
+        rows = [i for i in mail.items_for(s, DAY) if i.recipient_key == "lead.a@example.com"]
+        assert sorted(i.status for i in rows) == [mail.DUPLICATE, mail.SAVED]   # one sent row + one "already sent" row
+        assert len(mail.items_for(s, DAY)) == len(items) + 1

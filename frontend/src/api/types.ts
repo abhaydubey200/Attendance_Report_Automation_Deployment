@@ -205,6 +205,7 @@ export interface EmailSettings {
   hr_exceptions: boolean;
   hod_cc_on_team: boolean;
   hr_cc_on_hod_summary: boolean;
+  always_cc?: string[];
   test_recipient: string | null;
   test_cc: string[];
   director_name: string;

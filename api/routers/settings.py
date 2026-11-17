@@ -63,11 +63,12 @@ def put_email(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
         cfg = EmailSettings.model_validate(body)
         cfg.director_emails = [a.strip().lower() for a in cfg.director_emails if a.strip()]
         cfg.hr_emails = [a.strip().lower() for a in cfg.hr_emails if a.strip()]
+        cfg.always_cc = list(dict.fromkeys(a.strip().lower() for a in cfg.always_cc if a.strip()))
         cfg.test_recipient = (cfg.test_recipient or "").strip().lower() or None
         cfg.test_cc = [a.strip().lower() for a in cfg.test_cc if a.strip()] if cfg.test_recipient else []
         for label, addrs in (("Test address", [cfg.test_recipient] if cfg.test_recipient else []), ("Test CC", cfg.test_cc),
                              ("Sender", [cfg.sender] if cfg.sender else []), ("Reply-to", [cfg.reply_to] if cfg.reply_to else []),
-                             ("Director", cfg.director_emails), ("HR mailbox", cfg.hr_emails)):
+                             ("Director", cfg.director_emails), ("HR mailbox", cfg.hr_emails), ("Always CC", cfg.always_cc)):
             bad = [a for a in addrs if not valid_email(a)]
             if bad:
                 raise ValueError(f"{label} is not a valid email address: {', '.join(bad)}")

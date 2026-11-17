@@ -491,6 +491,19 @@ def test_email_headline_counts_people_once_and_names_the_missing_punch():
     assert mail.subject_numbers(director) == "1 absent · 2 late · 1 missing punch"      # company figures, not Director Office
 
 
+def test_always_cc_goes_on_every_email(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True, always_cc=["HR.Head@example.com"], hr_emails=["hr.head@example.com"])
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        by = {i.recipient_key: i for i in items}
+        assert all(i.cc_addrs == "hr.head@example.com" for k, i in by.items() if k != "HR")
+        assert by["HR"].cc_addrs is None                          # already in To: not copied twice
+        mail.approve(s, settings, DAY, "tester")
+        msgs = [email.message_from_bytes(p.read_bytes(), policy=email.policy.default)
+                for p in (settings.storage.area("outbox") / "2026-11-13").glob("*.eml")]
+    assert sum(1 for m in msgs if m["Cc"] == "hr.head@example.com") == len(msgs) - 1
+
+
 def test_email_has_action_column(engine, settings):
     with session_scope(engine) as s:
         load(s, settings, approval_required=True)

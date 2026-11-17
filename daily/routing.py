@@ -159,7 +159,10 @@ def recipients(session: Session, cfg: EmailSettings, day: date | None = None, al
     if not cfg.hr_exceptions:
         hr.status, hr.note = "DISABLED", "HR exception report switched off in Settings."
     out.append(hr)
+    always = [a.strip().lower() for a in cfg.always_cc if a.strip()]
     for rec in out:
+        if always:
+            rec.cc = sorted(set(rec.cc) | {a for a in always if a not in rec.to})
         if rec.status != "OK":
             continue
         bad = [a for a in rec.to + rec.cc if not valid_email(a)]

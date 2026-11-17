@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 import type { ApiError } from "../api/client";
 
-export function PageHeader({ title, subtitle }: { title: string; subtitle?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="page-header">
-      <h1>{title}</h1>
-      {subtitle && <p>{subtitle}</p>}
+      <div>
+        <h1>{title}</h1>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {actions && <div className="page-actions">{actions}</div>}
     </header>
   );
 }
@@ -16,11 +19,15 @@ export function Badge({ kind = "info", children }: { kind?: BadgeKind; children:
   return <span className={`badge badge-${kind}`}>{children}</span>;
 }
 
-export function KpiCard({ label, value }: { label: string; value: ReactNode }) {
+export type KpiTone = "ok" | "warn" | "fail" | "info" | "brand";
+
+/** A key number. `tone` colours it by meaning (green good, amber watch, red act); `hint` is a short line under it. */
+export function KpiCard({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: KpiTone; hint?: ReactNode }) {
   return (
-    <div className="kpi-card">
+    <div className={`kpi-card${tone ? ` kpi-${tone}` : ""}`}>
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">{value ?? "—"}</div>
+      {hint && <div className="kpi-hint">{hint}</div>}
     </div>
   );
 }
@@ -34,7 +41,7 @@ export function Notice({ kind = "info", children }: { kind?: BadgeKind; children
 }
 
 export function Loading() {
-  return <p className="muted">Loading…</p>;
+  return <p className="muted" role="status">Loading…</p>;
 }
 
 export function ErrorNotice({ error }: { error: ApiError }) {
@@ -48,7 +55,14 @@ export interface Column<T> {
 }
 
 export function DataTable<T>({ rows, columns, rowKey }: { rows: T[]; columns: Column<T>[]; rowKey: (row: T) => string }) {
-  if (rows.length === 0) return <p className="muted">No records.</p>;
+  if (rows.length === 0) {
+    return (
+      <div className="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true"><path d="M3 13h5l1.5 3h5L16 13h5M5 5h14l2 8v6H3v-6z" /></svg>
+        <span>Nothing to show.</span>
+      </div>
+    );
+  }
   return (
     <div className="table-wrap">
       <table className="data-table">

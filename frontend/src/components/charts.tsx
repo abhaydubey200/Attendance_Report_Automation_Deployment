@@ -1,21 +1,23 @@
 // Small dependency-free SVG charts in the APIS palette.
 
 export const STATUS_COLORS: Record<string, string> = {
-  PRESENT: "#2e7d4f",
-  MISSING_PUNCH: "#c88a00",
-  ON_DUTY: "#3b6fb6",
-  WEEK_OFF: "#6c8ea4",
-  HOLIDAY: "#d4a72c",
-  HALF_DAY: "#d7ad5f",
-  LEAVE: "#9f7b49",
-  ABSENT: "#a52a1a",
-  NOT_TRACKED: "#9a9a9a",
+  PRESENT: "#16a34a",
+  MISSING_PUNCH: "#7c3aed",
+  ON_DUTY: "#0d9488",
+  WFH: "#4f46e5",
+  WEEK_OFF: "#94a3b8",
+  HOLIDAY: "#f59e0b",
+  HALF_DAY: "#d97706",
+  LEAVE: "#64748b",
+  ABSENT: "#dc2626",
+  NOT_TRACKED: "#cbd5e1",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
   PRESENT: "Present",
   MISSING_PUNCH: "Missing punch",
   ON_DUTY: "On duty",
+  WFH: "Work from home",
   WEEK_OFF: "Week off",
   HOLIDAY: "Holiday",
   HALF_DAY: "Half day",
@@ -65,7 +67,7 @@ export function HBars({ bars, title, max, unit = "" }: { bars: Bar[]; title: str
 }
 
 /** Line chart over dates (attendance trend). */
-export function LineChart({ labels, values, title, unit = "", color = "#835415" }: { labels: string[]; values: (number | null)[]; title: string; unit?: string; color?: string }) {
+export function LineChart({ labels, values, title, unit = "", color = "#14213d" }: { labels: string[]; values: (number | null)[]; title: string; unit?: string; color?: string }) {
   if (labels.length < 2) return <p className="muted">Upload more days to see the trend.</p>;
   const w = 680;
   const h = 220;

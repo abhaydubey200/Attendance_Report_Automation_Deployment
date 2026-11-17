@@ -38,7 +38,7 @@ function breakdownOf(ins: Insights, scope: string): { by: string; rows: Breakdow
     leave: c.counts.LEAVE + c.counts.HALF_DAY, not_tracked: c.counts.NOT_TRACKED })) };
 }
 
-const pctColor = (v: number) => (v < 75 ? "#a52a1a" : v < 90 ? "#c88a00" : "#2e7d4f");
+const pctColor = (v: number) => (v < 75 ? "#dc2626" : v < 90 ? "#f59e0b" : "#16a34a");
 
 function matches(r: EmployeeRow, f: string): boolean {
   if (f === "ALL") return true;
@@ -112,20 +112,19 @@ export function InsightsPage() {
       {day.loading && <Loading />}
       {s && data && ins && (
         <>
-          <div className="kpi-grid">
-            <KpiCard label="Attendance" value={s.attendance_pct === null ? "—" : `${s.attendance_pct}%`} />
-            <KpiCard label="Employees" value={s.employees} />
-            <KpiCard label="Present" value={s.counts.PRESENT} />
-            <KpiCard label="Absent" value={s.counts.ABSENT} />
-            <KpiCard label="Late" value={s.late} />
-            <KpiCard label="Missing punch" value={s.counts.MISSING_PUNCH} />
-            <KpiCard label="Leave" value={s.counts.LEAVE + s.counts.HALF_DAY} />
-            <KpiCard label="On duty" value={s.counts.ON_DUTY} />
-            <KpiCard label="Left early" value={s.left_early} />
-            <KpiCard label="Avg arrival" value={s.avg_in_time ?? "—"} />
-            <KpiCard label="Avg hours (h:mm)" value={formatHours(s.avg_work_hours) || "—"} />
-            <KpiCard label="Week off" value={s.counts.WEEK_OFF ?? 0} />
-            <KpiCard label="Not tracked" value={s.counts.NOT_TRACKED} />
+          <div className="kpi-grid kpi-cols-4">
+            <KpiCard label="Attendance" value={s.attendance_pct === null ? "—" : `${s.attendance_pct}%`}
+              tone={s.attendance_pct === null ? undefined : s.attendance_pct >= 90 ? "ok" : s.attendance_pct >= 75 ? "warn" : "fail"}
+              hint={`of ${s.tracked} tracked · target 90%`} />
+            <KpiCard label="Present" value={s.counts.PRESENT} tone="ok"
+              hint={[s.late ? `incl. ${s.late} late` : "", s.left_early ? `${s.left_early} left early` : ""].filter(Boolean).join(", ") || "on time"} />
+            <KpiCard label="Absent" value={s.counts.ABSENT} tone={s.counts.ABSENT ? "fail" : undefined} hint={s.absent_pct === null ? "" : `${s.absent_pct}% of tracked`} />
+            <KpiCard label="Late arrivals" value={s.late} tone={s.late ? "warn" : undefined} hint={s.late ? `avg ${formatMinutes(s.avg_late_minutes)} hrs late` : "nobody late"} />
+            <KpiCard label="Missing punch" value={s.counts.MISSING_PUNCH} tone={s.counts.MISSING_PUNCH ? "warn" : undefined} hint="to regularise" />
+            <KpiCard label="Leave · On duty · WFH" value={`${s.counts.LEAVE + s.counts.HALF_DAY} · ${s.counts.ON_DUTY} · ${s.counts.WFH ?? 0}`} tone="info" />
+            <KpiCard label="Avg arrival · hours" value={s.avg_in_time ?? "—"} tone="brand" hint={`average duty ${formatHours(s.avg_work_hours) || "—"} (h:mm)`} />
+            <KpiCard label="Not counted" value={(s.counts.WEEK_OFF ?? 0) + (s.counts.HOLIDAY ?? 0) + s.counts.NOT_TRACKED}
+              hint={`${s.employees} employees in total`} />
           </div>
           {day.data && (
             <p className="muted small">
@@ -141,7 +140,7 @@ export function InsightsPage() {
                 .filter((k) => s.counts[k]).map((k) => ({ label: STATUS_LABELS[k], value: s.counts[k], color: STATUS_COLORS[k] }))} />
             </Card>
             <Card title="Arrival times">
-              <HBars title="Employees arriving in each 30-minute window" bars={data.arrivals.map((a) => ({ label: a.label, value: a.count, color: "#d7ad5f" }))} />
+              <HBars title="Employees arriving in each 30-minute window" bars={data.arrivals.map((a) => ({ label: a.label, value: a.count, color: "#3a4a70" }))} />
             </Card>
             {bd.rows.length > 1 && (
               <Card title={`Attendance by ${bd.by.toLowerCase()}`}>

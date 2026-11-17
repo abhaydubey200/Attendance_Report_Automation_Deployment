@@ -22,7 +22,7 @@ export interface Me {
   auth_mode: "none" | "local";
 }
 
-export type Status = "PRESENT" | "MISSING_PUNCH" | "ON_DUTY" | "HALF_DAY" | "LEAVE" | "ABSENT" | "WEEK_OFF" | "HOLIDAY" | "NOT_TRACKED";
+export type Status = "PRESENT" | "MISSING_PUNCH" | "ON_DUTY" | "HALF_DAY" | "LEAVE" | "ABSENT" | "WEEK_OFF" | "HOLIDAY" | "WFH" | "NOT_TRACKED";
 
 export interface Summary {
   employees: number;

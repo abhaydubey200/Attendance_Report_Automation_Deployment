@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import type { NavPage } from "../api/types";
 import { BrandMark } from "./Brand";
+import { Icon } from "./icons";
 
 function groupBySection(pages: NavPage[]): [string, NavPage[]][] {
   const groups = new Map<string, NavPage[]>();
@@ -24,53 +26,71 @@ function initials(name: string): string {
 
 export function Layout() {
   const { me, logout } = useAuth();
+  const location = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [location.pathname]);          // close the phone menu after choosing a page
   if (!me) return null;
   const signInMode = me.auth_mode === "local";
+  const current = me.navigation.find((p) => location.pathname.startsWith(`/${p.slug}`));
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="topbar-brand">
+    <div className={`shell${navOpen ? " nav-open" : ""}`}>
+      <aside className="sidebar" aria-label="Main navigation">
+        <div className="sidebar-brand">
           <BrandMark />
-          <div className="topbar-title">
-            <span className="topbar-product">Daily Attendance</span>
-            <span className="topbar-company">APIS India Limited</span>
+          <div className="sidebar-brand-text">
+            <span className="sidebar-product">Daily Attendance</span>
+            <span className="sidebar-company">APIS India Limited</span>
           </div>
         </div>
-        <div className="topbar-right">
-          {me.environment !== "production" && <span className="env-chip">{me.environment}</span>}
-          <div className="user-chip" title={me.roles.join(", ")}>
-            <span className="avatar" aria-hidden="true">{initials(me.display_name)}</span>
-            <span className="user-chip-text">
-              <span className="user-name">{me.display_name}</span>
-              <span className="user-roles">{me.roles.map((r) => r.replace(/_/g, " ")).join(" · ")}</span>
-            </span>
-          </div>
-          {signInMode && (
-            <button type="button" className="btn btn-ghost" onClick={() => void logout()}>
-              Sign out
-            </button>
-          )}
+        <nav>
+          {groupBySection(me.navigation).map(([section, pages]) => (
+            <div className="nav-section" key={section}>
+              <div className="nav-section-title">{section}</div>
+              {pages.map((page) => (
+                <NavLink key={page.slug} to={`/${page.slug}`} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                  <Icon name={page.slug} />
+                  <span>{page.title}</span>
+                  {!page.implemented && <span className="nav-phase">P{page.phase}</span>}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <span className="dot" aria-hidden="true" />
+          {signInMode ? "Signed-in access" : "Local access · this PC only"}
         </div>
-      </header>
+      </aside>
+      <div className="scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
 
-      <div className="body">
-        <aside className="sidebar" aria-label="Main navigation">
-          <nav>
-            {groupBySection(me.navigation).map(([section, pages]) => (
-              <div className="nav-section" key={section}>
-                <div className="nav-section-title">{section}</div>
-                {pages.map((page) => (
-                  <NavLink key={page.slug} to={`/${page.slug}`} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-                    <span>{page.title}</span>
-                    {!page.implemented && <span className="nav-phase">P{page.phase}</span>}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <div className="sidebar-footer">{signInMode ? "Signed-in access" : "Local access · no sign-in"}</div>
-        </aside>
+      <div className="main">
+        <header className="topbar">
+          <button type="button" className="menu-btn" aria-label={navOpen ? "Close menu" : "Open menu"} aria-expanded={navOpen}
+            onClick={() => setNavOpen((v) => !v)}>
+            <Icon name={navOpen ? "close" : "menu"} />
+          </button>
+          <div className="crumbs">
+            {current && <span className="section">{current.section}</span>}
+            {current && <span className="sep" aria-hidden="true">/</span>}
+            <strong>{current?.title ?? "Daily Attendance"}</strong>
+          </div>
+          <div className="topbar-right">
+            {me.environment !== "production" && <span className="env-chip">{me.environment}</span>}
+            <div className="user-chip" title={me.roles.join(", ")}>
+              <span className="avatar" aria-hidden="true">{initials(me.display_name)}</span>
+              <span className="user-chip-text">
+                <span className="user-name">{me.display_name}</span>
+                <span className="user-roles">{me.roles.map((r) => r.replace(/_/g, " ").toLowerCase()).join(" · ")}</span>
+              </span>
+            </div>
+            {signInMode && (
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => void logout()}>
+                <Icon name="logout" className="btn-icon" /> Sign out
+              </button>
+            )}
+          </div>
+        </header>
         <main className="content">
           <Outlet />
         </main>

@@ -123,7 +123,7 @@ export function MailPage() {
 
   return (
     <>
-      <PageHeader title="Daily emails" subtitle="One email per HOD, plus the Director and the HR exception report. Check, then approve." />
+      <PageHeader title="Approve emails" subtitle="One email per HOD, plus the Director and the HR exception report. Check, then approve." />
       <Toolbar>
         <Field label="Day">
           <select value={date} onChange={(e) => setParams({ date: e.target.value })}>
@@ -166,10 +166,10 @@ export function MailPage() {
               {day.data.planned && (
                 <div className="kpi-grid">
                   <KpiCard label="Emails" value={items.length} />
-                  <KpiCard label="Waiting for approval" value={count("PENDING")} />
-                  <KpiCard label={day.data.mode === "test" ? "Saved (test)" : "Sent"} value={count("SENT") + count("SAVED")} />
-                  <KpiCard label="Failed" value={count("FAILED")} />
-                  <KpiCard label="Held" value={count("HELD")} />
+                  <KpiCard label="Waiting for approval" value={count("PENDING")} tone={count("PENDING") ? "warn" : undefined} />
+                  <KpiCard label={day.data.mode === "test" ? "Saved (test)" : "Sent"} value={count("SENT") + count("SAVED")} tone="ok" />
+                  <KpiCard label="Failed" value={count("FAILED")} tone={count("FAILED") ? "fail" : undefined} />
+                  <KpiCard label="Held" value={count("HELD")} tone={count("HELD") ? "warn" : undefined} hint={count("HELD") ? "address missing" : undefined} />
                   <KpiCard label="Already sent / off" value={count("DUPLICATE") + count("DISABLED")} />
                 </div>
               )}

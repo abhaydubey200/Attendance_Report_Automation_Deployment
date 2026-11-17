@@ -126,7 +126,7 @@ def test_plan_content_and_privacy(engine, settings):
         assert [roster.cell(r, 1).value for r in range(4, roster.max_row + 1)] == ["T2", "T1"]   # attention first
         html, _, files = mail.render(s, settings, by["arun@example.com"])
         assert "Your wider team" in html and "Your team" in html and "department" not in html.lower() and "today" not in html.lower()
-        assert "1 of 1 people in your team need attention on 13-Nov-2026: 1 late." in html                  # headline
+        assert "1 of 1 people in your team needs attention on 13-Nov-2026: 1 late." in html                  # headline
         assert "2 of 3 people in your wider team need attention on 13-Nov-2026: 1 absent, 1 late." in html
         assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Team roster", "Wider team roster"]   # no per-team summary in emails
         html, _, _ = mail.render(s, settings, by["DIRECTOR"])
@@ -393,7 +393,7 @@ def test_email_shows_change_and_pattern_across_days(engine, settings):
         lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
         html, text, _ = mail.render(s, settings, lead)
     assert "absent on the last 3 report days" in html and "(absent on the last 3 report days)" in text
-    assert "compared with 12-Nov-2026" in html and "= same" in html
+    assert "compared with 12-Nov-2026" in html and "same as before" in html
 
 
 def test_emails_do_not_show_hod_team_or_manager_per_person():
@@ -474,3 +474,28 @@ def test_no_hod_name_goes_to_director_even_with_an_email():
     from database.models.daily import Employee
     e = Employee(code="HO0034", name="Amit Anand", department="Director Office", hod_name=None, hod_email="amit@example.com")
     assert routing.route_employee(e).detail_to == routing.DIRECTOR
+
+
+def test_email_headline_counts_people_once_and_names_the_missing_punch():
+    rows = [{"status": "PRESENT", "flags": ["LATE", "LEFT_EARLY"], "late_minutes": 30, "early_minutes": 40},
+            {"status": "PRESENT", "flags": ["LATE", "LEFT_EARLY"], "late_minutes": 10, "early_minutes": 5},
+            {"status": "PRESENT", "flags": ["LEFT_EARLY"], "late_minutes": 0, "early_minutes": 20},
+            {"status": "ABSENT", "flags": [], "late_minutes": 0, "early_minutes": 0},
+            {"status": "MISSING_PUNCH", "flags": [], "late_minutes": 0, "early_minutes": 0, "in_time": None, "out_time": "18:11"},
+            {"status": "PRESENT", "flags": [], "late_minutes": 0, "early_minutes": 0}]
+    c = mail.counts(rows)
+    assert mail.headline(c, "your team", "16-Nov-2026") == ("5 of 6 people in your team need attention on 16-Nov-2026: 1 absent, "
+                                                           "1 missing punch, 2 late (both also left early), 1 left early.")
+    assert mail.attention(rows[4]) == "Missing punch - no in-punch"
+    director = {"team": mail.counts(rows[5:]), "summary": None, "company": c, "exceptions": 0}
+    assert mail.subject_numbers(director) == "1 absent · 2 late · 1 missing punch"      # company figures, not Director Office
+
+
+def test_email_has_action_column(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
+        html, text, _ = mail.render(s, settings, lead)
+    assert ">Action</th>" in html and "Follow up; apply leave or regularise in Pocket HRMS" in html
+    assert "-> Follow up" in text and "Download it and open it in Chrome or Edge" in html

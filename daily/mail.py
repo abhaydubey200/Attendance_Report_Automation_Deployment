@@ -92,12 +92,15 @@ def _attention(row: dict) -> str | None:
     if row["status"] == "ABSENT":
         return "Absent"
     if row["status"] == "MISSING_PUNCH":
-        return "Missing punch" + (f", late {row['late_minutes']} min" if "LATE" in row["flags"] else "")
+        which = (" - no in-punch" if row.get("out_time") and not row.get("in_time")
+                 else " - no out-punch" if row.get("in_time") and not row.get("out_time") else "")
+        return f"Missing punch{which}" + (f", late {row['late_minutes']} min" if "LATE" in row["flags"] else "")
     reasons = []
     if "LATE" in row["flags"]:
         reasons.append(f"Late {row['late_minutes']} min")
     if "LEFT_EARLY" in row["flags"]:
-        reasons.append(f"Left early, {row['early_minutes']} min short of the required hours")
+        reasons.append(f"left early ({row['early_minutes']} min short of required hours)" if reasons
+                       else f"Left early ({row['early_minutes']} min short of required hours)")
     return ", ".join(reasons) or None
 
 
@@ -110,7 +113,13 @@ def counts(rows: list[dict], single_punch_counts: bool = True) -> dict:
             "left_early": sum(1 for r in rows if "LEFT_EARLY" in r["flags"]),
             "missing_punch": c["MISSING_PUNCH"], "week_off": c["WEEK_OFF"], "not_tracked": c["NOT_TRACKED"], "no_record": c[NO_RECORD],
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
-            "attention": sum(1 for r in rows if attention(r))}
+            "attention": sum(1 for r in rows if attention(r)),
+            # the same people split so that each is counted once (for the headline)
+            "att_late": sum(1 for r in rows if "LATE" in r["flags"] and r["status"] not in ("ABSENT", "MISSING_PUNCH")),
+            "att_late_early": sum(1 for r in rows if "LATE" in r["flags"] and "LEFT_EARLY" in r["flags"]
+                                  and r["status"] not in ("ABSENT", "MISSING_PUNCH")),
+            "att_early": sum(1 for r in rows if "LEFT_EARLY" in r["flags"] and "LATE" not in r["flags"]
+                             and r["status"] not in ("ABSENT", "MISSING_PUNCH"))}
 
 
 HISTORY_DAYS = 5          # uploaded days looked at for patterns (absent in a row, repeatedly late, ...)
@@ -124,16 +133,24 @@ def headline(c: dict | None, who: str, day: str = "") -> str | None:
     on = f" on {day}" if day else ""
     if not c["attention"]:
         return f"All {c['total']} people in {who} are accounted for{on} - nobody needs attention."
+    late, both = c.get("att_late", c["late"]), c.get("att_late_early", 0)
+    if not both:
+        also = ""
+    elif both == late:
+        also = " (also left early)" if late == 1 else " (both also left early)" if late == 2 else " (all also left early)"
+    else:
+        also = f" ({both} also left early)"
     parts = [f"{c['absent']} absent" if c["absent"] else "", f"{c['missing_punch']} missing punch" if c["missing_punch"] else "",
-             f"{c['late']} late" if c["late"] else "", f"{c['left_early']} left early" if c.get("left_early") else ""]
-    return f"{c['attention']} of {c['total']} people in {who} need attention{on}: " + ", ".join(x for x in parts if x) + "."
+             f"{late} late{also}" if late else "", f"{c.get('att_early', 0)} left early" if c.get("att_early") else ""]
+    verb = "needs" if c["attention"] == 1 else "need"
+    return f"{c['attention']} of {c['total']} people in {who} {verb} attention{on}: " + ", ".join(x for x in parts if x) + "."
 
 
 def subject_numbers(c: dict) -> str:
     """'2 absent · 3 late' for the subject line (the most useful counts only)."""
     if c.get("exceptions"):
         return f"{c['exceptions']} record(s) to fix"
-    main = c["team"] if c["team"]["total"] else (c.get("summary") or c.get("company") or c["team"])
+    main = c.get("company") or (c["team"] if c["team"]["total"] else (c.get("summary") or c["team"]))
     parts = [f"{main[k]} {label}" for k, label in (("absent", "absent"), ("late", "late"), ("missing_punch", "missing punch")) if main.get(k)]
     return " · ".join(parts) if parts else ("all present" if main.get("total") else "no attendance")
 
@@ -264,7 +281,8 @@ def item_dict(i: MailItem, sendable: tuple[str, ...] = SENDABLE) -> dict:
             "to": i.to_addrs or "", "cc": i.cc_addrs or "", "subject": i.subject, "status": i.status, "note": i.note,
             "attempts": i.attempts, "team": c["team"]["total"], "summary": (c.get("summary") or {}).get("total", 0),
             "company": (c.get("company") or {}).get("total", 0), "exceptions": c.get("exceptions", 0),
-            "attention": (c["team"]["attention"] if c["team"]["total"] else (c.get("summary") or c.get("company") or {}).get("attention", 0)),
+            "attention": ((c.get("company") or {}).get("attention", 0) if c.get("company")
+                          else c["team"]["attention"] if c["team"]["total"] else (c.get("summary") or {}).get("attention", 0)),
             "counts": c, "sent_at": i.sent_at.isoformat() if i.sent_at else None, "approved_by": i.approved_by}
 
 
@@ -319,7 +337,10 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     hist = _history(session, item.report_date, {r["code"].upper() for r in s["team"] + s["summary"]})
 
     def with_pattern(r: dict) -> dict:
-        return dict(r, reason=attention(r), pattern=pattern(hist.get(r["code"].upper(), [])))
+        from daily.render import action_for
+
+        pat = pattern(hist.get(r["code"].upper(), []))
+        return dict(r, reason=attention(r), pattern=pat, action=action_for(r, pat))
 
     team_att = [with_pattern(r) for r in _sort_attention_first(s["team"]) if attention(r)]
     team_codes = {r["code"] for r in s["team"]}
@@ -344,7 +365,8 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     html = _env.get_template("mail.html").render(subject=item.subject, day=day, greeting=greeting, role=item.role,
                                                  company=settings.app.company, b=blocks, app_url=settings.app.public_url,
                                                  attach_name=f"{stem}.xlsx" if cfg.attach_excel else None,
-                                                 dashboard_name=f"{stem}_dashboard.html" if cfg.attach_dashboard else None)
+                                                 dashboard_name=f"{stem}_dashboard.html" if cfg.attach_dashboard else None,
+                                                 hr_contact=(cfg.hr_emails or [None])[0])
     text = _text(item, day, greeting, blocks)
     attachments = []
     if cfg.attach_excel:
@@ -376,7 +398,7 @@ def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
         if b["team_attention"]:
             lines.append("Needs attention:")
             lines += [f"- {r['code']} {r['name']}: {r['reason']}" + (f" ({r['pattern']})" if r.get("pattern") else "")
-                      for r in b["team_attention"]]
+                      + (f" -> {r['action']}" if r.get("action") else "") for r in b["team_attention"]]
             if b["team_attention_more"]:
                 lines.append(f"- ... and {b['team_attention_more']} more in the attachment")
         else:

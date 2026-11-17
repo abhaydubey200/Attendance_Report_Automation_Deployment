@@ -135,6 +135,8 @@ def action_for(row: dict, pattern: str | None) -> str:
         return "Check with HR - no attendance record in Pocket HRMS"
     if st == "MISSING_PUNCH":
         return "Verify and regularise the missing punch"
+    if "LATE" in flags and "LEFT_EARLY" in flags:
+        return "Speak to them - came in late and left early"
     if "LATE" in flags:
         if pattern and "late" in pattern:
             return "Counsel and monitor - repeated late arrival"

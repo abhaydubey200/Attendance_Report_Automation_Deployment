@@ -162,8 +162,8 @@ def test_upload_replace_recalculate_and_send(engine, settings):
     assert status == {"DIRECTOR": "SAVED", "HR": "SAVED"}
     outbox = list((settings.storage.area("outbox") / "2026-11-13").glob("*.eml"))
     assert len(outbox) == 2
-    msg = email.message_from_bytes(next(p for p in outbox if b"hr@example.com" in p.read_bytes()).read_bytes(),
-                                   policy=email.policy.default)
+    msgs = [email.message_from_bytes(p.read_bytes(), policy=email.policy.default) for p in outbox]
+    msg = next(m for m in msgs if m["To"] == "hr@example.com")
     assert "NOT_IN_EMPLOYEE_MASTER" in msg.get_body(("html",)).get_content()
 
     with session_scope(engine) as s, pytest.raises(service.AlreadyUploaded):
@@ -331,7 +331,7 @@ def test_flexible_arrival_rule():
     assert by["X7"].flags == ["LATE"] and by["X7"].late_minutes == 30
     from daily import mail
     row = lambda r: {"status": r.status, "flags": r.flags, "late_minutes": r.late_minutes, "early_minutes": r.early_minutes}  # noqa: E731
-    assert mail.attention(row(by["X3"])) == "Left early, 40 min short of the required hours"
+    assert mail.attention(row(by["X3"])) == "Left early (40 min short of required hours)"
     assert mail.attention(row(by["X5"])) == "Late 5 min"
     assert mail.attention(row(by["X2"])) is None
     # no flexible window: every punch after 09:30 is late

@@ -129,7 +129,7 @@ export function ReportsPage() {
               <button className={`chip${view === "days" ? " on" : ""}`} onClick={() => setView("days")}>Day by day</button>
             </div>}>
             {view === "people" ? (
-              <DataTable rows={data.employees.slice(0, 2000)} rowKey={(p) => p.code} columns={[
+              <DataTable search exportName="employees-summary" rows={data.employees.slice(0, 2000)} rowKey={(p) => p.code} columns={[
                 { header: "Code", render: (p) => p.code },
                 { header: "Name", render: (p) => <Link className="link" to={withQuery("/employee-report", { code: p.code, from, to })}>{p.name}</Link> },
                 { header: "Department", render: (p) => p.department },
@@ -147,7 +147,7 @@ export function ReportsPage() {
             ) : (
               <>
                 {data.days_truncated && <Notice kind="warn">Showing the first 5,000 rows; the Excel download has all of them.</Notice>}
-                <DataTable rows={(data.days ?? []).slice(0, 5000)} rowKey={(d) => `${d.date}-${d.code}`} columns={dayColumns(true)} />
+                <DataTable search exportName="daily-detail" rows={(data.days ?? []).slice(0, 5000)} rowKey={(d) => `${d.date}-${d.code}`} columns={dayColumns(true)} />
               </>
             )}
           </Card>
@@ -221,7 +221,7 @@ export function EmployeeReportPage() {
           </Card>
           <TallyKpis t={data.summary} extra={[["Days in range", data.summary.days]]} />
           <Card title="Day by day">
-            {data.days.length === 0 ? <p className="muted">No attendance in this range.</p> : <DataTable rows={data.days} rowKey={(d) => d.date} columns={dayColumns(false)} />}
+            {data.days.length === 0 ? <p className="muted">No attendance in this range.</p> : <DataTable exportName="employee-days" rows={data.days} rowKey={(d) => d.date} columns={dayColumns(false)} />}
           </Card>
         </>
       )}

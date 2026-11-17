@@ -389,3 +389,15 @@ def test_pocket_hrms_week_off_and_holiday_codes():
     assert [r.status for r in results] == ["HOLIDAY", "WEEK_OFF", "PRESENT"]
     s = analysis.summarize(results, Rules())
     assert s["tracked"] == 1 and s["attendance_pct"] == 100.0 and s["counts"]["LEAVE"] == 0
+
+
+def test_home_overview_over_http(api):
+    empty = api.get("/api/v1/overview").json()
+    assert empty["latest"] is None and empty["trend"] == [] and empty["jobs"] == {"daily": None, "backup": None, "monthly": None}
+    assert api.post("/api/v1/days/upload", headers=H, files={"file": ("AttendanceSummary.xlsx", summary_file(CASES))}).status_code == 200
+    o = api.get("/api/v1/overview").json()
+    assert o["latest"]["date"] == "2026-11-13" and o["latest"]["attendance_pct"] == 68.8
+    assert o["latest"]["highlights"] and {"kind", "text"} <= set(o["latest"]["highlights"][0])
+    assert o["emails"]["total"] == 2 and o["emails"]["sent"] == 2 and o["emails"]["pending"] == 0
+    assert [t["date"] for t in o["trend"]] == ["2026-11-13"] and o["previous"] is None
+    assert any("Permission Report" in i["text"] for i in o["issues"])

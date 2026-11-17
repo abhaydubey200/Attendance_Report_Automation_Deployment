@@ -19,6 +19,7 @@ class PageSpec:
 
 
 PAGES: tuple[PageSpec, ...] = (
+    PageSpec("Daily attendance", "Home", "home", Perm.VIEW_INSIGHTS),
     PageSpec("Daily attendance", "Upload", "upload", Perm.UPLOAD_AND_SEND),
     PageSpec("Daily attendance", "Insights", "insights", Perm.VIEW_INSIGHTS),
     PageSpec("Daily attendance", "Approve emails", "mail", Perm.VIEW_INSIGHTS),

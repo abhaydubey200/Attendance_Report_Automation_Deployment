@@ -159,7 +159,7 @@ export function InsightsPage() {
 
           {bd.rows.length > 1 && (
             <Card title={`By ${bd.by.toLowerCase()}`}>
-              <DataTable rows={bd.rows} rowKey={(x) => x.name} columns={[
+              <DataTable exportName="breakdown" rows={bd.rows} rowKey={(x) => x.name} columns={[
                 { header: bd.by, render: (x) => <strong>{x.name}</strong> },
                 ...(bd.rows.some((x) => x.hod) ? [{ header: "HOD", render: (x: BreakdownRow) => x.hod ?? "" }] : []),
                 { header: "Employees", render: (x) => x.employees },
@@ -175,7 +175,7 @@ export function InsightsPage() {
 
           {scope === "ALL" && ins.hods && ins.hods.length > 0 && (
             <Card title="By HOD">
-              <DataTable rows={ins.hods} rowKey={(h) => h.scope} columns={[
+              <DataTable search exportName="teams" rows={ins.hods} rowKey={(h) => h.scope} columns={[
                 { header: "HOD", render: (h) => <button className="link" onClick={() => setScope(h.scope)}>{h.name}</button> },
                 { header: "Departments", render: (h) => h.departments.join(", ") },
                 { header: "Employees", render: (h) => h.employees },
@@ -200,7 +200,7 @@ export function InsightsPage() {
               </div>
               <span className="muted small">{rows.length} employees</span>
             </div>
-            <DataTable rows={rows.slice(0, 1000)} rowKey={(r) => r.code} columns={[
+            <DataTable search exportName="attendance" rows={rows.slice(0, 1000)} rowKey={(r) => r.code} columns={[
               { header: "Code", render: (r) => r.code },
               { header: "Name", render: (r) => <Link className="link" to={`/employee-report?code=${encodeURIComponent(r.code)}`}>{r.name}</Link> },
               ...(hasMaster ? [

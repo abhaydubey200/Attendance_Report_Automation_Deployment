@@ -4,6 +4,14 @@ import type { EmailLogRow } from "../api/types";
 import { DataTable, ErrorNotice, Loading, Notice, PageHeader, StatusBadge } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 
+/** "MONTHLY:a@x" -> "Month-end · a@x"; DIRECTOR / HR spelled out. */
+function recipientLabel(scope: string): string {
+  if (scope === "DIRECTOR") return "Director";
+  if (scope === "HR") return "HR";
+  const [kind, who] = scope.includes(":") ? scope.split(/:(.*)/s) : ["", scope];
+  return kind === "MONTHLY" ? `Month-end · ${who}` : kind ? `${kind} · ${who}` : who;
+}
+
 export function EmailsPage() {
   const log = useApi<EmailLogRow[]>("/v1/emails");
   return (
@@ -16,11 +24,11 @@ export function EmailsPage() {
         <Notice kind="warn">Test mode: emails are saved in the outbox folder, not delivered. Switch to live in <Link to="/settings">Settings</Link>.</Notice>
       )}
       {log.data && log.data.length > 0 && (
-        <DataTable rows={log.data} rowKey={(e) => String(e.id)} columns={[
+        <DataTable search exportName="email-log" rows={log.data} rowKey={(e) => String(e.id)} columns={[
           { header: "Day", render: (e) => <Link to={`/insights?date=${e.report_date}`}>{formatDate(e.report_date)}</Link> },
-          { header: "Recipient", render: (e) => (e.scope === "DIRECTOR" ? "Director" : e.scope === "HR" ? "HR" : e.scope) },
-          { header: "To", render: (e) => e.recipients },
-          { header: "Subject", render: (e) => <span className="small">{e.subject}</span> },
+          { header: "Recipient", render: (e) => recipientLabel(e.scope) },
+          { header: "To", render: (e) => <span className="small wrap-any">{e.recipients}</span> },
+          { header: "Subject", render: (e) => <span className="small" style={{ display: "inline-block", minWidth: "220px" }}>{e.subject}</span> },
           { header: "Status", render: (e) => <StatusBadge value={e.status} /> },
           { header: "Mode", render: (e) => e.mode },
           { header: "When", render: (e) => formatDateTime(e.sent_at) },

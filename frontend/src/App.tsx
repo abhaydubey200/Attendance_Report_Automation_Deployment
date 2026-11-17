@@ -9,6 +9,7 @@ import { EmailsPage } from "./pages/EmailsPage";
 import { MailPage } from "./pages/MailPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
 import { EmployeeReportPage, ReportsPage } from "./pages/ReportsPage";
+import { HomePage } from "./pages/HomePage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage, UnavailablePage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -16,6 +17,7 @@ import { UploadPage } from "./pages/UploadPage";
 
 // Routes exist only for screens the API lists for this user; the API checks permissions on every call.
 const SCREENS: Record<string, ComponentType> = {
+  home: HomePage,
   upload: UploadPage,
   insights: InsightsPage,
   mail: MailPage,
@@ -52,7 +54,7 @@ export function App() {
     return <UnavailablePage message={unavailable ?? "The service is not reachable."} />;
   }
 
-  const home = me.navigation.some((p) => p.slug === "insights") ? "insights" : me.navigation[0]?.slug;
+  const home = ["home", "insights"].find((s) => me.navigation.some((p) => p.slug === s)) ?? me.navigation[0]?.slug;
 
   return (
     <Routes>

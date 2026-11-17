@@ -1,5 +1,6 @@
 // Small line icons (24 px grid, 1.8 stroke) used in the navigation and empty states. No icon font or network fetch.
 const PATHS: Record<string, string> = {
+  home: "M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10",
   upload: "M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3",
   insights: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   mail: "M3 6h18v12H3zM3 7l9 6 9-6",

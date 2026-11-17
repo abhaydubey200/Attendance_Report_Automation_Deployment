@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import { useApi } from "../api/useApi";
 import type { UploadOptions, UploadResult } from "../api/types";
 import { Card, KpiCard, Notice, PageHeader } from "../components/ui";
+import { Icon } from "../components/icons";
 import { HighlightList } from "./InsightsPage";
 import { formatDate } from "../format";
 
@@ -87,10 +88,23 @@ export function UploadPage() {
   const pm = result?.insights?.sources?.permissions;
   const mi = result?.master_import;
   const test = options.data?.mode === "test";
+  const stage = busy ? 2 : result?.report_date ? 3 : 1;
+  const steps = ["Choose files", "Check and process", "Review and send"];
 
   return (
     <>
       <PageHeader title="Upload yesterday's attendance" subtitle="Up to three datasets at once. The file type is checked; columns and date are validated before anything is sent." />
+
+      <ol className="stepper" aria-label="Upload progress">
+        {steps.map((t, i) => (
+          <li key={t} style={{ display: "contents" }}>
+            {i > 0 && <span className="stp-line" aria-hidden="true" />}
+            <span className={`stp${stage === i + 1 ? " on" : stage > i + 1 ? " done" : ""}`} aria-current={stage === i + 1 ? "step" : undefined}>
+              <b>{stage > i + 1 ? "✓" : i + 1}</b>{t}
+            </span>
+          </li>
+        ))}
+      </ol>
 
       {options.data?.test_recipient && (
         <Notice kind="fail"><strong>Testing:</strong> all emails go only to <strong>{options.data.test_recipient}</strong>{options.data.test_cc?.length ? ` (CC ${options.data.test_cc.join(", ")})` : ""} (Settings → Testing).</Notice>
@@ -125,6 +139,7 @@ export function UploadPage() {
           </button>
           {!any && <span className="muted small">Choose at least one file.</span>}
         </div>
+        {busy && <><div className="progress" aria-hidden="true"><i /></div><p className="muted small" role="status">Reading the files, checking columns and dates, classifying attendance and preparing the emails…</p></>}
       </Card>
 
       {error && <Notice kind="fail">{error}</Notice>}
@@ -178,6 +193,14 @@ export function UploadPage() {
           </div>
           <Card title="Highlights">
             <HighlightList items={result.insights.scopes.ALL.highlights} />
+          </Card>
+          <Card title="Next steps">
+            <div className="next-steps">
+              {waiting > 0 && <Link className="btn btn-primary btn-inline" to={`/mail?date=${result.report_date}`}><Icon name="mail" className="btn-icon" /> Review and approve {waiting} email(s)</Link>}
+              {result.auto_sent && <Link className="btn btn-primary btn-inline" to={`/mail?date=${result.report_date}`}><Icon name="mail" className="btn-icon" /> See the emails</Link>}
+              <Link className="btn btn-ghost btn-inline" to={`/insights?date=${result.report_date}`}><Icon name="insights" className="btn-icon" /> Open insights</Link>
+              {!result.permission_file && <span className="muted small" style={{ alignSelf: "center" }}>The Permission Report of this day can still be uploaded here.</span>}
+            </div>
           </Card>
         </>
       )}

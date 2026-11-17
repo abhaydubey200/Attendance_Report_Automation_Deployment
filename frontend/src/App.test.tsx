@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
+import { FeedbackProvider } from "./components/feedback";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import type { AttendanceReport, DayDetail, DayMail, Employee, EmployeeList, EmployeeReport, MailItem, Me, ReportDay, Summary, Tally } from "./api/types";
@@ -76,7 +77,7 @@ function mockFetch(handler: Handler) {
 }
 
 function renderApp(path = "/") {
-  return render(<MemoryRouter initialEntries={[path]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><AuthProvider><FeedbackProvider><App /></FeedbackProvider></AuthProvider></MemoryRouter>);
 }
 
 const api = (me: Me, extra: Handler = () => json(404, { detail: "nope" })): Handler => (url, init) => {

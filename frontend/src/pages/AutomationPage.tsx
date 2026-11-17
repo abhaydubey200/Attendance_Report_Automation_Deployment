@@ -3,6 +3,7 @@ import { api, apiUrl } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
 import type { MailItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../components/feedback";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, Loading, Notice, PageHeader } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 
@@ -114,6 +115,7 @@ export function AutomationPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState<Record<string, CleanupResult>>({});
   const act = useAction();
+  const ask = useConfirm();
 
   if (data.loading && !data.data) return <Loading />;
   if (data.error) return <ErrorNotice error={data.error} />;
@@ -121,7 +123,8 @@ export function AutomationPage() {
   const reloadAll = () => { data.reload(); months.reload(); };
 
   async function check(m: string, confirm: boolean) {
-    if (confirm && !window.confirm(`Permanently remove the daily attendance rows and stored files of ${m}? The monthly summary and archive stay.`)) return;
+    if (confirm && !(await ask({ title: `Clean up ${m}?`, danger: true, confirmLabel: "Remove daily rows",
+      message: `This permanently removes the daily attendance rows and stored files of ${m}. The monthly summary and archive stay. This cannot be undone.` }))) return;
     const r = await act.run(() => api.post<CleanupResult>(`/v1/monthly/${m}/cleanup`, { confirm }),
       (res) => (res.status === "SUCCESS" ? `${m}: ${res.rows_deleted} daily rows removed.` : res.status === "PREVIEW" ? `${m} can be cleaned.` : `${m} cannot be cleaned yet.`));
     if (r) { setCleanup({ ...cleanup, [m]: r }); reloadAll(); }
@@ -203,7 +206,7 @@ export function AutomationPage() {
       {open && <MonthEmails key={open} month={open} canSend={canSend} />}
 
       <Card title="Job history">
-        <DataTable rows={d.runs} rowKey={(r) => String(r.id)} columns={[
+        <DataTable search exportName="job-history" rows={d.runs} rowKey={(r) => String(r.id)} columns={[
           { header: "Job", render: (r) => <strong>{r.job.toLowerCase()}</strong> },
           { header: "For", render: (r) => (r.target && r.target.length === 10 ? formatDate(r.target) : r.target ?? "") },
           { header: "Started", render: (r) => <span className="small">{formatDateTime(r.started_at)}</span> },

@@ -11,6 +11,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -35,13 +36,19 @@ export function LoginPage() {
         {notice && <Notice>{notice}</Notice>}
         {error && <Notice kind="fail">{error}</Notice>}
         <label htmlFor="username">Username</label>
-        <input id="username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+        <input id="username" autoComplete="username" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="password">Password</label>
-        <input id="password" type="password" autoComplete="current-password" value={password}
-          onChange={(e) => setPassword(e.target.value)} required />
+        <div className="pw-wrap">
+          <input id="password" type={show ? "text" : "password"} autoComplete="current-password" value={password}
+            onChange={(e) => setPassword(e.target.value)} required />
+          <button type="button" className="pw-toggle" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"}>
+            {show ? "Hide" : "Show"}
+          </button>
+        </div>
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        <p className="splash-foot">For APIS staff only · Forgot your password? Contact HR / IT.</p>
       </form>
     </div>
   );

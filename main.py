@@ -71,12 +71,22 @@ def cmd_create_user(args: argparse.Namespace) -> int:
         print("HOD users need at least one --department.")
         return 2
 
-    password = getpass.getpass("Password: ")
+    import os
+
+    if args.password_env:
+        password = os.environ.get(args.password_env, "")
+        if not password:
+            print(f"Environment variable {args.password_env} is empty.")
+            return 2
+    else:
+        password = getpass.getpass("Password: ")
     problems = validate_password_policy(password, settings.session.min_password_length)
-    if problems:
+    if problems and not args.allow_weak_password:
         print("Password rejected: " + "; ".join(problems))
         return 2
-    if getpass.getpass("Confirm password: ") != password:
+    if problems:
+        print("WARNING: weak password accepted on request (" + "; ".join(problems) + ").")
+    if not args.password_env and getpass.getpass("Confirm password: ") != password:
         print("Passwords do not match.")
         return 2
 
@@ -370,6 +380,9 @@ def build_parser() -> argparse.ArgumentParser:
     cu.add_argument("--email")
     cu.add_argument("--role", action="append", help="default ADMIN - the application has one user (HR) who does everything")
     cu.add_argument("--department", action="append", help="department code scope (repeatable)")
+    cu.add_argument("--password-env", help="read the password from this environment variable instead of prompting")
+    cu.add_argument("--allow-weak-password", action="store_true",
+                    help="accept a password that fails the password policy (the owner's explicit choice; shown as a warning)")
     cu.set_defaults(func=cmd_create_user)
 
     serve = sub.add_parser("serve", help="start the API server (serves frontend/dist when built)")

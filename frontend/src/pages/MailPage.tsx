@@ -4,6 +4,7 @@ import { api, apiUrl } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
 import type { DayListItem, DayMail, MailItem, MailStatus, RoutingOverview } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../components/feedback";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 
@@ -89,6 +90,7 @@ export function MailPage() {
   const [preview, setPreview] = useState<MailItem | null>(null);
   const [view, setView] = useState<"day" | "routing">("day");
   const act = useAction();
+  const ask = useConfirm();
   const { hasPermission } = useAuth();
   const canSend = hasPermission("UPLOAD_AND_SEND");
   const isAdmin = hasPermission("MANAGE_SETTINGS");
@@ -102,6 +104,8 @@ export function MailPage() {
 
   async function approve(ids: number[] | null) {
     const n = ids ? ids.length : pending.length;
+    if (day.data?.mode !== "test" && !(await ask({ title: `Send ${n} email(s)?`, confirmLabel: `Send ${n} email(s)`,
+      message: `The attendance emails for ${formatDate(date)} will be delivered now${testing ? ` (testing: only to ${testing})` : ""}.` }))) return;
     const r = await act.run(() => api.post<DayMail>(`/v1/days/${date}/mail/approve`, { ids }),
       (res) => `${res.sent_now ?? 0} of ${n} email(s) ${day.data?.mode === "test" ? "saved to the outbox (test mode)" : "sent"}.`);
     if (r) { setSelected(new Set()); day.reload(); }
@@ -111,7 +115,8 @@ export function MailPage() {
     if (r) day.reload();
   }
   async function resend(i: MailItem) {
-    if (!window.confirm(`Send ${i.name} the email for ${formatDate(i.report_date)} again? They already received it.`)) return;
+    if (!(await ask({ title: "Send again?", confirmLabel: "Send again",
+      message: `${i.name} already received the email for ${formatDate(i.report_date)}. Send the same email again?` }))) return;
     const r = await act.run(() => api.post<MailItem>(`/v1/mail/${i.id}/resend`), `Sent again to ${i.name}.`);
     if (r) day.reload();
   }
@@ -176,14 +181,14 @@ export function MailPage() {
               {count("HELD") > 0 && <Notice kind="warn">Held emails have no valid address (e.g. Director or HR mailbox not set in Settings). They are not sent.</Notice>}
               {items.length > 0 && (
                 <Card title="Emails">
-                  <DataTable rows={items} rowKey={(i) => String(i.id)} columns={[
+                  <DataTable search rows={items} rowKey={(i) => String(i.id)} columns={[
                     ...(canSend ? [{ header: "", render: (i: MailItem) => i.sendable
                       ? <input type="checkbox" aria-label={`Select ${i.name}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /> : null }] : []),
                     { header: "Recipient", render: (i) => <><strong>{i.name}</strong><br /><span className="muted small">{i.role}</span></> },
                     { header: "To", render: (i) => <span className="small">{i.to || "—"}{i.cc && <><br />CC {i.cc}</>}</span> },
                     { header: "Employees", render: (i) => what(i) },
                     { header: "Needs attention", render: (i) => (i.key === "HR" ? "" : i.attention) },
-                    { header: "Status", render: (i) => <><MailBadge status={i.status} />{i.note && <div className="small muted">{i.note}</div>}</> },
+                    { header: "Status", render: (i) => <><MailBadge status={i.status} />{i.note && <div className="small muted" style={{ minWidth: "180px", whiteSpace: "normal" }}>{i.note}</div>}</> },
                     { header: "", render: (i) => (
                       <span className="inline-actions">
                         <button className="btn btn-ghost btn-small" onClick={() => setPreview(i)}>Preview</button>

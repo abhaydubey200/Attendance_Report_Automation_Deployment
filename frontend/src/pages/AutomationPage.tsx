@@ -75,7 +75,7 @@ function MonthEmails({ month, canSend }: { month: string; canSend: boolean }) {
   if (d.loading) return <Loading />;
   if (d.error) return <ErrorNotice error={d.error} />;
   const items = d.data!.items;
-  const pending = items.filter((i) => ["PENDING", "FAILED", "TEST_SENT"].includes(i.status));
+  const pending = items.filter((i) => i.sendable);
   return (
     <Card title={`Monthly emails – ${d.data!.label}`}>
       <ActionMessages error={act.error} message={act.message} />

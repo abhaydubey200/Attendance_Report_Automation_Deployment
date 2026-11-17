@@ -248,6 +248,8 @@ export interface MailItem {
   cc: string;
   subject: string;
   status: MailStatus;
+  /** can still be approved / sent (in live mode this includes emails only saved to the outbox in test mode) */
+  sendable: boolean;
   note: string | null;
   attempts: number;
   team: number;

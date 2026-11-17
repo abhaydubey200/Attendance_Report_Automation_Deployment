@@ -50,7 +50,7 @@ def _day_items(db: Session, settings: Settings, day: date) -> dict:
     cfg = get_email_settings(db, settings)
     return {"report_date": day.isoformat(), "mode": cfg.mode, "approval_required": cfg.approval_required,
             "test_recipient": cfg.test_recipient, "test_cc": cfg.test_cc,
-            "items": [mail.item_dict(i) for i in items],
+            "items": [mail.item_dict(i, mail.sendable_statuses(cfg)) for i in items],
             "status": dict(Counter(i.status for i in items)), "planned": bool(items)}
 
 
@@ -97,7 +97,7 @@ def resend(item_id: int, principal: Principal = Depends(require(Perm.MANAGE_SETT
     if item.status in (mail.HELD, mail.DISABLED, mail.SUPERSEDED):
         raise HTTPException(status.HTTP_409_CONFLICT, f"This email is {item.status.lower()}: {item.note or ''}".strip())
     mail.send_items(db, settings, [item], principal.username, force=True)
-    return mail.item_dict(item)
+    return mail.item_dict(item, mail.sendable_statuses(get_email_settings(db, settings)))
 
 
 @router.get("/mail/{item_id}/preview", response_class=HTMLResponse)

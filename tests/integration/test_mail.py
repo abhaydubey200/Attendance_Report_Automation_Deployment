@@ -316,6 +316,47 @@ def test_testing_address_receives_every_email_and_real_send_still_happens_later(
         assert next(i for i in real if i.recipient_key == "lead.a@example.com").to_addrs == "lead.a@example.com"
 
 
+def test_outbox_saves_in_test_mode_do_not_block_live_sending(engine, settings, monkeypatch):
+    """Email = test saves to the outbox (SAVED); after switching to live the same day's emails are really sent."""
+    calls = []
+
+    def fake(method, url, **kw):
+        calls.append(url)
+        return httpx.Response(200, json={"access_token": "tok"}) if "token" in url else httpx.Response(200, json={"id": "m"})
+
+    monkeypatch.setattr(httpx, "request", fake)
+    for k in ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"):
+        monkeypatch.setenv(k, "x")
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        assert {i.status for i in mail.approve(s, settings, DAY, "tester")} == {mail.SAVED}
+        assert not calls
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"mode": "live",
+                                                                                  "sender": "attendance@example.com"}), "tester")
+        # still listed as approvable, and approving now delivers them through Gmail
+        assert all(d["sendable"] for d in (mail.item_dict(i, mail.sendable_statuses(get_email_settings(s, settings)))
+                                           for i in mail.items_for(s, DAY)))
+        live = mail.approve(s, settings, DAY, "tester")
+        assert len(live) == 5 and {i.status for i in live} == {mail.SENT}
+        assert sum("messages/send" in u for u in calls) == 5
+        assert mail.approve(s, settings, DAY, "tester") == []                          # sent once, never twice
+        _, again, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester", replace=True)
+        assert {i.status for i in again} == {mail.DUPLICATE}
+
+
+def test_replan_in_live_mode_replaces_outbox_saves(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        mail.approve(s, settings, DAY, "tester")
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"mode": "live",
+                                                                                  "sender": "attendance@example.com"}), "tester")
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester", replace=True)
+        assert {i.status for i in items} == {mail.PENDING}                             # not "already sent"
+        assert len(mail.items_for(s, DAY)) == 5                                         # the outbox saves are superseded
+
+
 def _r(status, *flags):
     return {"status": status, "flags": list(flags), "late_minutes": 30 if "LATE" in flags else 0, "early_minutes": 0}
 
@@ -366,6 +407,47 @@ def test_emails_do_not_show_hod_team_or_manager_per_person():
     assert "Secret" not in html
     assert "Secret HOD" in dashboard_html_for("APIS", date(2026, 11, 14), "t", {}, [], [], {"by": "Team", "rows": []}, [row],
                                               "%d-%b-%Y").decode()          # the in-app dashboard keeps them
+
+
+def test_dashboard_view_buckets_actions_and_comparison():
+    from daily.render import bucket, dashboard_view
+
+    def row(code, status, *flags, **kw):
+        return {"code": code, "name": code, "status": status, "flags": list(flags), "late_minutes": kw.get("late", 0),
+                "early_minutes": kw.get("early", 0), "in_time": kw.get("i"), "out_time": kw.get("o"), "work_hours": kw.get("h"),
+                "permission": kw.get("perm", "")}
+
+    rows = [row("A", "ABSENT"), row("L", "PRESENT", "LATE", late=35, i="11:35", o="20:00", h=8.4),
+            row("M", "MISSING_PUNCH", i="09:10"), row("P", "PRESENT", i="09:30", o="18:30", h=9.0),
+            row("S", "PRESENT", "PERMISSION", "PERMISSION_PENDING", i="09:30", o="16:00", h=6.5, perm="Pending 4:00 PM - 6:00 PM"),
+            row("W", "WFH"), row("O", "WEEK_OFF")]
+    v = dashboard_view(rows, {}, previous_rows=[dict(r, status="PRESENT", flags=[]) for r in rows],
+                       patterns={"A": "absent on the last 3 report days"})
+    assert [bucket(r) for r in rows] == ["absent", "late", "missing", "present", "short_leave", "wfh", "not_counted"]
+    assert sum(c["value"] for c in v["cards"]) == v["total"] == 7                     # every person counted once
+    by = {x["code"]: x for x in v["exceptions"]}
+    assert [x["code"] for x in v["exceptions"]] == ["A", "M", "L", "S"]                # absent first
+    assert by["A"]["action"].startswith("Speak to the employee") and "Absent on the last 3" in by["A"]["details"]
+    assert by["M"]["status"] == "Missing punch (out)" and by["L"]["in"] == "11:35 AM" and by["L"]["hours"] == "8:24"
+    assert "approve" in by["S"]["action"] and "Permission pending" in by["S"]["details"]
+    m = {x["label"]: x for x in v["metrics"]}
+    assert m["Absent"]["trend"] == "bad" and m["Absent"]["delta"] == "▲ 1"
+    assert m["Work from home"]["trend"] == "move"                                      # neither good nor bad
+    assert m["Attendance"]["trend"] == "bad" and m["Attendance"]["delta"].endswith("pts")
+
+
+def test_emailed_dashboard_greets_and_lists_actions(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
+        _, _, att = mail.render(s, settings, lead)
+        html = next(a for a in att if a.filename.endswith(".html")).content.decode()
+    assert "Dear Lead A," in html and "Daily Team Attendance Dashboard" in html
+    assert "1 employee needs your attention" in html and "Follow up; apply leave or regularise in Pocket HRMS" in html
+    import re
+    text = re.sub(r'src="data:[^"]+"', "", html)                                     # the embedded logo is not text
+    assert not re.search(r"\btoday\b", text, re.I) and "Department" not in text and "ARUN MISHRA" not in text
 
 
 def test_email_body_has_no_hod_or_team_breakdown():

@@ -111,9 +111,11 @@ async def upload(master: UploadFile | None = File(None), hrms: UploadFile | None
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     except service.AlreadyUploaded as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
-    return {**_day_payload(db, up, include_rows=False), "send_note": note, "mail": [mail.item_dict(i) for i in items],
+    cfg = get_email_settings(db, settings)
+    sendable = mail.sendable_statuses(cfg)
+    return {**_day_payload(db, up, include_rows=False), "send_note": note, "mail": [mail.item_dict(i, sendable) for i in items],
             "auto_sent": any(i.status in mail.DELIVERED for i in items), "master_import": master_result,
-            "send_mode": send_mode or service.default_send_mode(get_email_settings(db, settings))}
+            "send_mode": send_mode or service.default_send_mode(cfg)}
 
 
 @router.get("/days")
@@ -156,7 +158,7 @@ def dashboard(report_date: date, scope: str = Query("ALL"), _: Principal = Depen
               settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> Response:
     up = _day(db, report_date)
     scope = _scope(up, scope)
-    content = service.dashboard_bytes(settings, up, scope, service.rows_for(db, up.upload_id))
+    content = service.dashboard_bytes(settings, up, scope, service.rows_for(db, up.upload_id), db)
     return Response(content, media_type="text/html; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="{file_stem(up.report_date, scope)}_dashboard.html"',
         # Self-contained page: its own inline script/styles only, no network access.

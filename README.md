@@ -49,7 +49,7 @@ First time:
 **Try it with synthetic data:** `python main.py demo` then `python main.py serve --demo --port 8010`.
 
 **Production (Windows Server):** see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): IIS -> the app on 127.0.0.1:8000, plus Windows Task Scheduler jobs:
-`main.py run-daily` (09:30, yesterday's files from the inbox folder -> emails; idempotent, locked, alerts on failure),
+`main.py run-daily` (09:30, yesterday's files from the inbox folder -> emails; idempotent, locked, alerts on failure; with Settings "wait for the Permission Report" on, it prepares nothing and alerts until that file is in the inbox too),
 `main.py backup` (daily SQLite backup), `main.py monthly` (month-end reports + archive), `main.py cleanup --month YYYY-MM --confirm` (guarded).
 
 **Automate the upload:**
@@ -71,7 +71,7 @@ With today's workbook: 29 people (25 team leads + HODs) + Director + HR exceptio
 
 ## The emails
 
-- **Subject:** `Daily Attendance | 13-Nov-2026 | <recipient>`
+- **Subject:** `Daily Attendance | 13-Nov-2026 | <recipient> | 2 absent · 3 late · 1 missing punch` (the most useful counts; "all present" when nobody needs attention, "N record(s) to fix" for HR)
 - **Body:** counts first (total, present, absent, leave, on duty, WFH, late, missing punch), then **only the employees needing attention** (absent, late, missing punch, left early, no attendance record). HODs also get the department summary by team; the Director the company summary by HOD.
 - **Attachments:** that recipient's full list (.xlsx, people needing attention first; HODs also get the department summary and roster) and an interactive HTML dashboard of the same people.
 - **Privacy:** each email has exactly one recipient in To and contains only that recipient's people. HOD CC on team emails is off unless HR approves it (Settings).
@@ -91,7 +91,7 @@ APIS sends through the **Gmail API** from one central sender mailbox. Every day 
 3. Run `.\.venv\Scripts\python.exe main.py gmail-auth --login-hint attendance@apisindia.com` and sign in **as the sender mailbox**; allow "Send email on your behalf" (scope `gmail.send` only: the app cannot read mail).
 4. The refresh token is written to `.env` (never shown), and that mailbox becomes the sender in Settings. Restart the app, send a test email from Settings, then switch Email to *live*.
 
-**Test before going live:** Settings → Testing → "Send every email only to" (e.g. your own address). Every email (team leads, HODs, Director, HR) then goes only there, subject `[TEST] …` with a red banner naming the real recipient. Test sends do not count as "already sent", so after clearing the field the real managers still get the day's email.
+**Test before going live:** Settings → Testing → "Send every email only to" (e.g. your own address). Every email (team leads, HODs, Director, HR) then goes only there, subject `[TEST] …` with a red banner naming the real recipient. Test sends do not count as "already sent", so after clearing the field the real managers still get the day's email. The same goes for Email = *test*: emails only saved to the outbox do not count once Email is switched to *live* - approve them again (or let the daily job run) and they are delivered.
 
 Gmail sends as the signed-in mailbox, so the sender in Settings must be that mailbox (or one of its verified "Send mail as" aliases).
 

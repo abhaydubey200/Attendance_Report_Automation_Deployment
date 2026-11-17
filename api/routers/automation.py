@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from api.deps import get_db, get_engine, get_settings, require
 from core.config import Settings
 from daily import jobs, mail, monthly
+from daily.settings_store import get_email_settings
 from database.models.daily import MonthlySummary
 from security.permissions import Perm, Principal
 
@@ -93,12 +94,13 @@ def monthly_generate(body: MonthlyIn, principal: Principal = Depends(require(Per
 
 
 @router.get("/monthly/{month}")
-def monthly_detail(month: str, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+def monthly_detail(month: str, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
+                   db: Session = Depends(get_db)) -> dict:
     s = db.get(MonthlySummary, _month(month))
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No monthly report for that month yet.")
     return {"month": month, "label": monthly.label(month), "status": s.status, "summary": json.loads(s.summary),
-            "items": [mail.item_dict(i) for i in monthly.items(db, month)]}
+            "items": [mail.item_dict(i, mail.sendable_statuses(get_email_settings(db, settings))) for i in monthly.items(db, month)]}
 
 
 class ApproveIn(BaseModel):
@@ -108,9 +110,10 @@ class ApproveIn(BaseModel):
 @router.post("/monthly/{month}/approve")
 def monthly_approve(month: str, body: ApproveIn, principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)),
                     settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
-    todo = [i for i in monthly.items(db, _month(month)) if i.status in mail.SENDABLE and (body.ids is None or i.id in body.ids)]
+    sendable = mail.sendable_statuses(get_email_settings(db, settings))
+    todo = [i for i in monthly.items(db, _month(month)) if i.status in sendable and (body.ids is None or i.id in body.ids)]
     done = mail.send_items(db, settings, todo, principal.username)
-    return {"sent_now": len(done), "items": [mail.item_dict(i) for i in monthly.items(db, month)]}
+    return {"sent_now": len(done), "items": [mail.item_dict(i, sendable) for i in monthly.items(db, month)]}
 
 
 @router.get("/monthly/{month}/archive")

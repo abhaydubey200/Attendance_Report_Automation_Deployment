@@ -67,6 +67,8 @@ Data never lives inside the code folder, so updating the app is "replace `app\`,
   1. takes a lock (a second start is refused), records a job run;
   2. reads yesterday's files from the inbox (new files only: the same file twice is not re-processed);
   3. validates, analyses, routes every employee (team lead / HOD / Director / HR exceptions);
+     if the Permission Report is not there and Settings "wait for the Permission Report" (or `jobs.permission_required`) is on,
+     it stops here, alerts, and the next run (once the file is dropped) prepares the emails;
   4. builds every email and its attachments **before** sending any;
   5. sends (Auto) or prepares them for Approve emails (Manual - when Settings preview mode is on);
   6. records the result; moves the files to `inbox\processed\<date>\`.

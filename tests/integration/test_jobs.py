@@ -92,6 +92,39 @@ def test_permission_required_blocks_until_it_arrives(engine, settings, master):
     assert r["status"] == jobs.SUCCESS and r["permission_report"]
 
 
+def test_wait_for_permission_setting_blocks_the_daily_job(engine, settings, master):
+    with session_scope(engine) as s:
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"wait_for_permission": True}), "tester")
+    drop(settings, permission=False)
+    r = jobs.run_daily(settings, engine, DAY)
+    assert r["status"] == jobs.FAILED and "wait for the Permission Report" in r["problem"] and r["alert"]
+    with session_scope(engine) as s:
+        assert mail.items_for(s, DAY) == []                                             # nothing prepared, nothing sent
+    drop(settings)
+    r = jobs.run_daily(settings, engine, DAY)
+    assert r["status"] == jobs.SUCCESS and r["permission_report"] and r["emails"].get(mail.SAVED, 0) > 5
+
+
+def test_daily_job_delivers_outbox_saves_after_switching_to_live(engine, settings, master, monkeypatch):
+    import httpx
+
+    drop(settings)
+    first = jobs.run_daily(settings, engine, DAY)
+    saved = first["emails"][mail.SAVED]
+    sent = []
+    monkeypatch.setattr(httpx, "request", lambda m, url, **kw: sent.append(url) or (
+        httpx.Response(200, json={"access_token": "t"}) if "token" in url else httpx.Response(200, json={"id": "m"})))
+    for k in ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"):
+        monkeypatch.setenv(k, "x")
+    with session_scope(engine) as s:
+        save_email_settings(s, get_email_settings(s, settings).model_copy(update={"mode": "live",
+                                                                                  "sender": "attendance@example.com"}), "tester")
+    r = jobs.run_daily(settings, engine, DAY)
+    assert r["status"] == jobs.SUCCESS and r["emails"].get(mail.SENT) == saved and mail.SAVED not in r["emails"]
+    assert sum("messages/send" in u for u in sent) == saved
+    assert jobs.run_daily(settings, engine, DAY)["emails"].get(mail.SENT) == saved and sum("messages/send" in u for u in sent) == saved
+
+
 def test_failed_emails_are_retried_alone(engine, settings, master, monkeypatch):
     import httpx
 
@@ -181,8 +214,12 @@ def test_monthly_report_archive_and_guarded_cleanup(engine, settings, master):
         assert not mail.items_for(s, date(2026, 11, 30))                # monthly mails stay off the daily screen
         director = next(i for i in items if i.recipient_key == "MONTHLY:DIRECTOR")
         html, text, files = mail.render(s, settings, director)
-        assert "Monthly Attendance" in html and "Next month planning" in html and "not a measure of productivity" in html
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Employees", "Daily grid"]
+        assert "Monthly Company Attendance Report" in html and "Next-month planning" in html and "not a measure of productivity" in html
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Insights", "Needs attention", "Employees", "Calendar"]
+        dash = files[1].content.decode()
+        assert files[1].filename.endswith("_dashboard.html") and "Monthly Company Attendance Report" in dash
+        assert "Key takeaways" in dash and 'data-act="tab:actions"' in dash and "Dear Director" in dash and "Key takeaways" in html
+        assert "Department" not in dash and "</script><script>" not in dash.replace("</script>\n<script>", "")
         sent = mail.send_items(s, settings, [i for i in items if i.status == mail.PENDING], "tester")
         assert sent and {i.status for i in sent} == {mail.SAVED}
     # cleanup guard: inside the keep window -> blocked

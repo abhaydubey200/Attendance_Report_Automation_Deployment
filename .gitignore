@@ -11,6 +11,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!deploy/env/.env.production.example
 *.pem
 *.pfx
 *.key

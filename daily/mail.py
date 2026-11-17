@@ -45,6 +45,17 @@ _env.filters["t12"] = analysis.t12
 SLEEP = time.sleep          # patched in tests
 
 
+def delivered_statuses(cfg) -> tuple[str, ...]:
+    """Statuses that mean "this recipient already has the day's email". In live mode only a real send counts:
+    an email SAVED to the outbox in test mode was never delivered, so it must not block the live one."""
+    return (SENT,) if cfg.mode == "live" else DELIVERED
+
+
+def sendable_statuses(cfg) -> tuple[str, ...]:
+    """Statuses that can still be approved / sent. In live mode that includes emails only saved in test mode."""
+    return SENDABLE + ((SAVED,) if cfg.mode == "live" else ())
+
+
 # ---------------------------------------------------------------------------- rows + counts
 def _rows(session: Session, upload_id: int) -> dict[str, dict]:
     out = {}
@@ -194,11 +205,12 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
     recipients already sent for the day are marked DUPLICATE (sent once per recipient per day)."""
     cfg = get_email_settings(session, settings)
     day = upload.report_date
+    undelivered = (HELD,) + sendable_statuses(cfg)
     for old in session.scalars(select(MailItem).where(MailItem.report_date == day, ~MailItem.recipient_key.like("MONTHLY:%"),
-                                                     MailItem.status.in_((PENDING, FAILED, HELD, TEST_SENT)))):
+                                                     MailItem.status.in_(undelivered))):
         old.status, old.note = SUPERSEDED, "Replaced by a newer upload of this day."
     delivered = {k for (k,) in session.execute(select(MailItem.recipient_key).where(MailItem.report_date == day,
-                                                                                   MailItem.status.in_(DELIVERED)))}
+                                                                                   MailItem.status.in_(delivered_statuses(cfg))))}
     rows = _rows(session, upload.upload_id)
     rs = routing.routes(session, day)
     in_master = {r.code.upper() for r in rs}
@@ -245,9 +257,10 @@ def items_for(session: Session, day: date, include_old: bool = False) -> list[Ma
     return list(session.scalars(stmt.order_by(MailItem.id)))
 
 
-def item_dict(i: MailItem) -> dict:
+def item_dict(i: MailItem, sendable: tuple[str, ...] = SENDABLE) -> dict:
+    """`sendable`: the statuses that can still be approved (``sendable_statuses(cfg)``)."""
     c = json.loads(i.counts)
-    return {"id": i.id, "report_date": i.report_date.isoformat(), "key": i.recipient_key, "name": i.recipient_name, "role": i.role,
+    return {"id": i.id, "sendable": i.status in sendable, "report_date": i.report_date.isoformat(), "key": i.recipient_key, "name": i.recipient_name, "role": i.role,
             "to": i.to_addrs or "", "cc": i.cc_addrs or "", "subject": i.subject, "status": i.status, "note": i.note,
             "attempts": i.attempts, "team": c["team"]["total"], "summary": (c.get("summary") or {}).get("total", 0),
             "company": (c.get("company") or {}).get("total", 0), "exceptions": c.get("exceptions", 0),
@@ -338,7 +351,12 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
         attachments.append(Attachment(f"{stem}.xlsx", roster_xlsx(settings, item, s), XLSX))
     people = s["team"] + [r for r in s["summary"] if r["code"] not in {x["code"] for x in s["team"]}]
     if cfg.attach_dashboard and people and item.recipient_key != routing.HR:
-        attachments.append(Attachment(f"{stem}_dashboard.html", dashboard(session, settings, item, people), "text/html"))
+        prev_people = [dict(r, status=prev_rows[r["code"].upper()]["status"], flags=prev_rows[r["code"].upper()]["flags"])
+                       for r in people if r["code"].upper() in prev_rows] if prev_up else None
+        notes = {r["code"].upper(): p for r in people if (p := pattern(hist.get(r["code"].upper(), [])))}
+        attachments.append(Attachment(f"{stem}_dashboard.html",
+                                      dashboard(session, settings, item, people, prev_people or None,
+                                                prev_up.report_date if prev_up else None, notes), "text/html"))
     return html, text, attachments
 
 
@@ -431,8 +449,10 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
     return buf.getvalue()
 
 
-def dashboard(session: Session, settings: Settings, item: MailItem, people: list[dict]) -> bytes:
-    """The interactive HTML dashboard, limited to this recipient's people."""
+def dashboard(session: Session, settings: Settings, item: MailItem, people: list[dict], previous_rows: list[dict] | None = None,
+              previous_date: date | None = None, patterns: dict[str, str] | None = None) -> bytes:
+    """The HTML dashboard, limited to this recipient's people: key figures, comparison with the previous report day,
+    the exceptions with the action expected from the manager, and the full searchable list."""
     from daily.render import dashboard_html_for
 
     rules = get_rules(session, settings)
@@ -448,7 +468,8 @@ def dashboard(session: Session, settings: Settings, item: MailItem, people: list
     return dashboard_html_for(settings.app.company, item.report_date, f"Daily Attendance - {item.recipient_name}", summary,
                               analysis.highlights(summary, {}, rules, None, item.recipient_name),
                               analysis.in_time_buckets(results), breakdown, people, settings.app.date_format,
-                              routing_columns=False)
+                              routing_columns=False, recipient=item.recipient_name, previous_rows=previous_rows,
+                              previous_date=previous_date, patterns=patterns)
 
 
 # ---------------------------------------------------------------------------- sending
@@ -462,10 +483,10 @@ def _with_banner(html: str, would: str) -> str:
     return html[:at + 1] + banner + html[at + 1:] if at > 0 else banner + html
 
 
-def _already_delivered(session: Session, item: MailItem) -> bool:
+def _already_delivered(session: Session, item: MailItem, cfg) -> bool:
     return session.scalar(select(MailItem.id).where(MailItem.report_date == item.report_date, MailItem.id != item.id,
                                                     MailItem.recipient_key == item.recipient_key,
-                                                    MailItem.status.in_(DELIVERED))) is not None
+                                                    MailItem.status.in_(delivered_statuses(cfg)))) is not None
 
 
 def send_items(session: Session, settings: Settings, items: list[MailItem], actor: str, force: bool = False) -> list[MailItem]:
@@ -475,10 +496,10 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
     outbox = settings.storage.area("outbox") / (items[0].report_date.isoformat() if items else "misc")
     done = []
     for item in items:
-        sendable = item.status in SENDABLE or (force and item.status in (DUPLICATE, SENT, SAVED))
+        sendable = item.status in sendable_statuses(cfg) or (force and item.status in (DUPLICATE, SENT, SAVED))
         if not sendable:
             continue
-        if not force and _already_delivered(session, item):
+        if not force and _already_delivered(session, item, cfg):
             item.status, item.note = DUPLICATE, "Already sent for this day."
             continue
         to = [a.strip() for a in (item.to_addrs or "").split(",") if a.strip()]
@@ -530,5 +551,6 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
 
 
 def approve(session: Session, settings: Settings, day: date, actor: str, ids: list[int] | None = None) -> list[MailItem]:
-    items = [i for i in items_for(session, day) if i.status in SENDABLE and (ids is None or i.id in ids)]
+    sendable = sendable_statuses(get_email_settings(session, settings))
+    items = [i for i in items_for(session, day) if i.status in sendable and (ids is None or i.id in ids)]
     return send_items(session, settings, items, actor)

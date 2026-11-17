@@ -198,16 +198,19 @@ def _daily(s: Session, settings: Settings, day: date, inbox: Path, mode: str | N
         summary["processed"] = []
     summary["employees"] = up.employees
     summary["permission_report"] = bool(up.permission_path)
-    if not up.permission_path and settings.jobs.permission_required:
-        summary["problem"] = f"The Permission Report for {day:%d-%b-%Y} is not in {inbox}; emails not prepared (jobs.permission_required)."
+    cfg = get_email_settings(s, settings)
+    if not up.permission_path and (settings.jobs.permission_required or cfg.wait_for_permission):
+        why = "jobs.permission_required" if settings.jobs.permission_required else "Settings: wait for the Permission Report"
+        summary["problem"] = (f"The Permission Report for {day:%d-%b-%Y} is not in {inbox}; emails not prepared ({why}). "
+                              f"Drop it in the inbox and run the daily job again.")
         _move_done(files, new, inbox, day)
         return FAILED, summary
 
     items = mail.items_for(s, day)
     if new or not items:
         items = mail.build_plan(s, settings, up, actor)
-    to_send = [i for i in items if i.status in (mail.PENDING, mail.FAILED)]
-    cfg = get_email_settings(s, settings)
+    # unsent emails (in live mode also those only saved to the outbox in test mode); test-address sends wait for approval
+    to_send = [i for i in items if i.status in mail.sendable_statuses(cfg) and i.status != mail.TEST_SENT]
     mode = mode or service.default_send_mode(cfg)
     summary["send_mode"] = mode
     # Verify every email and attachment can be produced BEFORE anything is sent.

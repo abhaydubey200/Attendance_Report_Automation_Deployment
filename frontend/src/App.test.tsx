@@ -8,7 +8,8 @@ import type { AttendanceReport, DayDetail, DayMail, Employee, EmployeeList, Empl
 
 const MAIL_ITEM = (key: string, name: string, status: MailItem["status"], extra: Partial<MailItem> = {}): MailItem => ({
   id: key.length, report_date: "2026-11-13", key, name, role: key === "DIRECTOR" ? "Director" : "Team lead", to: key.includes("@") ? key : "",
-  cc: "", subject: `Daily Attendance | 13-Nov-2026 | ${name}`, status, note: null, attempts: 0, team: 2, summary: 0, company: 0,
+  cc: "", subject: `Daily Attendance | 13-Nov-2026 | ${name}`, status,
+  sendable: ["PENDING", "FAILED", "TEST_SENT"].includes(status), note: null, attempts: 0, team: 2, summary: 0, company: 0,
   exceptions: 0, attention: 1, counts: { team: { total: 2, present: 1, absent: 1, leave: 0, od: 0, wfh: 0, late: 0, missing_punch: 0,
     week_off: 0, not_tracked: 0, no_record: 0, attendance_pct: 50, attention: 1 }, summary: null, company: null, exceptions: 0 },
   sent_at: null, approved_by: null, ...extra });
@@ -346,7 +347,7 @@ test("approve emails: preview mode lists every recipient and approves all or sel
   const spy = mockFetch(api(OPERATOR, (url, init) => {
     if (url.endsWith("/mail/approve")) {
       const ids: number[] | null = JSON.parse(String(init!.body)).ids;
-      items = items.map((i) => (i.status === "PENDING" && (!ids || ids.includes(i.id)) ? { ...i, status: "SAVED" } : i));
+      items = items.map((i) => (i.status === "PENDING" && (!ids || ids.includes(i.id)) ? { ...i, status: "SAVED", sendable: false } : i));
       return json(200, { ...dayMail(), sent_now: ids ? ids.length : 2 });
     }
     if (url.endsWith("/v1/days/2026-11-13/mail")) return json(200, dayMail());

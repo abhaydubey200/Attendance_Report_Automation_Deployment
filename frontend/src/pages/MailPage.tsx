@@ -96,7 +96,7 @@ export function MailPage() {
   useEffect(() => { setSelected(new Set()); setPreview(null); }, [date]);
 
   const items = day.data?.items ?? [];
-  const pending = items.filter((i) => i.status === "PENDING" || i.status === "FAILED" || i.status === "TEST_SENT");
+  const pending = items.filter((i) => i.sendable);
   const testing = day.data?.test_recipient;
   const count = (s: MailStatus) => day.data?.status[s] ?? 0;
 
@@ -177,7 +177,7 @@ export function MailPage() {
               {items.length > 0 && (
                 <Card title="Emails">
                   <DataTable rows={items} rowKey={(i) => String(i.id)} columns={[
-                    ...(canSend ? [{ header: "", render: (i: MailItem) => (i.status === "PENDING" || i.status === "FAILED" || i.status === "TEST_SENT")
+                    ...(canSend ? [{ header: "", render: (i: MailItem) => i.sendable
                       ? <input type="checkbox" aria-label={`Select ${i.name}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /> : null }] : []),
                     { header: "Recipient", render: (i) => <><strong>{i.name}</strong><br /><span className="muted small">{i.role}</span></> },
                     { header: "To", render: (i) => <span className="small">{i.to || "—"}{i.cc && <><br />CC {i.cc}</>}</span> },

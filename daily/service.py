@@ -268,8 +268,14 @@ def excel_bytes(settings: Settings, upload: DayUpload, scope: str, rows: list[di
     return build_excel(settings.app.company, upload.report_date, scope, json.loads(upload.insights), rows, settings.app.date_format)
 
 
-def dashboard_bytes(settings: Settings, upload: DayUpload, scope: str, rows: list[dict]) -> bytes:
-    return dashboard_html(settings.app.company, upload.report_date, scope, json.loads(upload.insights), rows, settings.app.date_format)
+def dashboard_bytes(settings: Settings, upload: DayUpload, scope: str, rows: list[dict], session: Session | None = None) -> bytes:
+    """With a session, Key insights compare with the previous uploaded day."""
+    prev = None
+    if session is not None:
+        prev = session.scalar(select(DayUpload).where(DayUpload.report_date < upload.report_date, DayUpload.is_current.is_(True))
+                              .order_by(DayUpload.report_date.desc()))
+    return dashboard_html(settings.app.company, upload.report_date, scope, json.loads(upload.insights), rows, settings.app.date_format,
+                          rows_for(session, prev.upload_id) if prev else None, prev.report_date if prev else None)
 
 
 def check_scope(upload: DayUpload, scope: str) -> str:

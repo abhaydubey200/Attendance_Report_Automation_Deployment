@@ -101,3 +101,25 @@ def test_production_profile_on_sqlite(isolated_env, monkeypatch, tmp_path):
     monkeypatch.setenv("DB_PROFILE", "dev_sqlite")
     with pytest.raises(Exception, match="development SQLite profile"):
         load_settings()
+
+
+def test_production_env_template_loads(isolated_env, monkeypatch, tmp_path):
+    """deploy/env/.env.production.example (copied to .env by install.ps1) gives a valid production config once the
+    secret key is filled in."""
+    from dotenv import dotenv_values
+
+    from core.paths import PROJECT_ROOT
+
+    template = PROJECT_ROOT / "deploy" / "env" / ".env.production.example"
+    values = dotenv_values(template)
+    assert values["APP_ENV"] == "production" and values["AUTH_MODE"] == "local" and not values["APP_SECRET_KEY"]
+    for key, value in values.items():
+        if value is not None:
+            monkeypatch.setenv(key, value)
+    for key in ("APP_STORAGE_DIR", "APP_INBOX_DIR", "APP_LOG_DIR", "DB_SQLITE_PATH"):   # keep the test off D:\
+        monkeypatch.setenv(key, str(tmp_path / key.lower()))
+    with pytest.raises(ConfigurationError, match="APP_SECRET_KEY"):
+        load_settings()
+    monkeypatch.setenv("APP_SECRET_KEY", "k" * 48)
+    s = load_settings()
+    assert s.environment == "production" and s.database.production and s.api.cookie_secure and s.auth.mode == "local"

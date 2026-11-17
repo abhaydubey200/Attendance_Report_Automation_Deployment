@@ -9,7 +9,7 @@ import { formatDate, formatHours, formatMinutes, formatTime } from "../format";
 
 const FILTER_KEYS = ["from", "to", "hod", "department", "team", "manager", "category", "status", "q"] as const;
 const STATUS_OPTIONS: [string, string][] = [["", "Any status"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"],
-  ["LEAVE", "Leave"], ["HALF_DAY", "Half day"], ["ON_DUTY", "On duty"], ["WEEK_OFF", "Week off"], ["NOT_TRACKED", "Not tracked"], ["PRESENT", "Present"]];
+  ["LEAVE", "Leave"], ["HALF_DAY", "Half day"], ["ON_DUTY", "On duty"], ["WEEK_OFF", "Week off"], ["HOLIDAY", "Holiday"], ["NOT_TRACKED", "Not tracked"], ["PRESENT", "Present"]];
 
 const pctText = (v: number | null) => (v === null ? "—" : `${v}%`);
 

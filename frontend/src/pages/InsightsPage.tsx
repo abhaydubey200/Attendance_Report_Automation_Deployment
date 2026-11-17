@@ -42,7 +42,7 @@ const pctColor = (v: number) => (v < 75 ? "#a52a1a" : v < 90 ? "#c88a00" : "#2e7
 
 function matches(r: EmployeeRow, f: string): boolean {
   if (f === "ALL") return true;
-  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF"].includes(r.status);
+  if (f === "LEAVE") return ["LEAVE", "HALF_DAY", "ON_DUTY", "WEEK_OFF", "HOLIDAY"].includes(r.status);
   if (f === "PERMISSION") return !!r.permission;
   if (["LATE", "LEFT_EARLY", "SHORT_HOURS"].includes(f)) return r.flags.includes(f);
   return r.status === f;

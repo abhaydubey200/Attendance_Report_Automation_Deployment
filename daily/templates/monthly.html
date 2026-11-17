@@ -47,7 +47,7 @@
     <p style="font-size:15px;margin:0 0 4px;font-weight:bold;color:#14213d;">{{ greeting }},</p>
     <p style="font-size:14px;margin:0;color:#33405c;line-height:1.55;">
       Here is {{ "the company's" if b.is_director else "your team's" }} attendance for <b>{{ month_long }}</b>:
-      {{ t.working_days }} working day{{ "s" if t.working_days != 1 }}, {{ t.employees }} employee{{ "s" if t.employees != 1 }}.
+      {{ t.work_days }} working day{{ "s" if t.work_days != 1 }}{% if t.work_days != t.working_days %} ({{ t.working_days }} days uploaded){% endif %}, {{ t.employees }} employee{{ "s" if t.employees != 1 }}.
       {% if attention_total %}<b style="color:#b42318;">{{ attention_total }} employee{{ "s" if attention_total != 1 }} need{{ "s" if attention_total == 1 }} your attention</b> for a recurring pattern (below).
       {% else %}<b style="color:#15803d;">No recurring absence, late-arrival or missing-punch patterns.</b>{% endif %}
     </p>

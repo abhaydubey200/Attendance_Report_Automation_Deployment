@@ -41,7 +41,7 @@ PREFIX = "MONTHLY:"
 XLSX = mail.XLSX
 _env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=select_autoescape(["html"]))
 STATUS_CODE = {"PRESENT": "P", "MISSING_PUNCH": "MP", "ON_DUTY": "OD", "WFH": "WFH", "HALF_DAY": "HD", "LEAVE": "L",
-               "ABSENT": "A", "WEEK_OFF": "WO", "NOT_TRACKED": "-", mail.NO_RECORD: ""}
+               "ABSENT": "A", "WEEK_OFF": "WO", "HOLIDAY": "HO", "NOT_TRACKED": "-", mail.NO_RECORD: ""}
 ATTENTION = {"absent": 3, "late": 5, "missing_punch": 3}       # monthly thresholds for "needs attention"
 
 
@@ -98,6 +98,7 @@ def _scope_totals(people: list[dict], days: list[date], by_code: dict, rules) ->
         dt = reports._tally([r for r in day_rows if r], rules)
         trend.append({"date": d.isoformat(), "attendance_pct": dt["attendance_pct"]})
     t["trend"] = trend
+    t["work_days"] = sum(1 for x in trend if x["attendance_pct"] is not None)   # days anyone was due to work (not week off / holiday)
     return t
 
 
@@ -271,7 +272,7 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
                                                     thresholds=ATTENTION, prev=prev, prev_month=label(previous_month_of(month)),
                                                     prev_attention=prev_attention, attention_total=len(attention),
                                                     avg_hours=hm(totals.get("avg_work_hours")), ins=ins)
-    lines = [f"{greeting},", "", f"Monthly attendance for {label(month)} ({totals['working_days']} working days, "
+    lines = [f"{greeting},", "", f"Monthly attendance for {label(month)} ({totals['work_days']} working days of {totals['working_days']} days uploaded, "
              f"{totals['employees']} employees).", "",
              f"Average attendance {totals['attendance_pct']}% | Absences {totals['absent']} | Leave {totals['leave'] + totals['half_day']} | "
              f"OD {totals['od']} | WFH {totals['wfh']} | Late {totals['late']} | Missing punches {totals['missing_punch']}", ""]
@@ -312,7 +313,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
 
     day_fmt = {code: wb.add_format({"align": "center", "valign": "vcenter", "bold": True, "font_size": 9, "border": 1,
                                     "border_color": "#FFFFFF", "bg_color": col,
-                                    "font_color": "#334155" if code in ("WO", "-") else "#FFFFFF"})
+                                    "font_color": "#334155" if code in ("WO", "HO", "-") else "#FFFFFF"})
                for code, _, col in DAY_CODES}
     day_fmt[""] = wb.add_format({"border": 1, "border_color": "#F1F5F9", "bg_color": "#F8FAFC"})
 
@@ -320,7 +321,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
     ws.set_column(0, 0, 30)
     ws.set_column(1, 8, 13)
     excel_banner(wb, ws, [30] + [13] * 8, f"Monthly attendance - {label(month)} - {item.recipient_name}")
-    kpis = [("Employees", totals["employees"]), ("Working days (uploaded)", totals["working_days"]),
+    kpis = [("Employees", totals["employees"]), ("Working days", totals["work_days"]), ("Days uploaded", totals["working_days"]),
             ("Average attendance %", totals["attendance_pct"] if totals["attendance_pct"] is not None else "-"),
             ("Absences (days)", totals["absent"]), ("Leave (days)", totals["leave"] + totals["half_day"]), ("On duty", totals["od"]),
             ("Work from home", totals["wfh"]), ("Late arrivals", totals["late"]), ("Missing punches", totals["missing_punch"])]
@@ -424,7 +425,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
 # Colour and label of each day code (same palette as the daily dashboard).
 DAY_CODES = [  # code, label, colour
     ("P", "Present", "#16a34a"), ("OD", "On duty", "#0d9488"), ("WFH", "Work from home", "#4f46e5"), ("HD", "Half day", "#f59e0b"),
-    ("L", "Leave", "#64748b"), ("A", "Absent", "#dc2626"), ("MP", "Missing punch", "#7c3aed"), ("WO", "Week off", "#cbd5e1"),
+    ("L", "Leave", "#64748b"), ("A", "Absent", "#dc2626"), ("MP", "Missing punch", "#7c3aed"), ("WO", "Week off", "#cbd5e1"), ("HO", "Holiday", "#fcd34d"),
     ("-", "Not tracked", "#e2e8f0"),
 ]
 DAY_COLOR = {c: col for c, _, col in DAY_CODES}

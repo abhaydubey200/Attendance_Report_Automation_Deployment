@@ -9,7 +9,8 @@ Statuses (how each is decided is in Settings -> Counting rules):
   LEAVE          any other Type code (PL, SL, ...)
   ABSENT         no punch (per rule)
   NOT_TRACKED    no punch and "Shift Not Assigned" (per rule) -- left out of attendance %
-  WEEK_OFF       Type = WO (week off) -- left out of attendance %
+  WEEK_OFF       Type = W / WO (week off, e.g. Sunday) -- left out of attendance %
+  HOLIDAY        Type = HO (holiday; Pocket HRMS puts the holiday name in Day) -- left out of attendance %
 
 The Pocket HRMS Permission Report (short-leave permissions) is applied by EMP_CODE: an APPROVED
 permission excuses a late arrival / early leaving inside its time window; a PENDING one is shown but
@@ -25,11 +26,15 @@ from datetime import date, datetime
 
 from core.config import Rules
 
-STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "WFH", "HALF_DAY", "LEAVE", "ABSENT", "WEEK_OFF", "NOT_TRACKED"]
+STATUSES = ["PRESENT", "MISSING_PUNCH", "ON_DUTY", "WFH", "HALF_DAY", "LEAVE", "ABSENT", "WEEK_OFF", "HOLIDAY", "NOT_TRACKED"]
 STATUS_LABEL = {"PRESENT": "Present", "MISSING_PUNCH": "Missing punch", "ON_DUTY": "On duty", "WFH": "Work from home", "HALF_DAY": "Half day",
-                "LEAVE": "Leave", "ABSENT": "Absent", "WEEK_OFF": "Week off", "NOT_TRACKED": "Not tracked"}
-UNCOUNTED = ("NOT_TRACKED", "WEEK_OFF")       # left out of attendance %
+                "LEAVE": "Leave", "ABSENT": "Absent", "WEEK_OFF": "Week off", "HOLIDAY": "Holiday",
+                "NOT_TRACKED": "Not tracked"}
+UNCOUNTED = ("NOT_TRACKED", "WEEK_OFF", "HOLIDAY")       # left out of attendance %
+WEEK_OFF_CODES = {"W", "WO", "W/O", "WOFF", "WEEKOFF", "WEEK OFF"}      # Pocket HRMS Type for a weekly off
+HOLIDAY_CODES = {"HO", "H", "HOL", "HOLIDAY", "PH", "NH"}              # Pocket HRMS Type for a holiday
 HRMS = "HRMS"
+EARLY_PERMISSION_FROM = 12 * 60     # a permission starting at/after noon is for leaving early (before: for coming late)
 PERMISSION_GRACE_MIN = 15          # arrival/leaving up to 15 min outside the permission window is still covered
 NO_SHIFT = "shift not assigned"
 HOD_PREFIX = "HOD:"
@@ -162,7 +167,10 @@ def apply_permissions(results: list[EmployeeResult], perm_day, report_date: date
             r.late_minutes = 0
             stats["excused_late"] += 1
             excused = True
-        if "LEFT_EARLY" in r.flags and end >= early_before - PERMISSION_GRACE_MIN and _minutes(r.out_time) >= start - PERMISSION_GRACE_MIN:
+        # Leaving early is covered by an approved permission that starts in the second half of the day when the person
+        # left at (or after) its start - e.g. the usual 4:00-6:00 PM short leave. Office close is not required.
+        if ("LEFT_EARLY" in r.flags and start >= EARLY_PERMISSION_FROM
+                and _minutes(r.out_time) >= start - PERMISSION_GRACE_MIN):
             r.flags.remove("LEFT_EARLY")
             r.early_minutes = 0
             stats["excused_early"] += 1
@@ -217,8 +225,10 @@ def classify(rows: list[dict], rules: Rules) -> tuple[date, list[EmployeeResult]
             status = "ON_DUTY"
         elif (leave and leave in wfh) or (r.get("WFH Remark") and not leave):
             status = "WFH"
-        elif leave in ("WO", "W/O", "WEEKOFF", "WEEK OFF"):
+        elif leave in WEEK_OFF_CODES:
             status = "WEEK_OFF"
+        elif leave in HOLIDAY_CODES:
+            status = "HOLIDAY"
         elif leave and portion and "half" in portion.lower():
             status = "HALF_DAY"
         elif leave:
@@ -365,6 +375,8 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
                                             + (f", {c['WFH']} working from home" if c["WFH"] else "") + "."})
     if c["WEEK_OFF"]:
         out.append({"kind": "info", "text": f"{c['WEEK_OFF']} on week off; not counted in attendance %."})
+    if c.get("HOLIDAY"):
+        out.append({"kind": "info", "text": f"{c['HOLIDAY']} on a holiday; not counted in attendance %."})
     if c["NOT_TRACKED"]:
         biggest = max(by_category.items(), key=lambda kv: kv[1]["counts"]["NOT_TRACKED"])[0] if by_category else ""
         out.append({"kind": "info", "text": f"{c['NOT_TRACKED']} employee(s) not tracked (no punch, no shift assigned)"
@@ -377,7 +389,7 @@ def _breakdown_row(name: str, s: dict, hod: str | None = None) -> dict:
     return {"name": name, "hod": hod, "employees": s["employees"], "tracked": s["tracked"],
             "attendance_pct": s["attendance_pct"], "present": c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + c["MISSING_PUNCH"],
             "absent": c["ABSENT"], "late": s["late"], "leave": c["LEAVE"] + c["HALF_DAY"],
-            "not_tracked": c["NOT_TRACKED"] + c["WEEK_OFF"]}
+            "not_tracked": c["NOT_TRACKED"] + c["WEEK_OFF"] + c["HOLIDAY"]}
 
 
 def _group(results: list[EmployeeResult], key) -> dict[str, list[EmployeeResult]]:

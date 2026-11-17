@@ -549,3 +549,14 @@ def test_prepare_again_does_not_pile_up_already_sent_rows(engine, settings):
         rows = [i for i in mail.items_for(s, DAY) if i.recipient_key == "lead.a@example.com"]
         assert sorted(i.status for i in rows) == [mail.DUPLICATE, mail.SAVED]   # one sent row + one "already sent" row
         assert len(mail.items_for(s, DAY)) == len(items) + 1
+
+
+def test_no_email_when_the_whole_team_is_on_week_off_or_holiday(engine, settings):
+    off = [(code, name, cat, shift, [], "W", "SUNDAY") for code, name, cat, shift, *_ in ATTENDANCE]
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True)
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(off))], "tester")
+        by = {i.recipient_key: i for i in items}
+        assert by["lead.a@example.com"].status == mail.DISABLED and "week off / holiday" in by["lead.a@example.com"].note
+        assert "week off / holiday" in by["lead.a@example.com"].subject and "all present" not in by["lead.a@example.com"].subject
+        assert mail.approve(s, settings, DAY, "tester") == [] or all(i.recipient_key == "HR" for i in mail.approve(s, settings, DAY, "t"))

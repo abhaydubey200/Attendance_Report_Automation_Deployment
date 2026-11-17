@@ -58,7 +58,7 @@ def streaks(people: list[dict], days: list[date], by_code: dict) -> list[dict]:
         best, run, start, best_span = 0, 0, None, None
         for d in days:
             r = per.get(d)
-            if r is None or r["status"] in ("WEEK_OFF", "NOT_TRACKED"):
+            if r is None or r["status"] in ("WEEK_OFF", "HOLIDAY", "NOT_TRACKED"):
                 continue                                    # no record / week off does not break or extend a run
             if r["status"] == "ABSENT":
                 run += 1

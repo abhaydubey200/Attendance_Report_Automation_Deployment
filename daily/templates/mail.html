@@ -44,7 +44,7 @@
 </table>
 <div style="font-size:12.5px;color:#5d6577;padding:0 8px 8px;line-height:1.6;">
   {{ c.total }} people · {{ c.present }} present{% if c.present_late or c.present_early %} (incl. {{ [(c.present_late ~ " late") if c.present_late else "", (c.present_early ~ " left early") if c.present_early else ""] | select | join(", ") }} – counted present){% endif %}{% if c.wfh %} · {{ c.wfh }} working from home{% endif %}{% if c.od %} · {{ c.od }} on duty{% endif %}{% if c.leave %} · {{ c.leave }} on leave{% endif %}
-  {%- if c.week_off %} · {{ c.week_off }} week off{% endif %}
+  {%- if c.week_off %} · {{ c.week_off }} week off{% endif %}{% if c.holiday %} · {{ c.holiday }} on a holiday{% endif %}
   {%- if c.not_tracked %}<br><span style="color:#6b7280;">{{ c.not_tracked }} field staff have no shift in Pocket HRMS, so they are not tracked (not counted in %).</span>{% endif %}
   {%- if c.no_record %}<br><span style="color:#6b7280;">{{ c.no_record }} not in the attendance file of {{ day }}.</span>{% endif %}
 </div>

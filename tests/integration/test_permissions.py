@@ -107,3 +107,26 @@ def test_bizom_file_is_refused(engine, settings):
              "Date_13-11-2026_Attendance_Status\nZ,S,A,SL1,1,SL1,7,,,SO,Active,,,P\n").encode()
     with session_scope(engine) as s, pytest.raises(FileError, match="Bizom is no longer used"):
         service.process_files(s, settings, [("bizom.csv", bizom)], "tester")
+
+
+def test_pocket_hrms_short_minutes_are_tens():
+    """Pocket HRMS writes 10:40 as "10:4" and 16:00 as "16:0" in the Permission Report."""
+    from daily.permissions import _time
+
+    assert [_time(v) for v in ("16:0", "10:4", "9:30", "09:30", "12:4", "4:05 PM")] == \
+           ["16:00", "10:40", "09:30", "09:30", "12:40", "16:05"]
+
+
+def test_approved_afternoon_short_leave_excuses_leaving_early():
+    """APIS's usual short leave is 4:00-6:00 PM: leaving at/after its start (15 min grace) is excused; earlier is not."""
+    day, results, _ = _classify()
+    e3 = next(r for r in results if r.code == "E3")                       # out 16:00, left early
+    assert "LEFT_EARLY" in e3.flags
+    perm_day = permissions.PermissionDay([permissions.Permission("E3", day, "16:00", "18:00", permissions.APPROVED)])
+    stats = analysis.apply_permissions(results, perm_day, day, Rules())
+    assert stats["excused_early"] == 1 and "LEFT_EARLY" not in e3.flags and e3.early_minutes == 0
+    day, results, _ = _classify()
+    e3 = next(r for r in results if r.code == "E3")
+    perm_day = permissions.PermissionDay([permissions.Permission("E3", day, "16:30", "18:30", permissions.APPROVED)])
+    assert analysis.apply_permissions(results, perm_day, day, Rules())["excused_early"] == 0   # left 30 min before it
+    assert "LEFT_EARLY" in e3.flags

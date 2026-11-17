@@ -65,7 +65,7 @@ BUCKETS = [  # key, label, note, colour (ring / accent), icon
     ("od", "On duty", None, "#0d9488", "briefcase"),
     ("leave", "On leave", None, "#64748b", "calendar"),
     ("no_record", "No record", None, "#9ca3af", "help"),
-    ("not_counted", "Not counted", "week off / no shift", "#94a3b8", "minus"),
+    ("not_counted", "Not counted", "week off / holiday / no shift", "#94a3b8", "minus"),
 ]
 ALWAYS_CARDS = ("present", "absent", "late", "missing")
 _BUCKET = {b[0]: b for b in BUCKETS}
@@ -92,7 +92,7 @@ def bucket(row: dict) -> str:
         return "od"
     if st in ("LEAVE", "HALF_DAY"):
         return "leave"
-    if st in ("WEEK_OFF", "NOT_TRACKED"):
+    if st in ("WEEK_OFF", "HOLIDAY", "NOT_TRACKED"):
         return "not_counted"
     return "present"                     # on time, late, left early or on short leave: all counted present
 

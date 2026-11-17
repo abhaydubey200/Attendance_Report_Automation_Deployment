@@ -107,12 +107,12 @@ def _attention(row: dict) -> str | None:
 
 def counts(rows: list[dict], single_punch_counts: bool = True) -> dict:
     c = Counter(r["status"] for r in rows)
-    tracked = len(rows) - c["NOT_TRACKED"] - c["WEEK_OFF"] - c[NO_RECORD]
+    tracked = len(rows) - c["NOT_TRACKED"] - c["WEEK_OFF"] - c["HOLIDAY"] - c[NO_RECORD]
     present_eq = c["PRESENT"] + c["ON_DUTY"] + c["WFH"] + (c["MISSING_PUNCH"] if single_punch_counts else 0) + 0.5 * c["HALF_DAY"]
     return {"total": len(rows), "present": c["PRESENT"], "absent": c["ABSENT"], "leave": c["LEAVE"] + c["HALF_DAY"],
             "od": c["ON_DUTY"], "wfh": c["WFH"], "late": sum(1 for r in rows if "LATE" in r["flags"]),
             "left_early": sum(1 for r in rows if "LEFT_EARLY" in r["flags"]),
-            "missing_punch": c["MISSING_PUNCH"], "week_off": c["WEEK_OFF"], "not_tracked": c["NOT_TRACKED"], "no_record": c[NO_RECORD],
+            "missing_punch": c["MISSING_PUNCH"], "week_off": c["WEEK_OFF"], "holiday": c["HOLIDAY"], "not_tracked": c["NOT_TRACKED"], "no_record": c[NO_RECORD],
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
             "attention": sum(1 for r in rows if attention(r)),
             # the same people split so that each is counted once (for the headline)
@@ -154,6 +154,8 @@ def subject_numbers(c: dict) -> str:
     if c.get("exceptions"):
         return f"{c['exceptions']} record(s) to fix"
     main = c.get("company") or (c["team"] if c["team"]["total"] else (c.get("summary") or c["team"]))
+    if main.get("total") and main.get("attendance_pct") is None:
+        return "week off / holiday"
     parts = [f"{main[k]} {label}" for k, label in (("absent", "absent"), ("late", "late"), ("missing_punch", "missing punch")) if main.get(k)]
     return " · ".join(parts) if parts else ("all present" if main.get("total") else "no attendance")
 
@@ -252,6 +254,9 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
              "company": counts(company_rows) if company_rows else None,
              "exceptions": len(content.get("exceptions", []))}
         status, note = (PENDING, None) if rec.status == "OK" else (rec.status, rec.note)
+        main = c["company"] or (c["team"] if c["team"]["total"] else (c["summary"] or c["team"]))
+        if status == PENDING and rec.key != routing.HR and main["total"] and main["attendance_pct"] is None:
+            status, note = DISABLED, "Not sent: nobody was due to work on this day (week off / holiday)."
         if status == HELD and cfg.test_recipient:
             status, note = PENDING, f"Testing: {rec.note} Goes to the test address only."
         if status == PENDING and rec.key in delivered:

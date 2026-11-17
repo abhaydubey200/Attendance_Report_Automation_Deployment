@@ -81,7 +81,7 @@ def _tally(days: list[dict], rules: Rules) -> dict:
     hours = [x["work_hours"] for x in days if x["work_hours"] is not None]
     avg_in = round(sum(ins) / len(ins)) if ins else None
     return {"days": len(days), "tracked": tracked, "present": c["PRESENT"] + c["ON_DUTY"] + c["WFH"], "wfh": c["WFH"], "missing_punch": c["MISSING_PUNCH"],
-            "half_day": c["HALF_DAY"], "leave": c["LEAVE"], "absent": c["ABSENT"], "week_off": c["WEEK_OFF"],
+            "half_day": c["HALF_DAY"], "leave": c["LEAVE"], "absent": c["ABSENT"], "week_off": c["WEEK_OFF"], "holiday": c["HOLIDAY"],
             "not_tracked": c["NOT_TRACKED"], "late": len(late), "left_early": sum(1 for x in days if "LEFT_EARLY" in x["flags"]),
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
             "avg_in_time": _hhmm(avg_in),

@@ -146,7 +146,7 @@
   <section class="greet">
     <div>
       <h2>Dear {{ recipient }},</h2>
-      <p>Here is {{ who }}'s attendance for <b>{{ month_long }}</b> – {{ working_days }} working day{{ "s" if working_days != 1 }}, {{ n }} employee{{ "s" if n != 1 }}<span class="app" style="display:inline" id="ptext"></span>.
+      <p>Here is {{ who }}'s attendance for <b>{{ month_long }}</b> – {{ t.work_days }} working day{{ "s" if t.work_days != 1 }}{% if t.work_days != working_days %} ({{ working_days }} days uploaded){% endif %}, {{ n }} employee{{ "s" if n != 1 }}<span class="app" style="display:inline" id="ptext"></span>.
       <span class="app" style="display:inline">Pick a period, open a tab, or click any number to see the people behind it.</span></p>
     </div>
     <div class="date">{{ icon("calendar", 22) }}<span>{{ month_long }}</span></div>
@@ -220,14 +220,14 @@ const whole = () => S.from === 0 && S.to === N - 1;
 
 // ------------------------------------------------------------------ figures
 function stats(p, I) {
-  const s = {code: p.code, name: p.name, rec: 0, tracked: 0, pe: 0, P: 0, OD: 0, WFH: 0, HD: 0, L: 0, A: 0, MP: 0, WO: 0, NT: 0,
+  const s = {code: p.code, name: p.name, rec: 0, tracked: 0, pe: 0, P: 0, OD: 0, WFH: 0, HD: 0, L: 0, A: 0, MP: 0, WO: 0, HO: 0, NT: 0,
              late: 0, lateMin: 0, early: 0, short: 0, ins: [], hrs: [], leaveT: {}, pend: 0, streak: 0, monfri: 0, absWd: [0,0,0,0,0,0,0]};
   let run = 0;
   for (const i of I) {
     const x = p.d[i]; if (!x) continue;
     s.rec++; const c = x[0];
     if (c in s) s[c]++; else if (c === "-") s.NT++;
-    if (c !== "WO" && c !== "-") s.tracked++;
+    if (c !== "WO" && c !== "HO" && c !== "-") s.tracked++;
     if (c === "P" || c === "OD" || c === "WFH" || (c === "MP" && R.singlePunchPresent)) s.pe += 1; else if (c === "HD") s.pe += .5;
     const f = x[7] || "";
     if (f.includes("L")) { s.late++; s.lateMin += x[4]; }
@@ -238,7 +238,7 @@ function stats(p, I) {
     if (x[3] !== null) s.hrs.push(x[3]);
     if (c === "L" || c === "HD") { const t = x[6] || "Leave"; s.leaveT[t] = (s.leaveT[t] || 0) + 1; }
     if (c === "A") { run++; s.streak = Math.max(s.streak, run); s.absWd[wdOf(i)]++; if (wdOf(i) === 0 || wdOf(i) === 4) s.monfri++; }
-    else if (c !== "WO" && c !== "-") run = 0;
+    else if (c !== "WO" && c !== "HO" && c !== "-") run = 0;
   }
   s.pct = s.tracked ? r1(100 * s.pe / s.tracked) : null;
   s.avgIn = s.ins.length ? s.ins.reduce((a, b) => a + b, 0) / s.ins.length : null;
@@ -259,8 +259,8 @@ function stats(p, I) {
 }
 function allStats(I) { return P.map((p) => stats(p, I)); }
 function total(ss) {
-  const t = {people: ss.length, tracked: 0, pe: 0, A: 0, MP: 0, L: 0, HD: 0, WFH: 0, OD: 0, P: 0, WO: 0, late: 0, early: 0, short: 0, ins: [], hrs: []};
-  for (const s of ss) { for (const k of ["tracked", "pe", "A", "MP", "L", "HD", "WFH", "OD", "P", "WO", "late", "early", "short"]) t[k] += s[k];
+  const t = {people: ss.length, tracked: 0, pe: 0, A: 0, MP: 0, L: 0, HD: 0, WFH: 0, OD: 0, P: 0, WO: 0, HO: 0, late: 0, early: 0, short: 0, ins: [], hrs: []};
+  for (const s of ss) { for (const k of ["tracked", "pe", "A", "MP", "L", "HD", "WFH", "OD", "P", "WO", "HO", "late", "early", "short"]) t[k] += s[k];
     t.ins.push(...s.ins); t.hrs.push(...s.hrs); }
   t.pct = t.tracked ? r1(100 * t.pe / t.tracked) : null;
   t.avgIn = t.ins.length ? t.ins.reduce((a, b) => a + b, 0) / t.ins.length : null;
@@ -272,7 +272,7 @@ function dayStats(i) {
   const s = {i, A: [], MP: [], late: [], early: [], L: [], WFH: [], OD: [], tracked: 0, pe: 0, ins: [], hrs: []};
   for (const p of P) {
     const x = p.d[i]; if (!x) continue; const c = x[0], f = x[7] || "";
-    if (c !== "WO" && c !== "-") s.tracked++;
+    if (c !== "WO" && c !== "HO" && c !== "-") s.tracked++;
     if (c === "P" || c === "OD" || c === "WFH" || (c === "MP" && R.singlePunchPresent)) s.pe++; else if (c === "HD") s.pe += .5;
     if (c === "A") s.A.push(p); if (c === "MP") s.MP.push(p); if (c === "L" || c === "HD") s.L.push([p, x[6] || "Leave", c]);
     if (c === "WFH") s.WFH.push(p); if (c === "OD") s.OD.push(p);
@@ -418,7 +418,7 @@ function vOverview(I) {
   ].join("");
   const tk = takeaways(SS, t, I);
   const takes = tk.length ? `<ul class="take">${tk.map((x) => `<li class="${x.kind}" data-act="go:${x.go}" tabindex="0"><span class="dot ${x.kind}">${x.kind === "good" ? "✓" : x.kind === "info" ? "i" : "!"}</span><span>${esc(x.text)}</span><span class="go">see why ›</span></li>`).join("")}</ul>` : '<div class="empty2">No notable patterns in this period.</div>';
-  const mix = [["P", "Present"], ["OD", "On duty"], ["WFH", "Work from home"], ["HD", "Half day"], ["L", "Leave"], ["A", "Absent"], ["MP", "Missing punch"], ["WO", "Week off"]]
+  const mix = [["P", "Present"], ["OD", "On duty"], ["WFH", "Work from home"], ["HD", "Half day"], ["L", "Leave"], ["A", "Absent"], ["MP", "Missing punch"], ["WO", "Week off"], ["HO", "Holiday"]]
     .map(([k, l]) => ({l, v: t[k] || 0, c: C[k].color, act: ["A", "MP", "L"].includes(k) ? `go:people:${k === "A" ? "absent" : k === "MP" ? "mp" : "leave"}` : ""}));
   const wd = weekdayRows(I);
   const top = SS.filter((s) => s.A).sort((a, b) => b.A - a.A).slice(0, 6);
@@ -515,7 +515,7 @@ function vPeople(I) {
 function heat(x, mode) {
   if (!x) return ["#f8fafc", "", "#94a3b8"];
   const c = x[0];
-  if (mode === "status") return [C[c] ? C[c].color : "#f8fafc", c === "P" ? "" : c, ["WO", "-"].includes(c) ? "#334155" : "#fff"];
+  if (mode === "status") return [C[c] ? C[c].color : "#f8fafc", c === "P" ? "" : c, ["WO", "HO", "-"].includes(c) ? "#334155" : "#fff"];
   if (mode === "arrival") { if (x[1] === null || !(c === "P" || c === "MP")) return [C[c] ? C[c].color + "55" : "#f8fafc", "", "#334155"];
     const late = x[1] - R.lateAfter; if (late > 0) return [late > 60 ? "#b45309" : "#f59e0b", "", "#fff"];
     const early = R.lateAfter - x[1]; return [early > 90 ? "#15803d" : early > 45 ? "#22c55e" : "#86efac", "", "#14532d"]; }
@@ -582,8 +582,8 @@ function openPerson(code) {
   let cal = WD.map((w) => `<div class="h">${w}</div>`).join("") + "<div class='d blank'></div>".repeat(lead);
   for (let day = 1; day <= dim; day++) { const i = byDate[day], x = i === undefined ? null : p.d[i], inR = i !== undefined && i >= S.from && i <= S.to;
     const c = x ? C[x[0]] : null, tip = x ? `${fmtD(i)}: ${c ? c.label : x[0]}${x[1] !== null ? " · in " + t12(x[1]) : ""}${x[2] !== null ? " · out " + t12(x[2]) : ""}${x[4] ? " · late by " + hmm(x[4]) + " hrs" : ""}${x[6] ? " · " + x[6] : ""}` : "no record";
-    cal += `<div class="d ${x ? "" : "none"} ${x && (x[7] || "").includes("L") ? "lt" : ""}" style="${x ? `background:${c ? c.color : "#94a3b8"};${["WO", "-"].includes(x[0]) ? "color:#334155;" : ""}` : ""}${inR ? "" : "opacity:.35;"}" title="${esc(tip)}">${day}<small>${x && x[0] !== "P" ? x[0] : ""}</small></div>`; }
-  const notable = I.filter((i) => { const x = p.d[i]; return x && (x[0] !== "P" && x[0] !== "WO" || (x[7] || "").match(/[LEQ]/)); });
+    cal += `<div class="d ${x ? "" : "none"} ${x && (x[7] || "").includes("L") ? "lt" : ""}" style="${x ? `background:${c ? c.color : "#94a3b8"};${["WO", "HO", "-"].includes(x[0]) ? "color:#334155;" : ""}` : ""}${inR ? "" : "opacity:.35;"}" title="${esc(tip)}">${day}<small>${x && x[0] !== "P" ? x[0] : ""}</small></div>`; }
+  const notable = I.filter((i) => { const x = p.d[i]; return x && (x[0] !== "P" && x[0] !== "WO" && x[0] !== "HO" || (x[7] || "").match(/[LEQ]/)); });
   const dl = s.delta === null ? "–" : `${s.delta > 0 ? "▲" : s.delta < 0 ? "▼" : "="} ${Math.abs(s.delta)} pts`;
   $("pbody").innerHTML = `<div class="facts">${fact("Attendance", pctS(s.pct), color(s.pct))}${fact("vs " + D.prevLabel, p.prev && whole() ? `${dl}<div style="font-size:11px;color:var(--muted);font-weight:600">was ${pctS(p.prev.pct)}</div>` : "–")}${fact("Absent", s.A, s.A ? "#dc2626" : "")}
       ${fact("Late", s.late + (s.late ? `<div style="font-size:11px;color:var(--muted);font-weight:600">avg ${hmm(s.lateMin / s.late)} hrs</div>` : ""), s.late ? "#d97706" : "")}${fact("Missing punch", s.MP, s.MP ? "#7c3aed" : "")}${fact("Leave", s.leave)}

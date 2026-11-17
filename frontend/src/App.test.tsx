@@ -35,7 +35,7 @@ const VIEWER: Me = { ...OPERATOR, username: "viewer", display_name: "Viewer", ro
   navigation: NAV.slice(1, 3), auth_mode: "local" };
 
 const SUMMARY: Summary = {
-  employees: 9, tracked: 8, counts: { PRESENT: 3, MISSING_PUNCH: 1, ON_DUTY: 1, HALF_DAY: 1, LEAVE: 1, ABSENT: 1, WEEK_OFF: 0, NOT_TRACKED: 1 },
+  employees: 9, tracked: 8, counts: { PRESENT: 3, MISSING_PUNCH: 1, ON_DUTY: 1, HALF_DAY: 1, LEAVE: 1, ABSENT: 1, WEEK_OFF: 0, HOLIDAY: 0, NOT_TRACKED: 1 },
   attendance_pct: 68.8, absent_pct: 12.5, late: 1, late_pct: 25, avg_late_minutes: 45, left_early: 1, short_hours: 1, long_hours: 0,
   avg_in_time: "09:35", earliest_in: "09:00", latest_in: "10:15", avg_work_hours: 8.5,
 };

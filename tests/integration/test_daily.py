@@ -375,3 +375,17 @@ def test_wrong_file_message_names_the_current_layout():
     with pytest.raises(ReadError, match="In Time, Out Time and Type") as exc:
         reshape_attendance_summary([["a", "b"], ["1", "2"]])
     assert "In-Out Time" not in str(exc.value)
+
+
+def test_pocket_hrms_week_off_and_holiday_codes():
+    """Pocket HRMS marks Sundays as Type "W" and holidays as "HO" (holiday name in Day): neither is leave."""
+    rows = [{"Code": "E1", "Name": "A", "Category": "Head Office", "Date": "02/10/2026", "Shift Name": "General Shift", "In Time": "",
+             "Out Time": "", "Punches": "0", "Type": "HO", "Day": "Mahatma Gandhi Jayanti"},
+            {"Code": "E2", "Name": "B", "Category": "Head Office", "Date": "02/10/2026", "Shift Name": "General Shift", "In Time": "",
+             "Out Time": "", "Punches": "0", "Type": "W", "Day": "SUNDAY"},
+            {"Code": "E3", "Name": "C", "Category": "Head Office", "Date": "02/10/2026", "Shift Name": "General Shift", "In Time": "09:30",
+             "Out Time": "18:30", "Punches": "2", "Type": "", "Day": ""}]
+    _, results, _ = analysis.classify(rows, Rules())
+    assert [r.status for r in results] == ["HOLIDAY", "WEEK_OFF", "PRESENT"]
+    s = analysis.summarize(results, Rules())
+    assert s["tracked"] == 1 and s["attendance_pct"] == 100.0 and s["counts"]["LEAVE"] == 0

@@ -61,7 +61,7 @@ function EmailForm({ initial, secrets }: { initial: EmailSettings; secrets: Reco
   const [e, setE] = useState<EmailSettings>(initial);
   const [director, setDirector] = useState(initial.director_emails.join(", "));
   const [hr, setHr] = useState(initial.hr_emails.join(", "));
-  const [alwaysCc, setAlwaysCc] = useState((initial.always_cc ?? []).join(", "));
+  const [alwaysBcc, setAlwaysBcc] = useState((initial.always_bcc ?? []).join(", "));
   const [testCc, setTestCc] = useState((initial.test_cc ?? []).join(", "));
   const [to, setTo] = useState("");
   const act = useAction();
@@ -80,8 +80,8 @@ function EmailForm({ initial, secrets }: { initial: EmailSettings; secrets: Reco
           <Field label="HR attendance mailbox" hint="Gets records that cannot be routed (only on days with any).">
             <input value={hr} onChange={(x) => setHr(x.target.value)} placeholder="hr.attendance@apisindia.com" />
           </Field>
-          <Field label="Always CC (every email)" hint="CC on every daily and month-end email – team leads, HODs, Director and HR. Comma separated.">
-            <input value={alwaysCc} onChange={(x) => setAlwaysCc(x.target.value)} placeholder="hr.head@apisindia.com" />
+          <Field label="Always BCC (every email)" hint="Blind copy of every daily and month-end email – recipients do not see it. Comma separated.">
+            <input value={alwaysBcc} onChange={(x) => setAlwaysBcc(x.target.value)} placeholder="hr.head@apisindia.com" />
           </Field>
         </div>
         <Check on={e.team_emails} set={(v) => set({ team_emails: v })}>Team leads get their own team's attendance</Check>
@@ -126,7 +126,7 @@ function EmailForm({ initial, secrets }: { initial: EmailSettings; secrets: Reco
         <ActionMessages error={act.error} message={act.message} />
         <div className="form-actions">
           <button className="btn btn-primary btn-inline" disabled={act.busy}
-            onClick={() => void act.run(() => api.put("/v1/settings/email", { ...e, director_emails: list(director), hr_emails: list(hr), always_cc: list(alwaysCc), test_cc: list(testCc) }), "Email settings saved.")}>Save email settings</button>
+            onClick={() => void act.run(() => api.put("/v1/settings/email", { ...e, director_emails: list(director), hr_emails: list(hr), always_cc: [], always_bcc: list(alwaysBcc), test_cc: list(testCc) }), "Email settings saved.")}>Save email settings</button>
         </div>
         <div className="toolbar" style={{ marginTop: "1rem" }}>
           <Field label="Send a test email to"><input type="email" value={to} onChange={(x) => setTo(x.target.value)} placeholder="you@apisindia.com" /></Field>

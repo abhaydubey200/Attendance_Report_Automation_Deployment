@@ -92,6 +92,14 @@ def _hhmm(minutes: float | None) -> str | None:
     return f"{h % 12 or 12}:{m % 60:02d} {'AM' if h < 12 else 'PM'}"
 
 
+def mins_hm(minutes: float | None) -> str | None:
+    """Minutes -> "h:mm" (37 -> "0:37", 80 -> "1:20"); None / 0 -> None. Durations are always shown as time, not minutes."""
+    if not minutes:
+        return None
+    m = int(round(float(minutes)))
+    return f"{m // 60}:{m % 60:02d}"
+
+
 def hm(hours: float | None) -> str | None:
     """Decimal hours -> "h:mm" (9.47 -> "9:28"). Everything shown to people uses hours:minutes."""
     if hours is None or hours == "":
@@ -342,7 +350,7 @@ def highlights(summary: dict, by_category: dict[str, dict], rules: Rules, previo
     if s["late"]:
         rule = f"punch-in after {t12(rules.flexi_until or rules.late_after)}"
         out.append({"kind": "warn", "text": f"{s['late']} late arrivals ({rule}; {s['late_pct']}% of those who came in), "
-                                            f"on average {s['avg_late_minutes']} min late; latest in at {s['latest_in']}."})
+                                            f"on average {mins_hm(s['avg_late_minutes']) or '0:00'} hrs late; latest in at {s['latest_in']}."})
     elif s["avg_in_time"]:
         out.append({"kind": "good", "text": f"No late arrivals; average arrival {s['avg_in_time']}."})
     if c["MISSING_PUNCH"]:

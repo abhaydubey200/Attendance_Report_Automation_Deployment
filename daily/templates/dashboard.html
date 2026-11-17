@@ -64,7 +64,7 @@
       <span class="hint">show all</span>
     </button>
     {% for c in v.cards %}
-    <button type="button" class="kpi{% if not c.value %} zero{% endif %}" data-filter="bucket:{{ c.key }}" data-label="{{ c.label }}"
+    <button type="button" class="kpi{% if not c.value %} zero{% endif %}" data-filter="{{ c.filter }}" data-label="{{ c.label }}"
             style="background:{{ c.color }}0f;border-color:{{ c.color }}38" title="Show {{ c.label | lower }}">
       <span class="badge" style="background:{{ c.color }}1c;color:{{ c.color }}">{{ icon(c.icon, 24) }}</span>
       <span>
@@ -276,8 +276,8 @@ function apply() {
 // ---------------- full list
 const routingCols = {% if emailed %}[]{% else %}[["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]]{% endif %};
 const cols = [["code","Code"],["name","Name"], ...(ROWS.some((r) => r.department || r.hod) ? routingCols : []),
-  ["status_label","Status"],["in_time","In"],["out_time","Out"],["work_hours","Hours (h:mm)"],["late_minutes","Late min"],
-  ["early_minutes","Early min"],["leave_type","Leave"],["permission","Permission"]];
+  ["status_label","Status"],["in_time","In"],["out_time","Out"],["work_hours","Hours (h:mm)"],["late_minutes","Late by (h:mm)"],
+  ["early_minutes","Short by (h:mm)"],["leave_type","Leave"],["permission","Permission"]];
 let sortKey = "name", sortDir = 1;
 $("thead").innerHTML = cols.map(([k, l]) => `<th data-sort="${k}">${esc(l)}</th>`).join("");
 $("thead").addEventListener("click", (e) => {
@@ -292,7 +292,7 @@ function cell(r, k) {
   let v = r[k];
   if (k === "in_time" || k === "out_time") v = t12(v);
   else if (k === "work_hours") v = hm(v);
-  else if ((k === "late_minutes" || k === "early_minutes") && !v) v = "";
+  else if (k === "late_minutes" || k === "early_minutes") v = v ? hm(v / 60) : "";
   return `<td class="${["in_time","out_time","work_hours","late_minutes","early_minutes"].includes(k) ? "num" : ""}">${esc(v)}</td>`;
 }
 let listed = [];
@@ -332,8 +332,8 @@ function openPerson(code, from) {
   $("pcode").textContent = `EMP code ${r.code}${r.department ? " · " + r.department : ""}`;
   $("ppill").innerHTML = r.exc ? pill(r.exc.status, r.exc.color) : pill(r.status_label, colorOf(r));
   const fact = (k, v) => `<div class="fact"><div class="k">${esc(k)}</div><div class="v num">${esc(v || "–")}</div></div>`;
-  const kv = [["Status", r.status_label], r.late_minutes ? ["Late by", r.late_minutes + " min"] : null,
-    r.early_minutes ? ["Short by", r.early_minutes + " min"] : null, r.leave_type ? ["Leave type", r.leave_type] : null,
+  const kv = [["Status", r.status_label], r.late_minutes ? ["Late by", hm(r.late_minutes / 60) + " hrs"] : null,
+    r.early_minutes ? ["Short of required hours by", hm(r.early_minutes / 60) + " hrs"] : null, r.leave_type ? ["Leave type", r.leave_type] : null,
     r.permission ? ["Permission", r.permission] : null, r.exc && r.exc.pattern ? ["Recent pattern", r.exc.pattern] : null,
     ...(r.hod ? [["HOD", r.hod]] : []), ...(r.team ? [["Team", r.team]] : []), ...(r.manager ? [["Reporting manager", r.manager]] : [])].filter(Boolean);
   $("pbody").innerHTML = `<div class="facts">${fact("In", t12(r.in_time))}${fact("Out", t12(r.out_time))}${fact("Duty (h:mm)", hm(r.work_hours))}</div>

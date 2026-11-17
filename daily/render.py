@@ -6,7 +6,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from daily.analysis import HOD_PREFIX, hm, in_scope, t12
+from daily.analysis import HOD_PREFIX, hm, in_scope, mins_hm, t12
 from daily.branding import logo_data_uri
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -55,13 +55,11 @@ def breakdown(insights: dict, scope: str) -> dict:
 
 
 # ---------------------------------------------------------------------------- dashboard view
-# Each person falls in exactly ONE bucket (the ring chart and the cards add up to the team size).
+# Each person falls in exactly ONE bucket (the ring chart adds up to the team size). Late arrivals, early leavers and
+# short leave are PRESENT (they count as present everywhere); they get their own cards on top, marked "counted present".
 BUCKETS = [  # key, label, note, colour (ring / accent), icon
-    ("present", "Present", "on time", "#16a34a", "check"),
+    ("present", "Present", None, "#16a34a", "check"),
     ("absent", "Absent", None, "#dc2626", "user-x"),
-    ("late", "Late arrival", None, "#d97706", "clock"),
-    ("early", "Left early", None, "#ea580c", "door"),
-    ("short_leave", "Short leave", "permission", "#0284c7", "cup"),
     ("missing", "Missing punch", None, "#7c3aed", "scan"),
     ("wfh", "Work from home", None, "#4f46e5", "laptop"),
     ("od", "On duty", None, "#0d9488", "briefcase"),
@@ -71,6 +69,13 @@ BUCKETS = [  # key, label, note, colour (ring / accent), icon
 ]
 ALWAYS_CARDS = ("present", "absent", "late", "missing")
 _BUCKET = {b[0]: b for b in BUCKETS}
+FLAG_CARDS = [  # key, label, colour, icon, filter, test - people inside "present" (or missing punch), shown separately
+    ("late", "Late arrival", "#d97706", "clock", "flag:LATE", lambda r: "LATE" in (r.get("flags") or [])),
+    ("early", "Left early", "#ea580c", "door", "flag:LEFT_EARLY", lambda r: "LEFT_EARLY" in (r.get("flags") or [])),
+    ("short_leave", "Short leave", "#0284c7", "cup", "perm",
+     lambda r: bool({"PERMISSION", "PERMISSION_PENDING"} & set(r.get("flags") or []))),
+]
+COLOR = {**{b[0]: b[3] for b in BUCKETS}, **{f[0]: f[2] for f in FLAG_CARDS}}
 
 
 def bucket(row: dict) -> str:
@@ -89,13 +94,15 @@ def bucket(row: dict) -> str:
         return "leave"
     if st in ("WEEK_OFF", "NOT_TRACKED"):
         return "not_counted"
-    if "LATE" in flags:
-        return "late"
-    if "LEFT_EARLY" in flags:
-        return "early"
-    if "PERMISSION" in flags or "PERMISSION_PENDING" in flags:
-        return "short_leave"
-    return "present"
+    return "present"                     # on time, late, left early or on short leave: all counted present
+
+
+def _list_label(r: dict) -> str:
+    """Status shown in the full list: late / early people are Present, with what happened next to it."""
+    base = r.get("status_label") or r.get("status") or ""
+    flags = r.get("flags") or []
+    extra = [x for x, f in (("late", "LATE"), ("left early", "LEFT_EARLY")) if f in flags]
+    return f"{base} · {' & '.join(extra)}" if extra and r.get("status") == "PRESENT" else base
 
 
 def _pct(n: int, total: int) -> float | None:
@@ -114,12 +121,12 @@ def exception_status(row: dict) -> tuple[str, str]:
         side = " (out)" if has_in and not has_out else " (in)" if has_out and not has_in else ""
         return f"Missing punch{side}", "missing"
     if "LATE" in flags and "LEFT_EARLY" in flags:
-        return "Late & left early", "late"
+        return "Present · late & left early", "late"
     if "LATE" in flags:
-        return "Late arrival", "late"
+        return "Present · late arrival", "late"
     if "LEFT_EARLY" in flags:
-        return "Left early", "early"
-    return "Permission pending", "short_leave"
+        return "Present · left early", "early"
+    return "Present · permission pending", "short_leave"
 
 
 def action_for(row: dict, pattern: str | None) -> str:
@@ -187,9 +194,21 @@ def dashboard_view(rows: list[dict], summary: dict, previous_rows: list[dict] | 
     tally = {k: 0 for k, *_ in BUCKETS}
     for r in rows:
         tally[bucket(r)] += 1
-    cards = [{"key": k, "label": label, "note": note, "color": color, "icon": icon, "value": tally[k],
-              "pct": _pct(tally[k], total)}
-             for k, label, note, color, icon in BUCKETS if tally[k] or k in ALWAYS_CARDS]
+    flagged = {k: sum(1 for r in rows if test(r)) for k, _, _, _, _, test in FLAG_CARDS}
+    inside = [f"{flagged['late']} late" if flagged["late"] else "", f"{flagged['early']} left early" if flagged["early"] else ""]
+    cards = []
+    for k, label, note, color, icon in BUCKETS:
+        if not (tally[k] or k in ALWAYS_CARDS):
+            continue
+        if k == "present" and any(inside):
+            note = "incl. " + ", ".join(x for x in inside if x)
+        cards.append({"key": k, "label": label, "note": note, "color": color, "icon": icon, "value": tally[k],
+                      "pct": _pct(tally[k], total), "filter": f"bucket:{k}"})
+        if k == "absent":                                  # late / left early / short leave right after absent
+            for fk, flabel, fcolor, ficon, ffilter, _ in FLAG_CARDS:
+                if flagged[fk] or fk in ALWAYS_CARDS:
+                    cards.append({"key": fk, "label": flabel, "note": "counted present", "color": fcolor, "icon": ficon,
+                                  "value": flagged[fk], "pct": _pct(flagged[fk], total), "filter": ffilter})
     # ring chart: stroke-dasharray segments on a circle whose circumference is 100
     segments, offset = [], 0.0
     for k, label, _, color, _ in BUCKETS:
@@ -229,9 +248,9 @@ def dashboard_view(rows: list[dict], summary: dict, previous_rows: list[dict] | 
         elif r.get("status") == "MISSING_PUNCH":
             details.append("Only one punch recorded")
         if "LATE" in flags and r.get("late_minutes"):
-            details.append(f"Came in {r['late_minutes']} min late")
+            details.append(f"Late by {mins_hm(r['late_minutes'])} hrs")
         if "LEFT_EARLY" in flags and r.get("early_minutes"):
-            details.append(f"{r['early_minutes']} min short of the required hours")
+            details.append(f"{mins_hm(r['early_minutes'])} hrs short of the required hours")
         if r.get("permission"):
             details.append(f"Permission {r['permission'].replace('Approved', 'approved').replace('Pending', 'pending')}")
         if pattern:
@@ -239,7 +258,7 @@ def dashboard_view(rows: list[dict], summary: dict, previous_rows: list[dict] | 
         exceptions.append({"code": r.get("code", ""), "name": r.get("name", ""), "department": r.get("department") or "",
                            "pattern": pattern, "in24": r.get("in_time") or "", "out24": r.get("out_time") or "",
                            "minutes": round(float(r["work_hours"]) * 60) if r.get("work_hours") not in (None, "") else -1,
-                           "status": label, "color": _BUCKET[key][3], "in": t12(r.get("in_time")) or "–",
+                           "status": label, "color": COLOR[key], "in": t12(r.get("in_time")) or "–",
                            "out": t12(r.get("out_time")) or "–", "hours": hm(r.get("work_hours")) or "–",
                            "details": " · ".join(details) or "–", "action": action_for(r, pattern),
                            "action_icon": action_icon(r, pattern), "order": order.get(key, 9)})
@@ -265,7 +284,8 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
     exc = {x["code"]: {k: x[k] for k in ("status", "color", "details", "action", "pattern")} for x in view["exceptions"]}
     payload = {
         "summary": summary,
-        "rows": [{**{k: r.get(k, "") for k in keys}, "bucket": bucket(r), "exc": exc.get(r.get("code"))} for r in rows],
+        "rows": [{**{k: r.get(k, "") for k in keys}, "bucket": bucket(r), "exc": exc.get(r.get("code")),
+                  "status_label": _list_label(r)} for r in rows],
         "routing_columns": routing_columns,
         "buckets": {k: {"label": label, "color": color} for k, label, _, color, _ in BUCKETS},
     }

@@ -94,13 +94,14 @@ def _attention(row: dict) -> str | None:
     if row["status"] == "MISSING_PUNCH":
         which = (" - no in-punch" if row.get("out_time") and not row.get("in_time")
                  else " - no out-punch" if row.get("in_time") and not row.get("out_time") else "")
-        return f"Missing punch{which}" + (f", late {row['late_minutes']} min" if "LATE" in row["flags"] else "")
+        return f"Missing punch{which}" + (f", late by {analysis.mins_hm(row['late_minutes'])} hrs" if "LATE" in row["flags"] else "")
     reasons = []
     if "LATE" in row["flags"]:
-        reasons.append(f"Late {row['late_minutes']} min")
+        reasons.append(f"Late by {analysis.mins_hm(row['late_minutes']) or '0:00'} hrs")
     if "LEFT_EARLY" in row["flags"]:
-        reasons.append(f"left early ({row['early_minutes']} min short of required hours)" if reasons
-                       else f"Left early ({row['early_minutes']} min short of required hours)")
+        short = analysis.mins_hm(row["early_minutes"]) or "0:00"
+        reasons.append(f"left early ({short} hrs short of required hours)" if reasons
+                       else f"Left early ({short} hrs short of required hours)")
     return ", ".join(reasons) or None
 
 
@@ -115,6 +116,8 @@ def counts(rows: list[dict], single_punch_counts: bool = True) -> dict:
             "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
             "attention": sum(1 for r in rows if attention(r)),
             # the same people split so that each is counted once (for the headline)
+            "present_late": sum(1 for r in rows if r["status"] == "PRESENT" and "LATE" in r["flags"]),
+            "present_early": sum(1 for r in rows if r["status"] == "PRESENT" and "LEFT_EARLY" in r["flags"]),
             "att_late": sum(1 for r in rows if "LATE" in r["flags"] and r["status"] not in ("ABSENT", "MISSING_PUNCH")),
             "att_late_early": sum(1 for r in rows if "LATE" in r["flags"] and "LEFT_EARLY" in r["flags"]
                                   and r["status"] not in ("ABSENT", "MISSING_PUNCH")),
@@ -418,8 +421,8 @@ def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
 
 
 ROSTER_COLS = [("Code", "code", 11), ("Name", "name", 26), ("Needs attention", "reason", 22), ("Status", "status_label", 15),
-               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 9),
-               ("Left early (min)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Permission", "permission", 20)]
+               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 10),
+               ("Short by (h:mm)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Permission", "permission", 20)]
 # (department, HOD, team and reporting manager are not shown in emails)
 
 
@@ -442,7 +445,8 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
             reason = attention(r)
             for j, (_, k, _) in enumerate(ROSTER_COLS):
                 v = (reason if k == "reason" else analysis.t12(r.get(k)) if k in ("in_time", "out_time")
-                     else analysis.hm(r.get(k)) if k == "work_hours" else r.get(k))
+                     else analysis.hm(r.get(k)) if k == "work_hours"
+                     else analysis.mins_hm(r.get(k)) if k in ("late_minutes", "early_minutes") else r.get(k))
                 ws.write(i, j, "" if v in (None, 0) and k in ("late_minutes", "early_minutes", "in_time", "out_time", "work_hours",
                                                               "leave_type", "reason", "permission") else ("" if v is None else v),
                          flag if reason else cell)
@@ -538,7 +542,9 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
             text = f"*** TEST EMAIL - in live use this goes to {would} ***\n\n" + text
             subject = f"[TEST] {item.subject}"
             to, cc = [testing], [a for a in cfg.test_cc if a.lower() != testing.lower()]
-        message = build_message(cfg.sender or "attendance@localhost", to, subject, html, text, attachments, cc=cc,
+        bcc = [] if testing else [a for a in dict.fromkeys(x.strip().lower() for x in cfg.always_bcc if x.strip())
+                                  if a not in {y.lower() for y in to + cc}]
+        message = build_message(cfg.sender or "attendance@localhost", to, subject, html, text, attachments, cc=cc, bcc=bcc,
                                 reply_to=cfg.reply_to)
         error = None
         for attempt in range(1, cfg.retry_attempts + 1):
@@ -560,7 +566,7 @@ def send_items(session: Session, settings: Settings, items: list[MailItem], acto
                     SLEEP(2 ** attempt)
         if error:
             item.status, item.note = FAILED, error[:500]
-        session.add(EmailLog(upload_id=item.upload_id, scope=item.recipient_key[:100], recipients=", ".join(to + cc)[:2000],
+        session.add(EmailLog(upload_id=item.upload_id, scope=item.recipient_key[:100], recipients=(", ".join(to + cc) + (f" | BCC: {', '.join(bcc)}" if bcc else ""))[:2000],
                              subject=subject[:300], mode="LIVE" if cfg.mode == "live" else "TEST", status=item.status,
                              error=item.note if item.status == FAILED else None, outbox_file=item.outbox_file, sent_by=actor))
         done.append(item)

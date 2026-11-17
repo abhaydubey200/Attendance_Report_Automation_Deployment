@@ -331,8 +331,8 @@ def test_flexible_arrival_rule():
     assert by["X7"].flags == ["LATE"] and by["X7"].late_minutes == 30
     from daily import mail
     row = lambda r: {"status": r.status, "flags": r.flags, "late_minutes": r.late_minutes, "early_minutes": r.early_minutes}  # noqa: E731
-    assert mail.attention(row(by["X3"])) == "Left early (40 min short of required hours)"
-    assert mail.attention(row(by["X5"])) == "Late 5 min"
+    assert mail.attention(row(by["X3"])) == "Left early (0:40 hrs short of required hours)"
+    assert mail.attention(row(by["X5"])) == "Late by 0:05 hrs"
     assert mail.attention(row(by["X2"])) is None
     # no flexible window: every punch after 09:30 is late
     _, strict, _ = _classify(FLEXI_CASES, Rules(flexi_until=None))

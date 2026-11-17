@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.config import Rules
 from daily import employees
-from daily.analysis import STATUS_LABEL, UNCOUNTED, _hhmm, hm, t12
+from daily.analysis import STATUS_LABEL, UNCOUNTED, _hhmm, hm, mins_hm, t12
 from daily.branding import excel_banner
 from database.models.daily import DayUpload, EmployeeDay
 
@@ -189,7 +189,7 @@ def attendance_excel(company: str, report: dict, f: Filters, date_format: str) -
     ws2 = wb.add_worksheet("Daily")
     dcols = [("Date", "date", 12), ("Code", "code", 12), ("Name", "name", 26), ("Department", "department", 18), ("HOD", "hod", 18),
              ("Team", "team", 14), ("Status", "status_label", 13), ("In", "in_time", 10), ("Out", "out_time", 10),
-             ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 9), ("Leave type", "leave_type", 9),
+             ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 10), ("Leave type", "leave_type", 9),
              ("Permission", "permission", 20)]
     for j, (h, _, w) in enumerate(dcols):
         ws2.write(0, j, h, head)
@@ -197,8 +197,8 @@ def attendance_excel(company: str, report: dict, f: Filters, date_format: str) -
     for i, x in enumerate(report.get("days", []), start=1):
         for j, (_, k, _) in enumerate(dcols):
             v = (fmt_d(x[k]) if k == "date" else t12(x.get(k)) if k in ("in_time", "out_time")
-                 else hm(x.get(k)) if k == "work_hours" else x.get(k))
-            ws2.write(i, j, "" if v is None or v == 0 and k == "late_minutes" else v, cell)
+                 else hm(x.get(k)) if k == "work_hours" else mins_hm(x.get(k)) if k == "late_minutes" else x.get(k))
+            ws2.write(i, j, "" if v is None else v, cell)
     ws2.freeze_panes(1, 3)
     if report.get("days"):
         ws2.autofilter(0, 0, len(report["days"]), len(dcols) - 1)

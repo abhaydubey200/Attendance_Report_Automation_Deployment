@@ -528,7 +528,7 @@ function vCalendar(I) {
   const head = I.map((i) => `<th class="${wdOf(i) >= 5 ? "we" : ""}" data-act="day:${i}" title="${esc(fmtD(i))} – click for who">${DT[i].getDate()}<br><span style="font-size:9px">${WD[wdOf(i)].slice(0, 2)}</span></th>`).join("");
   const body = list.map((s) => { const p = P.find((x) => x.code === s.code);
     return `<tr><td class="nm" data-act="person:${esc(s.code)}" title="${esc(s.name)}">${s.attention ? '<span style="color:#b42318">●</span> ' : ""}${esc(s.name)}</td>${I.map((i) => { const x = p.d[i], [bg, txt, fg] = heat(x, S.cal);
-      const tip = x ? `${fmtD(i)}: ${C[x[0]] ? C[x[0]].label : x[0]}${x[1] !== null ? " · in " + t12(x[1]) : ""}${x[2] !== null ? " · out " + t12(x[2]) : ""}${x[3] !== null ? " · " + hmm(x[3]) + " h" : ""}${x[4] ? " · late " + x[4] + " min" : ""}${x[6] ? " · " + x[6] : ""}` : `${fmtD(i)}: no record`;
+      const tip = x ? `${fmtD(i)}: ${C[x[0]] ? C[x[0]].label : x[0]}${x[1] !== null ? " · in " + t12(x[1]) : ""}${x[2] !== null ? " · out " + t12(x[2]) : ""}${x[3] !== null ? " · " + hmm(x[3]) + " h" : ""}${x[4] ? " · late by " + hmm(x[4]) + " hrs" : ""}${x[6] ? " · " + x[6] : ""}` : `${fmtD(i)}: no record`;
       return `<td class="c ${S.cal === "status" && x && (x[7] || "").includes("L") ? "lt" : ""}" style="background:${bg};color:${fg}" title="${esc(tip)}">${txt}</td>`; }).join("")}<td class="num" style="padding-left:6px;font-weight:700">${pctS(s.pct)}</td></tr>`; }).join("");
   const foot = `<tr class="foot"><td class="nm" style="cursor:default;color:var(--muted)">Attendance %</td>${I.map((i) => { const d = dayStats(i); return `<td style="color:${color(d.pct)};font-weight:700">${d.pct === null ? "" : Math.round(d.pct)}</td>`; }).join("")}<td></td></tr>`;
   const legend = S.cal === "status" ? Object.entries(C).map(([k, c]) => `<span><i style="background:${c.color}"></i>${k} ${c.label}</span>`).join("") + `<span><i style="background:#fff;box-shadow:inset 0 -3px 0 #b45309;border:1px solid #e6e8ef"></i>late arrival</span>`
@@ -546,7 +546,7 @@ function vActions(I) {
   SS.filter((s) => s.streak >= 3 || s.A >= TH.absent).sort((a, b) => b.A - a.A).forEach((s) => add("now", s,
     `${plural(s.A, "absence day")}${s.streak >= 3 ? `, ${s.streak} in a row` : ""} · ${pctS(s.pct)} attendance`, s.streak >= 3 ? "Speak to them about the absence run; confirm leave is applied in Pocket HRMS" : "Discuss the repeated absences; make sure leave is applied in Pocket HRMS"));
   SS.filter((s) => s.MP).sort((a, b) => b.MP - a.MP).forEach((s) => add("payroll", s, `${plural(s.MP, "missing punch", "missing punches")}${s.pend ? ` · ${s.pend} short-leave request(s) pending` : ""}`, "Regularise in Pocket HRMS before payroll"));
-  SS.filter((s) => s.late >= TH.late || s.mfFlag).forEach((s) => add("coach", s, [s.late >= TH.late ? `${s.late} late arrivals (avg ${Math.round(s.lateMin / s.late)} min)` : "", s.mfFlag ? `${s.monfri} of ${s.A} absences on Mon / Fri` : ""].filter(Boolean).join(" · "),
+  SS.filter((s) => s.late >= TH.late || s.mfFlag).forEach((s) => add("coach", s, [s.late >= TH.late ? `${s.late} late arrivals (avg ${hmm(s.lateMin / s.late)} hrs late)` : "", s.mfFlag ? `${s.monfri} of ${s.A} absences on Mon / Fri` : ""].filter(Boolean).join(" · "),
     s.late >= TH.late ? "Counsel on punctuality and agree a correction plan" : "Check the Monday / Friday absence pattern"));
   SS.filter((s) => s.perfect).forEach((s) => add("recognise", s, `${pctS(s.pct)} · ${s.tracked} tracked days, no absence, leave, late or missing punch`, "Recognise the perfect attendance"));
   const done = items.filter((x) => S.done[x.key]).length;
@@ -581,18 +581,18 @@ function openPerson(code) {
   const byDate = {}; D.days.forEach((iso, i) => { byDate[DT[i].getDate()] = i; });
   let cal = WD.map((w) => `<div class="h">${w}</div>`).join("") + "<div class='d blank'></div>".repeat(lead);
   for (let day = 1; day <= dim; day++) { const i = byDate[day], x = i === undefined ? null : p.d[i], inR = i !== undefined && i >= S.from && i <= S.to;
-    const c = x ? C[x[0]] : null, tip = x ? `${fmtD(i)}: ${c ? c.label : x[0]}${x[1] !== null ? " · in " + t12(x[1]) : ""}${x[2] !== null ? " · out " + t12(x[2]) : ""}${x[4] ? " · late " + x[4] + " min" : ""}${x[6] ? " · " + x[6] : ""}` : "no record";
+    const c = x ? C[x[0]] : null, tip = x ? `${fmtD(i)}: ${c ? c.label : x[0]}${x[1] !== null ? " · in " + t12(x[1]) : ""}${x[2] !== null ? " · out " + t12(x[2]) : ""}${x[4] ? " · late by " + hmm(x[4]) + " hrs" : ""}${x[6] ? " · " + x[6] : ""}` : "no record";
     cal += `<div class="d ${x ? "" : "none"} ${x && (x[7] || "").includes("L") ? "lt" : ""}" style="${x ? `background:${c ? c.color : "#94a3b8"};${["WO", "-"].includes(x[0]) ? "color:#334155;" : ""}` : ""}${inR ? "" : "opacity:.35;"}" title="${esc(tip)}">${day}<small>${x && x[0] !== "P" ? x[0] : ""}</small></div>`; }
   const notable = I.filter((i) => { const x = p.d[i]; return x && (x[0] !== "P" && x[0] !== "WO" || (x[7] || "").match(/[LEQ]/)); });
   const dl = s.delta === null ? "–" : `${s.delta > 0 ? "▲" : s.delta < 0 ? "▼" : "="} ${Math.abs(s.delta)} pts`;
   $("pbody").innerHTML = `<div class="facts">${fact("Attendance", pctS(s.pct), color(s.pct))}${fact("vs " + D.prevLabel, p.prev && whole() ? `${dl}<div style="font-size:11px;color:var(--muted);font-weight:600">was ${pctS(p.prev.pct)}</div>` : "–")}${fact("Absent", s.A, s.A ? "#dc2626" : "")}
-      ${fact("Late", s.late + (s.late ? `<div style="font-size:11px;color:var(--muted);font-weight:600">avg ${Math.round(s.lateMin / s.late)} min</div>` : ""), s.late ? "#d97706" : "")}${fact("Missing punch", s.MP, s.MP ? "#7c3aed" : "")}${fact("Leave", s.leave)}
+      ${fact("Late", s.late + (s.late ? `<div style="font-size:11px;color:var(--muted);font-weight:600">avg ${hmm(s.lateMin / s.late)} hrs</div>` : ""), s.late ? "#d97706" : "")}${fact("Missing punch", s.MP, s.MP ? "#7c3aed" : "")}${fact("Leave", s.leave)}
       ${fact("Avg arrival", t12(s.avgIn))}${fact("Avg duty", hmm(s.avgH))}${fact("Left early", s.early)}</div>
     <div class="mcal">${cal}</div>
     ${s.action ? `<div class="sec-t">Action required</div><div class="act" style="min-width:0">${ICON.chat}<span>${esc(s.action)}</span></div>` : ""}
     <div class="sec-t">Absences by weekday</div>${s.A ? hbars(WD.slice(0, 7).map((w, k) => ({l: WDL[k], v: s.absWd[k], c: "#dc2626"})).filter((x, k) => I.some((i) => wdOf(i) === k))) : '<p class="ok" style="margin:0;font-weight:600">No absences.</p>'}
     <div class="sec-t">Days to note</div>${notable.length ? `<table class="daylist" style="width:100%;border-collapse:collapse;font-size:13px">${notable.map((i) => { const x = p.d[i], c = C[x[0]];
-      return `<tr><td style="padding:5px 4px;border-bottom:1px solid var(--line)">${esc(fmtD(i))}</td><td style="border-bottom:1px solid var(--line)">${pill(c ? c.label : x[0], c ? c.color : "#6b7280")}</td><td class="num" style="border-bottom:1px solid var(--line)">${x[1] !== null ? t12(x[1]) : ""}${x[2] !== null ? " – " + t12(x[2]) : ""}</td><td class="num" style="border-bottom:1px solid var(--line);font-size:12px">${[x[4] ? "late " + x[4] + " min" : "", (x[7] || "").includes("E") ? "left early" : "", (x[7] || "").includes("Q") ? "permission pending" : "", x[6]].filter(Boolean).join(" · ")}</td></tr>`; }).join("")}</table>` : '<p class="ok" style="font-weight:600">Present and on time every recorded day.</p>'}`;
+      return `<tr><td style="padding:5px 4px;border-bottom:1px solid var(--line)">${esc(fmtD(i))}</td><td style="border-bottom:1px solid var(--line)">${pill(c ? c.label : x[0], c ? c.color : "#6b7280")}</td><td class="num" style="border-bottom:1px solid var(--line)">${x[1] !== null ? t12(x[1]) : ""}${x[2] !== null ? " – " + t12(x[2]) : ""}</td><td class="num" style="border-bottom:1px solid var(--line);font-size:12px">${[x[4] ? "late by " + hmm(x[4]) + " hrs" : "", (x[7] || "").includes("E") ? "left early" : "", (x[7] || "").includes("Q") ? "permission pending" : "", x[6]].filter(Boolean).join(" · ")}</td></tr>`; }).join("")}</table>` : '<p class="ok" style="font-weight:600">Present and on time every recorded day.</p>'}`;
   navButtons(); document.body.classList.add("open"); document.querySelector("#panel .x").focus();
 }
 function openDay(i) {
@@ -603,9 +603,9 @@ function openDay(i) {
   $("pbody").innerHTML = `<div class="facts">${["Absent", "Late", "Missing punch"].map((k, n) => `<div class="fact"><div class="k">${k}</div><div class="v num">${[d.A, d.late, d.MP][n].length}</div></div>`).join("")}
       <div class="fact"><div class="k">On leave</div><div class="v num">${d.L.length}</div></div><div class="fact"><div class="k">Avg arrival</div><div class="v num">${t12(d.avgIn)}</div></div><div class="fact"><div class="k">Avg duty</div><div class="v num">${hmm(d.avgH)}</div></div></div>
     <div class="sec-t">Absent</div>${names(d.A)}
-    <div class="sec-t">Late arrivals</div>${names(d.late.sort((a, b) => b[1] - a[1]), (x) => x[1] + " min")}
+    <div class="sec-t">Late arrivals</div>${names(d.late.sort((a, b) => b[1] - a[1]), (x) => "by " + hmm(x[1]) + " hrs")}
     <div class="sec-t">Missing punch</div>${names(d.MP)}
-    <div class="sec-t">Left early</div>${names(d.early, (x) => x[1] ? x[1] + " min short" : "")}
+    <div class="sec-t">Left early</div>${names(d.early, (x) => x[1] ? hmm(x[1]) + " hrs short" : "")}
     <div class="sec-t">On leave</div>${names(d.L, (x) => x[1])}
     <div class="sec-t">Working from home / on duty</div>${names(d.WFH.concat(d.OD))}`;
   navButtons(); document.body.classList.add("open"); document.querySelector("#panel .x").focus();

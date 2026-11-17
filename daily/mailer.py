@@ -42,11 +42,13 @@ class SendResult:
 
 
 def build_message(sender: str, to: list[str], subject: str, html: str, text: str, attachments: list[Attachment],
-                  cc: list[str] | None = None, reply_to: str | None = None) -> EmailMessage:
+                  cc: list[str] | None = None, reply_to: str | None = None, bcc: list[str] | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = sender, ", ".join(to), subject
     if cc:
         msg["Cc"] = ", ".join(cc)
+    if bcc:                                  # Gmail delivers to Bcc and removes the header from what recipients see
+        msg["Bcc"] = ", ".join(bcc)
     if reply_to:
         msg["Reply-To"] = reply_to
     msg["Date"], msg["Message-ID"] = formatdate(localtime=True), make_msgid(domain="apis-attendance.local")

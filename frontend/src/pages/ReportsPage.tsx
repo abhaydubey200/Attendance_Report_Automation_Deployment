@@ -5,7 +5,7 @@ import { useApi, withQuery } from "../api/useApi";
 import type { AttendanceReport, EmployeeList, EmployeeReport, ReportDay, Tally } from "../api/types";
 import { STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
-import { formatDate, formatHours, formatTime } from "../format";
+import { formatDate, formatHours, formatMinutes, formatTime } from "../format";
 
 const FILTER_KEYS = ["from", "to", "hod", "department", "team", "manager", "category", "status", "q"] as const;
 const STATUS_OPTIONS: [string, string][] = [["", "Any status"], ["ABSENT", "Absent"], ["LATE", "Late"], ["MISSING_PUNCH", "Missing punch"],
@@ -49,7 +49,7 @@ function dayColumns(withPerson: boolean) {
     { header: "In", render: (d: ReportDay) => formatTime(d.in_time) },
     { header: "Out", render: (d: ReportDay) => formatTime(d.out_time) },
     { header: "Hours", render: (d: ReportDay) => formatHours(d.work_hours) },
-    { header: "Late", render: (d: ReportDay) => (d.late_minutes ? `${d.late_minutes} min` : "") },
+    { header: "Late", render: (d: ReportDay) => (d.late_minutes ? `${formatMinutes(d.late_minutes)} hrs` : "") },
     { header: "Leave", render: (d: ReportDay) => d.leave_type ?? "" },
     { header: "Permission", render: (d: ReportDay) => d.permission },
   ];

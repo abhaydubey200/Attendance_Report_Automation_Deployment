@@ -18,8 +18,8 @@ STATUS_FILL = {"PRESENT": "#E4F1E8", "MISSING_PUNCH": "#FFF1D6", "ON_DUTY": "#E8
 
 DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "category", 12), ("Department", "department", 18),
                ("HOD", "hod", 18), ("Team", "team", 14), ("Reporting manager", "manager", 20), ("Status", "status_label", 15),
-               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late (min)", "late_minutes", 10),
-               ("Left early (min)", "early_minutes", 14), ("Leave type", "leave_type", 10), ("Permission", "permission", 20),
+               ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 11),
+               ("Short by (h:mm)", "early_minutes", 12), ("Leave type", "leave_type", 10), ("Permission", "permission", 20),
                ("Shift", "shift", 18)]
 
 
@@ -106,7 +106,8 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
         for i, row in enumerate(data_rows, start=1):
             for j, (_, key, _) in enumerate(DETAIL_COLS):
                 v = (analysis.t12(row.get(key)) if key in ("in_time", "out_time")
-                     else analysis.hm(row.get(key)) if key == "work_hours" else row.get(key))
+                     else analysis.hm(row.get(key)) if key == "work_hours"
+                     else analysis.mins_hm(row.get(key)) if key in ("late_minutes", "early_minutes") else row.get(key))
                 fmt = status_fmt.get(row["status"], f_cell) if key == "status_label" else f_cell
                 w.write(i, j, "" if v is None else v, fmt)
         if not data_rows:

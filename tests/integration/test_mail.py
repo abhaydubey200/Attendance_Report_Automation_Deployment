@@ -409,6 +409,14 @@ def test_emails_do_not_show_hod_team_or_manager_per_person():
                                               "%d-%b-%Y").decode()          # the in-app dashboard keeps them
 
 
+def by_status(v, code):
+    return next(x["status"] for x in v["exceptions"] if x["code"] == code)
+
+
+def by_details(v, code):
+    return next(x["details"] for x in v["exceptions"] if x["code"] == code)
+
+
 def test_dashboard_view_buckets_actions_and_comparison():
     from daily.render import bucket, dashboard_view
 
@@ -423,8 +431,13 @@ def test_dashboard_view_buckets_actions_and_comparison():
             row("W", "WFH"), row("O", "WEEK_OFF")]
     v = dashboard_view(rows, {}, previous_rows=[dict(r, status="PRESENT", flags=[]) for r in rows],
                        patterns={"A": "absent on the last 3 report days"})
-    assert [bucket(r) for r in rows] == ["absent", "late", "missing", "present", "short_leave", "wfh", "not_counted"]
-    assert sum(c["value"] for c in v["cards"]) == v["total"] == 7                     # every person counted once
+    # late / left early / short leave are counted PRESENT; they still get their own cards ("counted present")
+    assert [bucket(r) for r in rows] == ["absent", "present", "missing", "present", "present", "wfh", "not_counted"]
+    assert sum(s["value"] for s in v["segments"]) == v["total"] == 7                  # ring: every person once
+    cards = {c["key"]: c for c in v["cards"]}
+    assert cards["present"]["value"] == 3 and cards["present"]["note"] == "incl. 1 late"
+    assert cards["late"]["value"] == 1 and cards["late"]["note"] == "counted present" and cards["late"]["filter"] == "flag:LATE"
+    assert by_status(v, "L") == "Present · late arrival" and "Late by 0:35 hrs" in by_details(v, "L")
     by = {x["code"]: x for x in v["exceptions"]}
     assert [x["code"] for x in v["exceptions"]] == ["A", "M", "L", "S"]                # absent first
     assert by["A"]["action"].startswith("Speak to the employee") and "Absent on the last 3" in by["A"]["details"]
@@ -489,6 +502,17 @@ def test_email_headline_counts_people_once_and_names_the_missing_punch():
     assert mail.attention(rows[4]) == "Missing punch - no in-punch"
     director = {"team": mail.counts(rows[5:]), "summary": None, "company": c, "exceptions": 0}
     assert mail.subject_numbers(director) == "1 absent · 2 late · 1 missing punch"      # company figures, not Director Office
+
+
+def test_always_bcc_is_blind_copied_on_every_email(engine, settings):
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True, always_bcc=["HR.Head@example.com"])
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        assert all(not i.cc_addrs for i in items)                                    # nobody sees it in CC
+        mail.approve(s, settings, DAY, "tester")
+        msgs = [email.message_from_bytes(p.read_bytes(), policy=email.policy.default)
+                for p in (settings.storage.area("outbox") / "2026-11-13").glob("*.eml")]
+    assert msgs and all(m["Bcc"] == "hr.head@example.com" and not m["Cc"] for m in msgs)
 
 
 def test_always_cc_goes_on_every_email(engine, settings):

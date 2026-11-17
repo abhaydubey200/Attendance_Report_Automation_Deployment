@@ -146,7 +146,8 @@ class EmailSettings(BaseModel):
     hr_exceptions: bool = True         # HR gets records that cannot be routed (only on days with any)
     hod_cc_on_team: bool = False       # CC the HOD on team-lead emails (needs HR approval)
     hr_cc_on_hod_summary: bool = False
-    always_cc: list[str] = Field(default_factory=list)  # CC on EVERY attendance email (daily + month-end), e.g. the HR head
+    always_cc: list[str] = Field(default_factory=list)  # CC on every attendance email (kept for old settings; not shown)
+    always_bcc: list[str] = Field(default_factory=list)  # BCC on EVERY attendance email (daily + month-end), e.g. the HR head
     test_recipient: str | None = None  # TESTING: deliver every email only to this address (real recipients shown inside)
     test_cc: list[str] = Field(default_factory=list)   # TESTING: CC on every test email
     director_name: str = "Director"

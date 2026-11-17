@@ -7,7 +7,7 @@ import { scopeLabel } from "../api/types";
 import { Link } from "react-router-dom";
 import { HBars, LineChart, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
-import { formatDate, formatHours, formatTime } from "../format";
+import { formatDate, formatHours, formatMinutes, formatTime } from "../format";
 
 export function HighlightList({ items }: { items: Highlight[] }) {
   return (
@@ -214,8 +214,8 @@ export function InsightsPage() {
               { header: "In", render: (r) => formatTime(r.in_time) },
               { header: "Out", render: (r) => formatTime(r.out_time) },
               { header: "Hours", render: (r) => formatHours(r.work_hours) },
-              { header: "Late", render: (r) => (r.late_minutes ? `${r.late_minutes} min` : "") },
-              { header: "Left early", render: (r) => (r.early_minutes ? `${r.early_minutes} min` : "") },
+              { header: "Late", render: (r) => (r.late_minutes ? `${formatMinutes(r.late_minutes)} hrs` : "") },
+              { header: "Left early", render: (r) => (r.early_minutes ? `${formatMinutes(r.early_minutes)} hrs short` : "") },
               { header: "Leave", render: (r) => r.leave_type ?? "" },
               { header: "Permission", render: (r) => r.permission ?? "" },
             ]} />

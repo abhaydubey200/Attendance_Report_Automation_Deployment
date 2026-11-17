@@ -22,6 +22,13 @@ export function formatTime(hhmm: string | null | undefined): string {
   return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
 }
 
+/** Minutes -> "h:mm" (37 -> "0:37", 80 -> "1:20"); 0 / empty -> "". Durations are shown as time, not minutes. */
+export function formatMinutes(minutes: number | null | undefined): string {
+  if (!minutes) return "";
+  const m = Math.round(minutes);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+}
+
 /** UTC instant -> "13-Nov-2026 2:05 PM IST". */
 export function formatDateTime(isoInstant: string | null | undefined): string {
   if (!isoInstant) return "—";

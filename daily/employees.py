@@ -240,7 +240,7 @@ def create(session: Session, data: dict, actor: str) -> Employee:
     hods, depts = _known_spellings(session)
     values = _validated(data, hods, depts)
     if values.get("hod_name") and not values.get("hod_email"):
-        values["hod_email"] = hod_directory(session).get(values["hod_name"], [None])[0]
+        values["hod_email"] = _email_for_hod(session, values["hod_name"])
     e = Employee(code=code, status=ACTIVE, source="MANUAL", updated_by=actor, **values)
     session.add(e)
     _log(session, code, "CREATE", {k: [None, v] for k, v in values.items() if v is not None}, actor)
@@ -253,7 +253,7 @@ def update(session: Session, code: str, data: dict, actor: str) -> Employee:
     hods, depts = _known_spellings(session)
     values = _validated(data, hods, depts, partial=True)
     if "hod_name" in values and values["hod_name"] != e.hod_name and "hod_email" not in data:
-        values["hod_email"] = hod_directory(session).get(values["hod_name"] or "", [None])[0]
+        values["hod_email"] = _email_for_hod(session, values["hod_name"]) if values["hod_name"] else None
     changes = {k: [getattr(e, k), v] for k, v in values.items() if getattr(e, k) != v}
     for k, (_, v) in changes.items():
         setattr(e, k, v)
@@ -369,6 +369,47 @@ def import_rows(session: Session, rows: list[dict], actor: str) -> ImportResult:
 
 
 # ---------------------------------------------------------------------------- lookups for reports
+def hod_entries(session: Session) -> list[dict]:
+    """Every distinct HOD (name + email) among active employees. Two people can share a name (two Sunil Kumars):
+    the email tells them apart, so the label carries the email whenever a name is shared."""
+    seen: Counter = Counter()
+    for name, email in session.execute(select(Employee.hod_name, Employee.hod_email).where(Employee.status == ACTIVE)):
+        if name:
+            seen[(name, (email or "").strip().lower())] += 1
+    by_name: dict[str, Counter] = {}
+    for (n, m), c in seen.items():
+        by_name.setdefault(n, Counter())[m] += c
+    out = []
+    for n, mails in by_name.items():
+        real = [m for m in mails if emails_in(m)]
+        if len(real) <= 1:          # one HOD (rows without an email belong to the same person)
+            out.append({"name": n, "email": real[0] if real else "", "label": n, "employees": sum(mails.values()), "shared_name": False})
+        else:                       # two or more people share this name: one entry per email
+            out += [{"name": n, "email": m, "label": f"{n} ({m or 'no email'})", "employees": c, "shared_name": True}
+                    for m, c in mails.items()]
+    return sorted(out, key=lambda h: (h["name"].casefold(), h["email"]))
+
+
+def hod_label(name: str | None, email: str | None, shared: set[str]) -> str:
+    """How an HOD is shown: just the name, or 'name (email)' when two HODs share that name."""
+    if not name:
+        return ""
+    return f"{name} ({(email or '').strip().lower() or 'no email'})" if name in shared else name
+
+
+def shared_hod_names(session: Session) -> set[str]:
+    return {h["name"] for h in hod_entries(session) if h["shared_name"]}
+
+
+def _email_for_hod(session: Session, name: str) -> str | None:
+    """The HOD email for a name typed without one - refused when two HODs share the name."""
+    mails = sorted({h["email"] for h in hod_entries(session) if h["name"] == name and h["email"]})
+    if len(mails) > 1:
+        raise EmployeeError(f"Two or more HODs are called {name} ({', '.join(mails)}). "
+                            "Enter the HOD email too, so the report goes to the right person.")
+    return mails[0] if mails else None
+
+
 def hod_directory(session: Session) -> dict[str, list[str]]:
     """HOD name -> email address(es), the most common value among their active employees."""
     seen: dict[str, Counter] = {}
@@ -394,21 +435,28 @@ class MasterInfo:
 
 
 def master_lookup(session: Session) -> dict[str, MasterInfo]:
-    return {e.code: MasterInfo(e.name, e.department, e.hod_name, team_of(e.team_lead_email), e.reporting_manager,
-                               e.status, e.exit_date) for e in list_all(session)}
+    shared = shared_hod_names(session)          # two HODs with one name stay two groups in the insights
+    return {e.code: MasterInfo(e.name, e.department, hod_label(e.hod_name, e.hod_email, shared) or e.hod_name,
+                               team_of(e.team_lead_email), e.reporting_manager, e.status, e.exit_date) for e in list_all(session)}
 
 
 def summary(session: Session) -> dict:
     emps = list_all(session)
     active = [e for e in emps if e.status == ACTIVE]
-    directory = hod_directory(session)
+    entries = hod_entries(session)
+
+    def of(h: dict) -> list[Employee]:
+        return [e for e in active if e.hod_name == h["name"]
+                and (not h["shared_name"] or (e.hod_email or "").strip().lower() == h["email"])]
+
     return {"total": len(emps), "active": len(active), "left": len(emps) - len(active),
-            "hods": [{"name": h, "emails": directory.get(h, []),
-                      "employees": sum(1 for e in active if e.hod_name == h),
-                      "departments": sorted({e.department for e in active if e.hod_name == h and e.department})}
-                     for h in sorted(directory)],
+            # one entry per HOD person (name + email); `label` adds the email when two HODs share a name
+            "hods": [{"name": h["name"], "email": h["email"], "label": h["label"], "shared_name": h["shared_name"],
+                      "emails": emails_in(h["email"]), "employees": h["employees"],
+                      "departments": sorted({e.department for e in of(h) if e.department})} for h in entries],
             "departments": sorted({e.department for e in active if e.department}),
-            "hods_without_email": sorted(h for h, m in directory.items() if not m)}
+            "hods_without_email": sorted({h["label"] for h in entries if not emails_in(h["email"])}),
+            "shared_hod_names": sorted({h["name"] for h in entries if h["shared_name"]})}
 
 
 # ---------------------------------------------------------------------------- routing workbook extras

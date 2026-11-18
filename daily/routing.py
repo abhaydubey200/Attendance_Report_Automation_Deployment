@@ -44,6 +44,7 @@ class Route:
     rule: str
     summary_to: str | None          # HOD email, or None
     issue: str | None = None        # why it is in the HR queue
+    hod_plain: str = ""             # the HOD name as entered (hod may carry the email when two HODs share a name)
 
 
 def route_employee(e: Employee) -> Route:
@@ -79,7 +80,19 @@ def active_on(e: Employee, day: date | None) -> bool:
 
 
 def routes(session: Session, day: date | None = None) -> list[Route]:
-    return [route_employee(e) for e in emp.list_all(session) if active_on(e, day)]
+    """Everyone's route. When two HODs share a name (two Sunil Kumars) their teams stay apart: the HOD is told apart
+    by email, and listed as "Sunil Kumar (sunil.tomar@...)" in the Director's / HR's team tables."""
+    out = [route_employee(e) for e in emp.list_all(session) if active_on(e, day)]
+    mails: dict[str, set[str]] = defaultdict(set)
+    for r in out:
+        r.hod_plain = r.hod
+        if r.hod and r.summary_to:
+            mails[r.hod].add(r.summary_to)
+    shared = {n for n, m in mails.items() if len(m) > 1}
+    for r in out:
+        if r.hod in shared:
+            r.hod = emp.hod_label(r.hod, r.summary_to, shared)
+    return out
 
 
 # ---------------------------------------------------------------------------- recipients
@@ -122,8 +135,8 @@ def recipients(session: Session, cfg: EmailSettings, day: date | None = None, al
         team[r.detail_to].append(r)
         if r.summary_to:
             summary[r.summary_to].append(r)
-            if r.hod:
-                hod_names[r.summary_to][r.hod] += 1
+            if r.hod_plain or r.hod:
+                hod_names[r.summary_to][r.hod_plain or r.hod] += 1
     names = {k: c.most_common(1)[0][0] for k, c in hod_names.items()}
     overrides = switches(session)
     out: list[Recipient] = []

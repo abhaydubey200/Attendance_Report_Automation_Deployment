@@ -199,3 +199,35 @@ def test_out_of_scope_field_sales(engine):
                                            ["Sales"])
     assert [r.code for r in kept] == ["SL0001", "HO0001", "HO9999"]
     assert match["out_of_scope"] == 1 and match["not_in_master"] == 1
+
+
+def test_two_hods_with_the_same_name_stay_apart(engine, settings):
+    """Two Sunil Kumars (one in HO, one in RK): the email tells them apart - teams never merge, the email is never guessed."""
+    from core.config import EmailSettings
+    from daily import mail, routing
+
+    with session_scope(engine) as s:
+        for code, name, hod, mail_ in (("R1", "Ravi", "Sunil Kumar", "sunil.tomar@example.com"),
+                                       ("R2", "Rita", "Sunil Kumar", "sunil.tomar@example.com"),
+                                       ("H1", "Hari", "Sunil Kumar", "sunil.kumar@example.com"),
+                                       ("A1", "Anu", "Asha Rao", "asha@example.com")):
+            emp.create(s, {"code": code, "name": name, "hod_name": hod, "hod_email": mail_}, "hr")
+        summ = emp.summary(s)
+        assert summ["shared_hod_names"] == ["Sunil Kumar"]
+        assert {h["label"] for h in summ["hods"]} == {"Asha Rao", "Sunil Kumar (sunil.kumar@example.com)", "Sunil Kumar (sunil.tomar@example.com)"}
+        # picking the shared name without an email is refused instead of guessed
+        with pytest.raises(emp.EmployeeError, match="Two or more HODs are called Sunil Kumar"):
+            emp.create(s, {"code": "N1", "name": "New", "hod_name": "Sunil Kumar"}, "hr")
+        with pytest.raises(emp.EmployeeError, match="Enter the HOD email"):
+            emp.update(s, "A1", {"hod_name": "Sunil Kumar"}, "hr")
+        emp.update(s, "A1", {"hod_name": "Sunil Kumar", "hod_email": "sunil.tomar@example.com"}, "hr")
+        rs = {r.code: r for r in routing.routes(s)}
+        assert rs["R1"].detail_to == rs["A1"].detail_to == "sunil.tomar@example.com" and rs["H1"].detail_to == "sunil.kumar@example.com"
+        assert rs["R1"].hod == "Sunil Kumar (sunil.tomar@example.com)" and rs["R1"].hod_plain == "Sunil Kumar"
+        recs = {r.key: r for r in routing.recipients(s, EmailSettings(), None, list(rs.values()))}
+        assert recs["sunil.tomar@example.com"].name == recs["sunil.kumar@example.com"].name == "Sunil Kumar"   # greeting: plain name
+        assert {x.code for x in recs["sunil.tomar@example.com"].team} == {"R1", "R2", "A1"}
+        rows = [{"code": c, "hod": r.hod, "status": "PRESENT", "flags": [], "in_time": None, "out_time": None,
+                 "late_minutes": 0, "early_minutes": 0} for c, r in rs.items()]
+        teams = {t["name"]: t["people"] for t in mail.team_table(rows, lambda _: None)}
+        assert teams == {"Sunil Kumar (sunil.tomar@example.com)": 3, "Sunil Kumar (sunil.kumar@example.com)": 1}

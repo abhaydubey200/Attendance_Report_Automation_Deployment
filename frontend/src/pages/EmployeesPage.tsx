@@ -20,6 +20,12 @@ const NO_FILTERS: Filters = { q: "", hod: "", department: "", team: "", manager:
 const PAGE = 100;
 const NONE = "(none)";
 
+/** "Sunil Kumar" - or "Sunil Kumar (sunil.tomar@apisindia.com)" when two HODs share the name. */
+function hodLabelOf(name: string, email: string, shared: Set<string>): string {
+  if (!name) return "";
+  return shared.has(name) ? `${name} (${email.trim().toLowerCase() || "no email"})` : name;
+}
+
 const FIELD_LABELS: Record<string, string> = {
   routing_issue: "Routing issue", name: "Name", department: "Department", date_of_joining: "Date of joining", hod_name: "HOD", hod_email: "HOD email",
   team_lead_email: "Team lead email", reporting_manager: "Reporting manager", status: "Status", exit_date: "Last working day",
@@ -74,15 +80,21 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
   const [exitDate, setExitDate] = useState(new Date().toISOString().slice(0, 10));
   const act = useAction();
   const history = useApi<EmployeeChange[]>(employee ? `/v1/employees/${encodeURIComponent(employee.code)}/history` : null);
-  const hodEmail = useMemo(() => new Map(list.summary.hods.map((h) => [h.name.toLowerCase(), h.emails.join("; ")])), [list]);
+  // label ("Sunil Kumar (sunil.tomar@...)" for shared names) -> the HOD's name and email
+  const hodByLabel = useMemo(() => new Map(list.summary.hods.map((h) => [(h.label ?? h.name).toLowerCase(), h])), [list]);
+  const sharedNames = useMemo(() => new Set(list.summary.shared_hod_names ?? []), [list]);
+  const [hodText, setHodText] = useState(hodLabelOf(d.hod_name, d.hod_email, sharedNames));
   const managers = useMemo(() => [...new Set(list.employees.map((e) => e.reporting_manager).filter(Boolean))].sort(), [list]);
   const set = (patch: Partial<Draft>) => setD({ ...d, ...patch });
   const top = useRef<HTMLDivElement>(null);
   useEffect(() => top.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), []);
 
-  function pickHod(name: string) {
-    const known = hodEmail.get(name.trim().toLowerCase());
-    set({ hod_name: name, hod_email: known !== undefined ? known : d.hod_email });
+  function pickHod(text: string) {
+    setHodText(text);
+    const known = hodByLabel.get(text.trim().toLowerCase());
+    if (known) { set({ hod_name: known.name, hod_email: known.email ?? known.emails.join("; ") }); return; }
+    // a name two HODs share, typed without picking one: do not guess the email
+    set({ hod_name: text, hod_email: sharedNames.has(text.trim()) ? "" : d.hod_email });
   }
 
   async function save() {
@@ -114,7 +126,7 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
         <Notice kind="warn">Left · last working day {employee.exit_date ? formatDate(employee.exit_date) : "not set"}. Not included in reports after that date.</Notice>
       )}
       <datalist id="dl-departments">{list.summary.departments.map((x) => <option key={x} value={x} />)}</datalist>
-      <datalist id="dl-hods">{list.summary.hods.map((h) => <option key={h.name} value={h.name} />)}</datalist>
+      <datalist id="dl-hods">{list.summary.hods.map((h) => <option key={h.label ?? h.name} value={h.label ?? h.name} />)}</datalist>
       <datalist id="dl-managers">{managers.map((x) => <option key={x} value={x} />)}</datalist>
       <div className="form-grid">
         <Field label="Employee code" hint={employee ? "The code links attendance to this person and cannot be changed." : "Same code as in Pocket HRMS, e.g. SL1234"}>
@@ -123,8 +135,8 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
         <Field label="Employee name"><input value={d.name} disabled={ro} onChange={(e) => set({ name: e.target.value })} /></Field>
         <Field label="Department"><input list="dl-departments" value={d.department} disabled={ro} onChange={(e) => set({ department: e.target.value })} /></Field>
         <Field label="Date of joining"><input type="date" value={d.date_of_joining} disabled={ro} onChange={(e) => set({ date_of_joining: e.target.value })} /></Field>
-        <Field label="HOD" hint="Pick an existing HOD; their email fills in.">
-          <input list="dl-hods" value={d.hod_name} disabled={ro} onChange={(e) => pickHod(e.target.value)} />
+        <Field label="HOD" hint={sharedNames.has(d.hod_name) ? "Two HODs have this name - pick the one with the right email." : "Pick an existing HOD; their email fills in."}>
+          <input list="dl-hods" value={hodText} disabled={ro} onChange={(e) => pickHod(e.target.value)} />
         </Field>
         <Field label="HOD email" hint="Receives this HOD's daily report."><input type="email" value={d.hod_email} disabled={ro} onChange={(e) => set({ hod_email: e.target.value })} /></Field>
         <Field label="Team lead email (Sub split ID)" hint="Blank = reports directly to the HOD.">
@@ -186,10 +198,12 @@ export function EmployeesPage() {
   const set = (patch: Partial<Filters>) => { setF({ ...f, ...patch }); setLimit(PAGE); };
 
   const all = list.data?.employees ?? [];
+  const shared = useMemo(() => new Set(list.data?.summary.shared_hod_names ?? []), [list.data]);
+  const hodOf = (e: Employee) => hodLabelOf(e.hod_name, e.hod_email, shared);
   const byStatus = useMemo(() => all.filter((e) => f.status === "ALL" || e.status === f.status), [all, f.status]);
   const matches = (e: Employee, skip?: keyof Filters) => {
     const q = f.q.trim().toLowerCase();
-    return (skip === "hod" || !f.hod || (e.hod_name || NONE) === f.hod)
+    return (skip === "hod" || !f.hod || (hodOf(e) || NONE) === f.hod)
       && (skip === "department" || !f.department || (e.department || NONE) === f.department)
       && (skip === "team" || !f.team || e.team === f.team)
       && (skip === "manager" || !f.manager || (e.reporting_manager || NONE) === f.manager)
@@ -197,9 +211,9 @@ export function EmployeesPage() {
   };
   const shown = useMemo(() => byStatus.filter((e) => matches(e)), [byStatus, f]);  // eslint-disable-line react-hooks/exhaustive-deps
   const opts = (key: keyof Filters, get: (e: Employee) => string) => countBy(byStatus.filter((e) => matches(e, key)), get);
-  const hodCards = useMemo(() => countBy(byStatus.filter((e) => matches(e, "hod")), (e) => e.hod_name), [byStatus, f]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const teams = useMemo(() => (f.hod ? countBy(byStatus.filter((e) => (e.hod_name || NONE) === f.hod), (e) => e.team) : []), [byStatus, f.hod]);
-  const hodInfo = useMemo(() => new Map((list.data?.summary.hods ?? []).map((h) => [h.name, h])), [list.data]);
+  const hodCards = useMemo(() => countBy(byStatus.filter((e) => matches(e, "hod")), hodOf), [byStatus, f, shared]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const teams = useMemo(() => (f.hod ? countBy(byStatus.filter((e) => (hodOf(e) || NONE) === f.hod), (e) => e.team) : []), [byStatus, f.hod, shared]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const hodInfo = useMemo(() => new Map((list.data?.summary.hods ?? []).map((h) => [h.label ?? h.name, h])), [list.data]);
   const anyFilter = f.q || f.hod || f.department || f.team || f.manager || f.status !== "ACTIVE";
 
   async function doImport(file: File) {
@@ -266,7 +280,7 @@ export function EmployeesPage() {
 
       <div className="kpi-grid kpi-grid-4">
         <div className="kpi-card"><div className="kpi-label">Employees shown</div><div className="kpi-value">{shown.length}</div></div>
-        <div className="kpi-card"><div className="kpi-label">HODs</div><div className="kpi-value">{new Set(shown.map((e) => e.hod_name).filter(Boolean)).size}</div></div>
+        <div className="kpi-card"><div className="kpi-label">HODs</div><div className="kpi-value">{new Set(shown.map(hodOf).filter(Boolean)).size}</div></div>
         <div className="kpi-card"><div className="kpi-label">Departments</div><div className="kpi-value">{new Set(shown.map((e) => e.department).filter(Boolean)).size}</div></div>
         <div className="kpi-card"><div className="kpi-label">Teams</div><div className="kpi-value">{new Set(shown.map((e) => e.team)).size}</div></div>
       </div>
@@ -274,7 +288,7 @@ export function EmployeesPage() {
       <Card>
         <div className="filter-grid">
           <Field label="Search"><input className="search" placeholder="Code, name, team, manager…" value={f.q} onChange={(e) => set({ q: e.target.value })} /></Field>
-          <FilterSelect label="HOD" value={f.hod} options={opts("hod", (e) => e.hod_name)} onChange={(v) => set({ hod: v, team: "" })} />
+          <FilterSelect label="HOD" value={f.hod} options={opts("hod", hodOf)} onChange={(v) => set({ hod: v, team: "" })} />
           <FilterSelect label="Department" value={f.department} options={opts("department", (e) => e.department)} onChange={(v) => set({ department: v })} />
           <FilterSelect label="Team" value={f.team} options={opts("team", (e) => e.team)} onChange={(v) => set({ team: v })} />
           <FilterSelect label="Reporting manager" value={f.manager} options={opts("manager", (e) => e.reporting_manager)} onChange={(v) => set({ manager: v })} />
@@ -321,7 +335,7 @@ export function EmployeesPage() {
           { header: "Code", render: (e) => e.code },
           { header: "Employee", render: (e) => <button className="link" onClick={() => { setEditing(e); setSaved(null); }}>{e.name}</button> },
           { header: "Department", render: (e) => e.department },
-          { header: "HOD", render: (e) => e.hod_name },
+          { header: "HOD", render: (e) => hodOf(e) },
           { header: "Team", render: (e) => e.team },
           { header: "Reporting manager", render: (e) => e.reporting_manager },
           { header: "DOJ", render: (e) => (e.date_of_joining ? formatDate(e.date_of_joining) : "") },

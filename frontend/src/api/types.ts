@@ -310,9 +310,11 @@ export interface EmployeeSummary {
   total: number;
   active: number;
   left: number;
-  hods: { name: string; emails: string[]; employees: number; departments: string[] }[];
+  /** One entry per HOD person: two HODs can share a name (two Sunil Kumars) - the email tells them apart. */
+  hods: { name: string; email?: string; label?: string; shared_name?: boolean; emails: string[]; employees: number; departments: string[] }[];
   departments: string[];
   hods_without_email: string[];
+  shared_hod_names?: string[];
 }
 
 export interface EmployeeList {

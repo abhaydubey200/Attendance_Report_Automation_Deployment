@@ -3,6 +3,10 @@
     python main.py check                 Validate config, storage and database
     python main.py init-db               Apply migrations and sync roles/permissions
     python main.py create-user ...       Create a local user (password prompted, never echoed)
+    python main.py set-password ...      Reset a password (also unlocks)
+    python main.py unlock-user ...       Clear a lock-out after wrong passwords
+    python main.py list-users            Users and lock state
+    python main.py restore [--yes]       Put the newest (or --file) backup back as the database
     python main.py upload FILE           Process one day's file and email the reports
     python main.py serve                 Start the app (UI + API)
 """
@@ -106,6 +110,78 @@ def cmd_create_user(args: argparse.Namespace) -> int:
             detail={"roles": roles, "departments": args.department or [], "via": "cli"},
         )
         print(f"Created user {user.username!r} (id {user.user_id}) with roles {roles}")
+    return 0
+
+
+def cmd_set_password(args: argparse.Namespace) -> int:
+    """Reset a user's password (also unlocks the account). For HR/IT when someone forgets it."""
+    import os
+
+    from database.connection import session_scope
+    from database.repositories.security_repository import SecurityRepository
+    from security.audit import record_activity
+    from security.authentication import hash_password, validate_password_policy
+
+    settings = get_settings()
+    if args.password_env:
+        password = os.environ.get(args.password_env, "")
+        if not password:
+            print(f"Environment variable {args.password_env} is empty.")
+            return 2
+    else:
+        password = getpass.getpass("New password: ")
+    problems = validate_password_policy(password, settings.session.min_password_length)
+    if problems and not args.allow_weak_password:
+        print("Password rejected: " + "; ".join(problems))
+        return 2
+    if problems:
+        print("WARNING: weak password accepted on request (" + "; ".join(problems) + ").")
+    if not args.password_env and getpass.getpass("Confirm password: ") != password:
+        print("Passwords do not match.")
+        return 2
+    with session_scope(_engine()) as session:
+        user = SecurityRepository(session).get_user_by_username(args.username)
+        if user is None:
+            print(f"No user {args.username!r}.")
+            return 2
+        user.password_hash = hash_password(password)
+        user.failed_login_count = 0
+        user.locked_until = None
+        record_activity(session, "PASSWORD_RESET", "SUCCESS", user_id=user.user_id, username=user.username, detail={"via": "cli"})
+        print(f"Password of {user.username!r} changed; the account is unlocked.")
+    return 0
+
+
+def cmd_unlock_user(args: argparse.Namespace) -> int:
+    """Clear a lock-out after too many wrong passwords (otherwise it ends by itself after lockout_minutes)."""
+    from database.connection import session_scope
+    from database.repositories.security_repository import SecurityRepository
+    from security.audit import record_activity
+
+    with session_scope(_engine()) as session:
+        user = SecurityRepository(session).get_user_by_username(args.username)
+        if user is None:
+            print(f"No user {args.username!r}.")
+            return 2
+        was = user.locked_until is not None
+        user.failed_login_count = 0
+        user.locked_until = None
+        record_activity(session, "USER_UNLOCK", "SUCCESS", user_id=user.user_id, username=user.username, detail={"via": "cli"})
+        print(f"User {user.username!r} unlocked." if was else f"User {user.username!r} was not locked; failed-attempt count reset.")
+    return 0
+
+
+def cmd_list_users(_: argparse.Namespace) -> int:
+    from database.connection import session_scope
+    from database.repositories.security_repository import SecurityRepository
+    from core.timeutils import ensure_utc, now_utc
+
+    with session_scope(_engine()) as session:
+        now = now_utc()
+        for u in SecurityRepository(session).list_users():
+            lock = ensure_utc(u.locked_until)
+            state = "LOCKED" if lock and lock > now else ("active" if u.is_active else "inactive")
+            print(f"{u.username:<20} {state:<9} last sign-in: {u.last_login_at or '-'}")
     return 0
 
 
@@ -323,6 +399,81 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _in_use(db) -> bool:
+    """True when another process has the database file open (Windows refuses to rename an open file)."""
+    import os
+
+    probe = db.with_name(db.name + ".restore-probe")
+    try:
+        os.rename(db, probe)
+    except OSError:
+        return True
+    os.rename(probe, db)
+    return False
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    """Put a backup back as the live database. Stop the app service and the scheduled tasks first.
+    The current database is kept next to it as <name>.before-restore-<time>.db, so the restore can be undone."""
+    import shutil
+    import sqlite3
+    from datetime import datetime
+    from pathlib import Path
+
+    settings = get_settings()
+    if settings.database.backend != "sqlite":
+        print("Restore is for the SQLite database only.")
+        return 2
+    folder = settings.storage.area("backups")
+    if args.file:
+        src = Path(args.file)
+    else:
+        copies = sorted(folder.glob("attendance_*.db"))
+        if not copies:
+            print(f"No backups in {folder}.")
+            return 2
+        src = copies[-1]
+    if not src.is_file():
+        print(f"Backup file not found: {src}")
+        return 2
+    con = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        check = con.execute("PRAGMA integrity_check").fetchone()[0]
+        days = con.execute("select count(*) from day_upload").fetchone()[0]
+    finally:
+        con.close()
+    if check != "ok":
+        print(f"Backup {src.name} is damaged ({check}); not restored.")
+        return 3
+    target = Path(settings.database.path)
+    print(f"Backup: {src} (integrity ok, {days} uploads)")
+    print(f"Target: {target}")
+    if not args.yes:
+        print("Dry run only. Stop the app and the scheduled tasks, then run again with --yes.")
+        return 0
+    if target.exists() and _in_use(target):
+        print("The database is in use. Stop the app service and the scheduled tasks first, then run restore again.")
+        return 4
+    keep = None
+    if target.exists():
+        keep = target.with_name(f"{target.stem}.before-restore-{datetime.now():%Y%m%d_%H%M%S}.db")
+        shutil.copy2(target, keep)
+        for extra in ("-wal", "-shm"):
+            side = Path(str(target) + extra)
+            if side.exists():
+                shutil.copy2(side, Path(str(keep) + extra))
+    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    dest = sqlite3.connect(str(target))
+    try:
+        source.backup(dest)                       # page-by-page copy through SQLite (handles the WAL files correctly)
+        dest.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        source.close()
+        dest.close()
+    print(f"Restored. Previous database kept as {keep}." if keep else "Restored.")
+    return 0
+
+
 def cmd_monthly(args: argparse.Namespace) -> int:
     from daily import jobs, monthly
 
@@ -385,6 +536,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="accept a password that fails the password policy (the owner's explicit choice; shown as a warning)")
     cu.set_defaults(func=cmd_create_user)
 
+    sp = sub.add_parser("set-password", help="reset a user's password (also unlocks the account)")
+    sp.add_argument("--username", required=True)
+    sp.add_argument("--password-env", help="read the password from this environment variable instead of prompting")
+    sp.add_argument("--allow-weak-password", action="store_true", help="accept a password that fails the password policy")
+    sp.set_defaults(func=cmd_set_password)
+    ul = sub.add_parser("unlock-user", help="clear a lock-out after too many wrong passwords")
+    ul.add_argument("--username", required=True)
+    ul.set_defaults(func=cmd_unlock_user)
+    sub.add_parser("list-users", help="list users and whether they are locked").set_defaults(func=cmd_list_users)
+
     serve = sub.add_parser("serve", help="start the API server (serves frontend/dist when built)")
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
@@ -418,6 +579,10 @@ def build_parser() -> argparse.ArgumentParser:
     bk = sub.add_parser("backup", help="online backup of the SQLite database (integrity-checked; old copies pruned)")
     bk.add_argument("--manual", action="store_true")
     bk.set_defaults(func=cmd_backup)
+    rs = sub.add_parser("restore", help="put a backup back as the database (newest backup unless --file; dry run unless --yes)")
+    rs.add_argument("--file", help="backup file (default: newest in the backups folder)")
+    rs.add_argument("--yes", action="store_true", help="really restore (stop the app and scheduled tasks first)")
+    rs.set_defaults(func=cmd_restore)
 
     mo = sub.add_parser("monthly", help="month-end reports + archive (default: previous month)")
     mo.add_argument("--month", help="YYYY-MM (default: previous month)")

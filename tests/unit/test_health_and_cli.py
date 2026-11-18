@@ -72,3 +72,58 @@ def test_cli_upload_three_datasets_auto(isolated_env, tmp_path, capsys):
     assert main.main(["upload", "--master", str(m), str(f), str(b), "--send", "auto"]) == 0
     out = capsys.readouterr().out
     assert "Employee master: 41 added" in out and ": SAVED" in out and "ready - review" not in out
+
+
+def test_cli_password_reset_unlock_and_list(isolated_env, monkeypatch, capsys):
+    import main
+    from datetime import timedelta
+
+    from core.timeutils import now_utc
+    from database.connection import create_db_engine, session_scope
+    from database.repositories.security_repository import SecurityRepository
+    from core.config import get_settings
+
+    main.main(["init-db"])
+    monkeypatch.setenv("PW", "root")
+    assert main.main(["create-user", "--username", "root", "--password-env", "PW"]) == 2          # weak: refused by default
+    assert main.main(["create-user", "--username", "root", "--password-env", "PW", "--allow-weak-password"]) == 0
+    assert "WARNING: weak password" in capsys.readouterr().out
+    with session_scope(create_db_engine(get_settings())) as s:
+        SecurityRepository(s).get_user_by_username("root").locked_until = now_utc() + timedelta(minutes=15)
+    assert main.main(["list-users"]) == 0 and "LOCKED" in capsys.readouterr().out
+    assert main.main(["unlock-user", "--username", "root"]) == 0 and "unlocked" in capsys.readouterr().out
+    assert main.main(["list-users"]) == 0 and "LOCKED" not in capsys.readouterr().out
+    monkeypatch.setenv("PW", "New-Passw0rd!x")
+    assert main.main(["set-password", "--username", "root", "--password-env", "PW"]) == 0
+    assert main.main(["unlock-user", "--username", "nobody"]) == 2
+
+
+def test_cli_backup_and_restore(isolated_env, capsys):
+    import sqlite3
+
+    import main
+    from core.config import get_settings
+
+    main.main(["init-db"])
+    assert main.main(["backup", "--manual"]) == 0
+    db = get_settings().database.path
+    con = sqlite3.connect(db)
+    con.execute("delete from app_role")
+    con.commit()
+    assert con.execute("select count(*) from app_role").fetchone()[0] == 0
+    con.close()
+    assert main.main(["restore"]) == 0 and "Dry run only" in capsys.readouterr().out
+    holder = sqlite3.connect(db)                       # still in use -> refused
+    holder.execute("select 1").fetchone()
+    assert main.main(["restore", "--yes"]) == 4
+    holder.close()
+    import gc
+
+    from sqlalchemy.engine import Engine
+    for o in gc.get_objects():                         # close this test process's pooled connections (the server's
+        if isinstance(o, Engine):                      # app and jobs are stopped before a real restore)
+            o.dispose()
+    assert main.main(["restore", "--yes"]) == 0 and "Restored." in capsys.readouterr().out
+    con = sqlite3.connect(db)
+    assert con.execute("select count(*) from app_role").fetchone()[0] > 0
+    con.close()

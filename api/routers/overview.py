@@ -13,7 +13,7 @@ from api.deps import get_db, get_settings, require
 from core.config import Settings
 from daily import jobs, mail, monthly
 from daily.settings_store import get_email_settings
-from database.models.daily import DayUpload, Employee, JobRun, MailItem, MonthlySummary
+from database.models.daily import DayUpload, Employee, EmployeeDay, JobRun, MonthlySummary
 from security.permissions import Perm, Principal
 
 router = APIRouter(tags=["overview"])
@@ -40,13 +40,17 @@ def overview(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Sett
                          "late": s["late"], "left_early": s["left_early"], "missing_punch": s["counts"].get("MISSING_PUNCH", 0),
                          "leave": s["counts"].get("LEAVE", 0) + s["counts"].get("HALF_DAY", 0), "avg_in_time": s.get("avg_in_time"),
                          "permission_file": bool(latest.permission_path), "highlights": ins["scopes"]["ALL"]["highlights"][:4]}
-        master = ins.get("master") or {}
-        if master.get("not_in_master"):
-            out["issues"].append({"kind": "warn", "text": f"{master['not_in_master']} people in the attendance file are not in the employee master",
-                                  "link": "/employees"})
-        if master.get("missing_from_file"):
-            out["issues"].append({"kind": "info", "text": f"{master['missing_from_file']} active employee(s) missing from the attendance file",
-                                  "link": f"/insights?date={latest.report_date.isoformat()}"})
+        # counted now (not at upload time), so adding a joiner or marking a leaver shows here at once
+        in_file = {c.upper() for c in db.scalars(select(EmployeeDay.employee_code).where(EmployeeDay.upload_id == latest.upload_id))}
+        active = {c.upper() for c in db.scalars(select(Employee.code).where(Employee.status == "ACTIVE"))}
+        if in_file and active:
+            not_in_master, missing = len(in_file - active), len(active - in_file)
+            if not_in_master:
+                out["issues"].append({"kind": "warn", "text": f"{not_in_master} people in the attendance file are not in the employee master",
+                                      "link": "/employees"})
+            if missing:
+                out["issues"].append({"kind": "info", "text": f"{missing} active employee(s) missing from the attendance file",
+                                      "link": f"/insights?date={latest.report_date.isoformat()}"})
         if not latest.permission_path:
             out["issues"].append({"kind": "warn", "text": "The Permission Report of this day is not uploaded", "link": "/upload"})
         items = mail.items_for(db, latest.report_date)

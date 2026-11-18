@@ -88,6 +88,10 @@ def _person(code: str, name: str, route: routing.Route | None, per_day: dict[dat
             "codes": {d.isoformat(): STATUS_CODE.get(v["status"], "?") for d, v in per_day.items()}}
 
 
+MIN_WORKING_SHARE = 0.2      # a day counts as a working day when at least 20% of the people on it were due to work
+NO_HOD = "No HOD assigned"
+
+
 def _scope_totals(people: list[dict], days: list[date], by_code: dict, rules) -> dict:
     all_days = [d for p in people for d in by_code.get(p["code"].upper(), {}).values()]
     t = reports._tally(all_days, rules)
@@ -95,17 +99,21 @@ def _scope_totals(people: list[dict], days: list[date], by_code: dict, rules) ->
     trend = []
     for d in days:
         day_rows = [by_code.get(p["code"].upper(), {}).get(d) for p in people]
-        dt = reports._tally([r for r in day_rows if r], rules)
-        trend.append({"date": d.isoformat(), "attendance_pct": dt["attendance_pct"]})
+        present = [r for r in day_rows if r]
+        dt = reports._tally(present, rules)
+        # A Sunday or holiday where only a handful of people were due (one punch, one stray "A") is not a working day:
+        # it is left out of the trend and the working-day count (those people still count in the totals).
+        working = dt["tracked"] > 0 and dt["tracked"] >= MIN_WORKING_SHARE * len(present)
+        trend.append({"date": d.isoformat(), "attendance_pct": dt["attendance_pct"] if working else None})
     t["trend"] = trend
-    t["work_days"] = sum(1 for x in trend if x["attendance_pct"] is not None)   # days anyone was due to work (not week off / holiday)
+    t["work_days"] = sum(1 for x in trend if x["attendance_pct"] is not None)   # days most people were due to work
     return t
 
 
 def _groups(people: list[dict], key: str) -> list[dict]:
     g: dict[str, list[dict]] = defaultdict(list)
     for p in people:
-        g[p[key] or "—"].append(p)
+        g[p[key] or NO_HOD].append(p)
     out = []
     for name, ps in sorted(g.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         tracked = sum(p["tracked"] for p in ps)

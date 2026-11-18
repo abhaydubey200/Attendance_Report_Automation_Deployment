@@ -32,6 +32,8 @@ def weekday_stats(codes: list[str], days: list[date], by_code: dict, rules) -> l
         if not rows:
             continue
         t = reports._tally(rows, rules)
+        if t["tracked"] < 0.2 * len(rows):          # Sundays / weekly off: almost nobody due -> not compared
+            continue
         out.append({"day": name, "days": len(ds), "attendance_pct": t["attendance_pct"], "absent": t["absent"], "late": t["late"],
                     "missing_punch": t["missing_punch"]})
     return out

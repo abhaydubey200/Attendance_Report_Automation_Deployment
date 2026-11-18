@@ -52,3 +52,22 @@ def test_patterns_and_takeaways():
     assert ins["leave_mix"] == [{"type": "PL", "days": 1}]
     assert {w["day"] for w in ins["weekday"]} >= {"Monday", "Friday"} and len(ins["weeks"]) == 2
     assert "today" not in text.lower()
+
+
+def test_sunday_with_one_person_due_is_not_a_working_day():
+    """Sunday 11 Oct: everyone on week off except one stray 'A' -> not a working day, not 'the lowest weekday'."""
+    from daily import monthly
+
+    spec = {f"E{i}": ["P"] * 12 for i in range(9)}
+    spec["X"] = ["P"] * 12
+    people, by_code = _people(spec)
+    sunday = DAYS[6]
+    assert sunday.weekday() == 6
+    for code, per in by_code.items():
+        per[sunday] = _day(sunday, "ABSENT" if code == "X" else "WEEK_OFF")
+    people = [{**p, "wfh": 0, "od": 0} for p in people]
+    totals = monthly._scope_totals(people, DAYS, by_code, Rules())
+    trend = {t["date"]: t["attendance_pct"] for t in totals["trend"]}
+    assert trend[sunday.isoformat()] is None and totals["work_days"] == 11 and totals["working_days"] == 12
+    assert "Sun" not in [w["day"][:3] for w in mi.weekday_stats(list(by_code), DAYS, by_code, Rules())]
+    assert monthly._groups([{**p, "hod": "", "reason": ""} for p in people], "hod")[0]["name"] == "No HOD assigned"

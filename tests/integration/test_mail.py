@@ -122,16 +122,22 @@ def test_plan_content_and_privacy(engine, settings):
         html, text, files = mail.render(s, settings, by["lead.a@example.com"])
         assert "Team One B" in html and "Absent" in html and "Team One A" not in html     # only people needing attention
         assert "Arun Direct" not in html and "Conflict Person" not in html               # privacy: own team only
-        roster = load_workbook(io.BytesIO(files[0].content))["Team roster"]
+        roster = load_workbook(io.BytesIO(files[0].content))["Team list"]
         assert [roster.cell(r, 1).value for r in range(4, roster.max_row + 1)] == ["T2", "T1"]   # attention first
         html, _, files = mail.render(s, settings, by["arun@example.com"])
         assert "Your wider team" in html and "Your team" in html and "department" not in html.lower() and "today" not in html.lower()
         assert "1 of 1 people in your team needs attention on 13-Nov-2026: 1 late." in html                  # headline
         assert "2 of 3 people in your wider team need attention on 13-Nov-2026: 1 absent, 1 late." in html
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Team roster", "Wider team roster"]   # no per-team summary in emails
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Needs attention", "Team list", "Wider team list", "Last 7 days"]
+        assert "Teams at a glance" not in html and "HOD" not in html                     # no per-team table in HOD emails
         html, _, _ = mail.render(s, settings, by["DIRECTOR"])
-        assert "Company &ndash; 13-Nov-2026" in html and "Director Office staff" in html
-        assert "All 1 people in the Director Office are accounted for on 13-Nov-2026" in html
+        assert "Daily Company Attendance" in html and "Company – 13-Nov-2026" in html and "Director Office staff" in html
+        assert "people in the company" in html and "Teams at a glance" in html
+        assert "Nobody in the Director Office needs attention on 13-Nov-2026" in html
+        html, _, hr_files = mail.render(s, settings, by["HR"])
+        assert "Daily HR Action List" in html and "Not in the employee master (1)" in html and "Routing problems (1)" in html
+        assert "Two different email addresses for the same HOD" in html and "HOD_EMAIL_CONFLICT" not in html
+        assert {"Not in master", "Routing problems", "Company list"} <= set(load_workbook(io.BytesIO(hr_files[0].content)).sheetnames)
         dash = files[1].content
         assert b"Team One A" in dash and b"Unknown Code" not in dash
 

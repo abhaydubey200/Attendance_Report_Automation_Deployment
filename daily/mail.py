@@ -151,6 +151,12 @@ def headline(c: dict | None, who: str, day: str = "") -> str | None:
 
 def subject_numbers(c: dict) -> str:
     """'2 absent · 3 late' for the subject line (the most useful counts only)."""
+    if c.get("hr"):
+        h = c["hr"]
+        parts = [f"{h['records']} record(s) to fix" if h.get("records") else "",
+                 f"{h['missing_punch']} missing punch" if h.get("missing_punch") else "",
+                 f"{h['permissions']} permission(s) pending" if h.get("permissions") else ""]
+        return " · ".join(x for x in parts if x) or "nothing to fix"
     if c.get("exceptions"):
         return f"{c['exceptions']} record(s) to fix"
     main = c.get("company") or (c["team"] if c["team"]["total"] else (c.get("summary") or c["team"]))
@@ -217,6 +223,97 @@ def pattern(days: list[dict]) -> str | None:
     return "; ".join(notes) or None
 
 
+TREND_DAYS = 7            # uploaded days shown in the mini trend of every email (and the "Last 7 days" sheet)
+STREAK_ALERT = 3          # absent this many report days in a row -> Director concern / HR action
+NO_HOD = "No HOD assigned"
+ISSUE_TEXT = {            # routing issue codes -> plain words for HR
+    "HOD_EMAIL_CONFLICT": "Two different email addresses for the same HOD",
+    "NO_HOD_EMAIL": "No HOD email address",
+    "INVALID_SUB_SPLIT_EMAIL": "Team lead email address is not valid",
+    "MULTIPLE_SUB_SPLIT_EMAILS": "More than one team lead email address",
+    "HOLD": "Held by HR",
+}
+
+
+def issue_text(issue: str | None) -> str:
+    up = (issue or "").upper()
+    return next((t for k, t in ISSUE_TEXT.items() if k in up), issue or "Could not be routed")
+
+
+def recent_uploads(session: Session, day: date, n: int = TREND_DAYS) -> list[tuple[int, date]]:
+    """(upload_id, date) of the last n uploaded days up to `day`, oldest first."""
+    ups = session.execute(select(DayUpload.upload_id, DayUpload.report_date).where(
+        DayUpload.report_date <= day, DayUpload.is_current.is_(True)).order_by(DayUpload.report_date.desc()).limit(n))
+    return [(u, d) for u, d in ups][::-1]
+
+
+def day_grid(session: Session, ups: list[tuple[int, date]], codes: set[str]) -> dict[str, dict[date, dict]]:
+    """code -> {date -> minimal row (status, flags, times)} for the given uploads."""
+    when = dict(ups)
+    out: dict[str, dict[date, dict]] = defaultdict(dict)
+    if not when or not codes:
+        return out
+    q = select(EmployeeDay.upload_id, EmployeeDay.employee_code, EmployeeDay.status, EmployeeDay.flags, EmployeeDay.in_time,
+               EmployeeDay.out_time, EmployeeDay.late_minutes, EmployeeDay.early_minutes).where(EmployeeDay.upload_id.in_(list(when)))
+    for u, code, st, fl, i, o, lm, em in session.execute(q):
+        c = code.upper()
+        if c in codes:
+            out[c][when[u]] = {"status": st, "flags": fl.split(",") if fl else [], "in_time": i, "out_time": o,
+                               "late_minutes": lm or 0, "early_minutes": em or 0, "permission": ""}
+    return out
+
+
+def trend(ups: list[tuple[int, date]], grid: dict[str, dict[date, dict]], codes: list[str]) -> list[dict]:
+    """Attendance % per uploaded day for these people. A day where under 20% of them were due (Sunday, holiday) has pct None."""
+    out = []
+    for _, d in ups:
+        rows = [grid[c][d] for c in codes if d in grid.get(c, {})]
+        c = counts(rows) if rows else None
+        due = (c["total"] - c["week_off"] - c["holiday"] - c["not_tracked"] - c["no_record"]) if c else 0
+        working = bool(c) and c["attendance_pct"] is not None and due >= 0.2 * c["total"]
+        out.append({"date": d, "label": f"{d:%a}", "day": f"{d:%d}", "pct": c["attendance_pct"] if working else None,
+                    "absent": c["absent"] if c else 0, "late": c["late"] if c else 0})
+    return out
+
+
+def week_note(days: list[dict]) -> str | None:
+    """Repeated trouble over the recent report days, even when the latest day was fine (newest first)."""
+    if len(days) < 3:
+        return None
+    n = len(days)
+    a = sum(1 for d in days if d["status"] == "ABSENT")
+    lt = sum(1 for d in days if "LATE" in d["flags"])
+    mp = sum(1 for d in days if d["status"] == "MISSING_PUNCH")
+    notes = [f"absent {a} of the last {n} report days" if a >= 2 else "", f"late {lt} of the last {n} report days" if lt >= 3 else "",
+             f"missing punch {mp} of the last {n} report days" if mp >= 2 else ""]
+    return "; ".join(x for x in notes if x) or None
+
+
+def absent_streak(days: list[dict]) -> int:
+    n = 0
+    for d in days:                       # newest first
+        if d["status"] != "ABSENT":
+            break
+        n += 1
+    return n
+
+
+def team_table(rows: list[dict], before_of) -> list[dict]:
+    """One line per HOD's team (Director / HR only): weakest attendance first."""
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        groups[r.get("hod") or NO_HOD].append(r)
+    out = []
+    for name, rs in groups.items():
+        c = counts(rs)
+        b = before_of(rs)
+        out.append({"name": name, "people": c["total"], "pct": c["attendance_pct"], "absent": c["absent"], "late": c["late"],
+                    "missing_punch": c["missing_punch"], "leave": c["leave"], "attention": c["attention"],
+                    "change": change(c, b)["attendance_pct"]})
+    out.sort(key=lambda t: (t["pct"] is None, t["pct"] if t["pct"] is not None else 0, -t["people"]))
+    return out
+
+
 def _sort_attention_first(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: (attention(r) is None, r.get("department") or "", r["name"]))
 
@@ -242,17 +339,23 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
     items = []
     for rec in recs:
         content: dict = {"team": [r.code for r in rec.team], "summary": [r.code for r in rec.summary], "company": rec.company}
+        hr_parts: dict = {}
         if rec.key == routing.HR:
             content["exceptions"] = ([{"code": r.code, "issue": r.issue or "Held"} for r in rec.team]
                                      + [{"code": code, "issue": NOT_IN_MASTER} for code in sorted(unmatched)])
-            if not content["exceptions"]:
-                continue                     # HR mail only on days with something to fix
+            content["company"] = True        # HR action list covers the whole company (missing punches, permissions, ...)
+            everyone = [_row_for(r, rows) for r in rs]
+            hr_parts = {"records": len(content["exceptions"]),
+                        "missing_punch": sum(1 for r in everyone if r["status"] == "MISSING_PUNCH"),
+                        "permissions": sum(1 for r in everyone if "PERMISSION_PENDING" in r["flags"])}
+            if not any(hr_parts.values()):
+                continue                     # HR mail only on days with something to act on
         team_rows = [_row_for(r, rows) for r in rec.team]
         summary_rows = [_row_for(r, rows) for r in rec.summary]
-        company_rows = [_row_for(r, rows) for r in rs] if rec.company else []
+        company_rows = [_row_for(r, rows) for r in rs] if content["company"] else []
         c = {"team": counts(team_rows), "summary": counts(summary_rows) if summary_rows else None,
              "company": counts(company_rows) if company_rows else None,
-             "exceptions": len(content.get("exceptions", []))}
+             "exceptions": len(content.get("exceptions", [])), "hr": hr_parts or None}
         status, note = (PENDING, None) if rec.status == "OK" else (rec.status, rec.note)
         main = c["company"] or (c["team"] if c["team"]["total"] else (c["summary"] or c["team"]))
         if status == PENDING and rec.key != routing.HR and main["total"] and main["attendance_pct"] is None:
@@ -312,7 +415,7 @@ def _sections(session: Session, item: MailItem) -> dict:
 
     team = pick(content["team"])
     summary = pick(content["summary"])
-    company = pick(list(rs)) if content.get("company") else []
+    company = pick(list(rs)) if content.get("company") or item.recipient_key == routing.HR else []
     exceptions = []
     for x in content.get("exceptions", []):
         row = rows.get(x["code"].upper())
@@ -342,7 +445,8 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
         return counts([dict(r, **{k: prev_rows[r["code"].upper()][k] for k in ("status", "flags")}) for r in rows
                        if r["code"].upper() in prev_rows])
 
-    hist = _history(session, item.report_date, {r["code"].upper() for r in s["team"] + s["summary"]})
+    hist = _history(session, item.report_date, {r["code"].upper() for r in s["team"] + s["summary"] + s["company"]})
+    kind = "hr" if item.recipient_key == routing.HR else "director" if s["company"] else "hod"
 
     def with_pattern(r: dict) -> dict:
         from daily.render import action_for
@@ -357,18 +461,105 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     team_c = counts(s["team"]) if s["team"] else None
     summary_c = counts(s["summary"]) if s["summary"] else None
     company_c = counts(s["company"]) if s["company"] else None
+    people = s["team"] + [r for r in s["summary"] if r["code"] not in team_codes]
+    main_rows = s["company"] if kind != "hod" else (s["team"] or s["summary"])
+
+    # last 7 uploaded days: mini trend + "watch this week" + absence streaks + the Excel "Last 7 days" sheet
+    ups = recent_uploads(session, item.report_date)
+    grid_rows = s["company"] if kind != "hod" else people
+    grid = day_grid(session, ups, {r["code"].upper() for r in grid_rows})
+    week = trend(ups, grid, [r["code"].upper() for r in main_rows])
+    past = [t["pct"] for t in week[:-1] if t["pct"] is not None]
+    week_avg = round(sum(past) / len(past), 1) if past else None
+
+    def recent(code: str, n: int = HISTORY_DAYS) -> list[dict]:
+        g = grid.get(code.upper(), {})
+        return [g[d] for _, d in reversed(ups) if d in g][:n]
+
+    def pending_row(r: dict) -> dict:
+        pend = [p for p in (r.get("permission") or "").split("; ") if p.startswith("Pending")]
+        when = pend[0][len("Pending"):].strip() if pend else ""
+        return dict(r, reason=f"Short leave requested{(' ' + when) if when else ''} - waiting for approval", pattern=None,
+                    action="Approve or reject it in Pocket HRMS")
+
     blocks = {
+        "kind": kind,
         "team": team_c, "team_change": change(team_c, before(s["team"]) if team_c else None),
-        "team_headline": headline(team_c, "your team" if not company_c else "the Director Office", day),
+        "team_headline": headline(team_c, "your team", day) if kind == "hod" else None,
         "team_attention": team_att[:60], "team_attention_more": max(0, len(team_att) - 60),
         "summary": summary_c, "summary_change": change(summary_c, before(s["summary"]) if summary_c else None),
-        "summary_headline": headline(summary_c, "your wider team", day),
+        "summary_headline": headline(summary_c, "your wider team", day) if kind == "hod" else None,
         "dept_patterns": sorted(dept_patterns, key=lambda p: p["name"])[:25],
         "company": company_c, "company_change": change(company_c, before(s["company"]) if company_c else None),
+        "company_headline": headline(company_c, "the company", day) if kind == "director" else None,
         "exceptions": s["exceptions"][:200], "exceptions_more": max(0, len(s["exceptions"]) - 200),
         "previous_day": prev_up.report_date.strftime(settings.app.date_format) if prev_up else None,
+        "trend": week if sum(1 for t in week if t["pct"] is not None) >= 2 else [], "week_avg": week_avg,
+        "pending": [], "watch": [], "teams": [], "concerns": [], "hr_groups": [],
+        "main_before": before(main_rows) if main_rows else None,     # full counts of the previous report day (Excel summary)
     }
-    greeting = "Dear HR team" if item.recipient_key == routing.HR else f"Dear {item.recipient_name}"
+    if kind == "hod":
+        blocks["pending"] = [pending_row(r) for r in _sort_attention_first(people)
+                             if "PERMISSION_PENDING" in r["flags"] and not attention(r)]
+        shown = {r["code"] for r in team_att} | {r["code"] for r in blocks["dept_patterns"]}
+        blocks["watch"] = [dict(r, reason=note, pattern=None, action="Have a word - a pattern is forming")
+                           for r in sorted(people, key=lambda x: x["name"])
+                           if r["code"] not in shown and (note := week_note(recent(r["code"])))][:20]
+    else:
+        blocks["teams"] = team_table(s["company"], lambda rs: before(rs))
+    if kind == "director":
+        c = company_c or {}
+        concerns = []
+        weak = [t for t in blocks["teams"] if t["pct"] is not None and t["pct"] < 75 and t["people"] >= 3]
+        for t in weak[:3]:
+            concerns.append({"kind": "bad", "text": f"{t['name']}'s team: {t['pct']:g}% attendance ({t['absent']} of {t['people']} absent)."})
+        streaks = sorted(((absent_streak(recent(r["code"])), r["name"]) for r in s["company"]), reverse=True)
+        streaks = [(n, nm) for n, nm in streaks if n >= STREAK_ALERT]
+        if streaks:
+            names = ", ".join(f"{nm} ({n})" for n, nm in streaks[:4])
+            concerns.append({"kind": "bad", "text": f"{len(streaks)} people absent {STREAK_ALERT}+ report days in a row: {names}"
+                                                    + (" and others." if len(streaks) > 4 else ".")})
+        if c.get("attendance_pct") is not None and week_avg is not None:
+            d = round(c["attendance_pct"] - week_avg, 1)
+            concerns.append({"kind": "good" if d >= 0 else "warn",
+                             "text": f"Attendance {c['attendance_pct']:g}% against a {len(past)}-day average of {week_avg:g}% "
+                                     f"({'+' if d >= 0 else ''}{d:g} pts)."})
+        if c.get("late"):
+            top = max(blocks["teams"], key=lambda t: t["late"])
+            concerns.append({"kind": "warn", "text": f"{c['late']} late arrivals; most in {top['name']}'s team ({top['late']})."})
+        if c.get("missing_punch"):
+            concerns.append({"kind": "info", "text": f"{c['missing_punch']} missing punch(es) - HR is following up for regularisation."})
+        blocks["concerns"] = concerns[:6]
+    if kind == "hr":
+        held = [x for x in s["exceptions"] if x["issue"] != NOT_IN_MASTER]
+        groups = [
+            ("not_in_master", "Not in the employee master",
+             "They are in Pocket HRMS but not in the employee master, so no manager receives their attendance.",
+             "Add them on the Employees screen with their HOD, or mark them as left.",
+             [dict(x, detail=x["status_label"]) for x in s["exceptions"] if x["issue"] == NOT_IN_MASTER]),
+            ("routing", "Routing problems", "Their HOD's email cannot be used, so their attendance comes to HR instead.",
+             "Correct the HOD email on the Employees screen (or in the routing workbook).",
+             [dict(x, detail=issue_text(x["issue"])) for x in held]),
+            ("permissions", "Short-leave requests waiting for approval", "Pending requests do not excuse late arrival or early leaving.",
+             "Remind the HOD to approve or reject them in Pocket HRMS.",
+             [dict(r, detail=pending_row(r)["reason"].replace(" - waiting for approval", "")) for r in s["company"]
+              if "PERMISSION_PENDING" in r["flags"]]),
+            ("missing", "Missing punches", "Only one punch was recorded for the day.",
+             "Get them regularised in Pocket HRMS before payroll.",
+             [dict(r, detail=("In " + (analysis.t12(r["in_time"]) or "") + " · no out-punch") if r.get("in_time") and not r.get("out_time")
+                   else ("Out " + (analysis.t12(r["out_time"]) or "") + " · no in-punch") if r.get("out_time") else "No punch time")
+              for r in s["company"] if r["status"] == "MISSING_PUNCH"]),
+            ("streaks", f"Absent {STREAK_ALERT}+ report days in a row", "No leave is recorded for these days.",
+             "Check with the HOD; record the leave or start the absence process.",
+             [dict(r, detail=f"Absent {n} report days in a row") for r in s["company"] if (n := absent_streak(recent(r["code"]))) >= STREAK_ALERT]),
+        ]
+        blocks["hr_groups"] = [{"key": k, "title": t, "why": w, "action": a, "rows": sorted(rs, key=lambda x: (x.get("hod") or "", x["name"]))}
+                               for k, t, w, a, rs in groups if rs]
+        blocks["hr_total"] = sum(len(g["rows"]) for g in blocks["hr_groups"])
+        short = {"not_in_master": "not in the employee master", "routing": "routing problem(s)", "permissions": "short-leave request(s) pending",
+                 "missing": "missing punch(es)", "streaks": f"absent {STREAK_ALERT}+ days in a row"}
+        blocks["hr_summary"] = ", ".join(f"{len(g['rows'])} {short[g['key']]}" for g in blocks["hr_groups"])
+    greeting = "Dear HR team" if kind == "hr" else f"Dear {item.recipient_name}"
     stem = f"Attendance_{item.report_date:%Y-%m-%d}_{''.join(ch if ch.isalnum() else '_' for ch in item.recipient_name).strip('_')}"
     html = _env.get_template("mail.html").render(subject=item.subject, day=day, greeting=greeting, role=item.role,
                                                  company=settings.app.company, b=blocks, app_url=settings.app.public_url,
@@ -377,16 +568,19 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
                                                  hr_contact=(cfg.hr_emails or [None])[0])
     text = _text(item, day, greeting, blocks)
     attachments = []
+    dash_people = people if kind == "hod" else s["company"]
+    notes = {r["code"].upper(): p for r in dash_people if (p := pattern(hist.get(r["code"].upper(), [])) or week_note(recent(r["code"])))}
     if cfg.attach_excel:
-        attachments.append(Attachment(f"{stem}.xlsx", roster_xlsx(settings, item, s), XLSX))
-    people = s["team"] + [r for r in s["summary"] if r["code"] not in {x["code"] for x in s["team"]}]
-    if cfg.attach_dashboard and people and item.recipient_key != routing.HR:
+        from daily import daily_excel
+
+        attachments.append(Attachment(f"{stem}.xlsx", daily_excel.build(settings, item, kind, s, blocks, ups, grid, notes), XLSX))
+    if cfg.attach_dashboard and dash_people:
         prev_people = [dict(r, status=prev_rows[r["code"].upper()]["status"], flags=prev_rows[r["code"].upper()]["flags"])
-                       for r in people if r["code"].upper() in prev_rows] if prev_up else None
-        notes = {r["code"].upper(): p for r in people if (p := pattern(hist.get(r["code"].upper(), [])))}
+                       for r in dash_people if r["code"].upper() in prev_rows] if prev_up else None
         attachments.append(Attachment(f"{stem}_dashboard.html",
-                                      dashboard(session, settings, item, people, prev_people or None,
-                                                prev_up.report_date if prev_up else None, notes), "text/html"))
+                                      dashboard(session, settings, item, dash_people, prev_people or None,
+                                                prev_up.report_date if prev_up else None, notes,
+                                                teams=blocks["teams"] if kind != "hod" else None), "text/html"))
     return html, text, attachments
 
 
@@ -396,31 +590,61 @@ def _kpi_line(c: dict) -> str:
 
 
 def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
-    lines = [f"{greeting},", "", f"Daily attendance for {day}.", ""]
-    for key in ("team_headline", "summary_headline"):
+    """Plain-text part of the email (shown by mail apps that do not display HTML)."""
+    kind = b.get("kind", "hod")
+    title = {"hr": "Daily HR action list", "director": "Daily company attendance"}.get(kind, "Daily team attendance")
+    lines = [f"{greeting},", "", f"{title} for {day}.", ""]
+
+    def people(rows: list[dict]) -> list[str]:
+        return [f"- {r['code']} {r['name']}: {r['reason']}" + (f" ({r['pattern']})" if r.get("pattern") else "")
+                + (f" -> {r['action']}" if r.get("action") else "") for r in rows]
+
+    for key in ("company_headline", "team_headline", "summary_headline"):
         if b.get(key):
             lines.append(b[key])
+    if b.get("pending"):
+        lines.append(f"Also: {len(b['pending'])} short-leave request(s) waiting for your approval.")
     lines.append("")
-    if b["team"]:
-        lines += ["YOUR TEAM", _kpi_line(b["team"]), ""]
+    if b.get("trend"):
+        lines.append("Last report days: " + " | ".join(f"{t['label']} {t['day']}: " + ("off" if t["pct"] is None else f"{t['pct']:g}%")
+                                                       for t in b["trend"]))
+        lines.append("")
+    if kind == "director" and b["company"]:
+        lines += ["COMPANY", _kpi_line(b["company"]), ""]
+        if b.get("concerns"):
+            lines += ["TOP CONCERNS"] + [f"- {c['text']}" for c in b["concerns"]] + [""]
+        if b.get("teams"):
+            lines.append("TEAMS AT A GLANCE (weakest first)")
+            lines += [f"- {t['name']}: {'-' if t['pct'] is None else str(t['pct']) + '%'} of {t['people']} | absent {t['absent']} | "
+                      f"late {t['late']} | missing punch {t['missing_punch']}" for t in b["teams"]]
+            lines.append("")
+    if kind == "hr":
+        if b["company"]:
+            lines += [f"Company: {b['company']['attendance_pct']}% attendance, {b['company']['absent']} absent.", ""]
+        for i, g in enumerate(b.get("hr_groups", []), start=1):
+            lines += [f"{i}. {g['title'].upper()} ({len(g['rows'])})", g["why"], f"Action: {g['action']}"]
+            lines += [f"- {r['code']} {r['name']}" + (f" ({r['hod']})" if r.get("hod") else "") + f": {r['detail']}" for r in g["rows"][:40]]
+            lines.append("")
+        if not b.get("hr_groups"):
+            lines += [f"Nothing needs HR action for {day}.", ""]
+    if b["team"] and kind != "hr":
+        lines += ["DIRECTOR OFFICE STAFF" if kind == "director" else "YOUR TEAM", _kpi_line(b["team"]), ""]
         if b["team_attention"]:
             lines.append("Needs attention:")
-            lines += [f"- {r['code']} {r['name']}: {r['reason']}" + (f" ({r['pattern']})" if r.get("pattern") else "")
-                      + (f" -> {r['action']}" if r.get("action") else "") for r in b["team_attention"]]
+            lines += people(b["team_attention"])
             if b["team_attention_more"]:
                 lines.append(f"- ... and {b['team_attention_more']} more in the attachment")
         else:
             lines.append(f"Nobody needs attention on {day}.")
         lines.append("")
+    if b.get("pending"):
+        lines += ["Short-leave requests to approve:"] + people(b["pending"]) + [""]
     if b["summary"]:
         lines += ["YOUR WIDER TEAM (everyone under you)", _kpi_line(b["summary"]), ""]
-    if b["company"]:
-        lines += ["COMPANY SUMMARY", _kpi_line(b["company"]), ""]
-    if b["exceptions"]:
-        lines += ["RECORDS THAT COULD NOT BE ROUTED"]
-        lines += [f"- {x['code']} {x['name']}: {x['issue']}" for x in b["exceptions"]]
-        lines.append("")
-    lines += ["The full list for your team is attached (people needing attention first).",
+    if b.get("watch"):
+        lines += ["Watch this week (fine on the day, but a pattern is forming):"]
+        lines += [f"- {r['code']} {r['name']}: {r['reason']}" for r in b["watch"]] + [""]
+    lines += ["The details are in the attached Excel workbook and dashboard.",
               "This is an automated email from the APIS Daily Attendance tool. Please do not reply."]
     return "\n".join(lines)
 
@@ -481,7 +705,7 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
 
 
 def dashboard(session: Session, settings: Settings, item: MailItem, people: list[dict], previous_rows: list[dict] | None = None,
-              previous_date: date | None = None, patterns: dict[str, str] | None = None) -> bytes:
+              previous_date: date | None = None, patterns: dict[str, str] | None = None, teams: list[dict] | None = None) -> bytes:
     """The HTML dashboard, limited to this recipient's people: key figures, comparison with the previous report day,
     the exceptions with the action expected from the manager, and the full searchable list."""
     from daily.render import dashboard_html_for
@@ -495,12 +719,14 @@ def dashboard(session: Session, settings: Settings, item: MailItem, people: list
                                        department=r.get("department"), hod=r.get("hod"), team=r.get("team"), manager=r.get("manager"),
                                        source=r.get("source") or "HRMS", permission=r.get("permission") or None) for r in people]
     summary = analysis.summarize(results, rules)
-    breakdown = {"by": "Team", "rows": []}          # no per-team / per-HOD breakdown in emailed dashboards
+    # HOD dashboards have no per-team breakdown; the Director's and HR's company dashboards show one bar per HOD's team
+    breakdown = {"by": "HOD", "rows": [{"name": t["name"], "attendance_pct": t["pct"], "tracked": t["people"]} for t in teams]} if teams \
+        else {"by": "Team", "rows": []}
     return dashboard_html_for(settings.app.company, item.report_date, f"Daily Attendance - {item.recipient_name}", summary,
                               analysis.highlights(summary, {}, rules, None, item.recipient_name),
                               analysis.in_time_buckets(results), breakdown, people, settings.app.date_format,
                               routing_columns=False, recipient=item.recipient_name, previous_rows=previous_rows,
-                              previous_date=previous_date, patterns=patterns)
+                              previous_date=previous_date, patterns=patterns, company_view=bool(teams))
 
 
 # ---------------------------------------------------------------------------- sending

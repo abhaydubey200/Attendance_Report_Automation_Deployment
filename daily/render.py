@@ -263,21 +263,23 @@ def dashboard_view(rows: list[dict], summary: dict, previous_rows: list[dict] | 
                            "details": " · ".join(details) or "–", "action": action_for(r, pattern),
                            "action_icon": action_icon(r, pattern), "order": order.get(key, 9)})
     exceptions.sort(key=lambda x: (x["order"], x["name"]))
+    pending_only = sum(1 for x in exceptions if x["order"] == order["short_leave"])
     return {"total": total, "cards": cards, "segments": segments, "attendance_pct": att_pct, "metrics": metrics,
-            "has_previous": bool(p), "exceptions": exceptions}
+            "has_previous": bool(p), "exceptions": exceptions,
+            "need": len(exceptions) - pending_only, "to_approve": pending_only}   # same split as the email
 
 
 def dashboard_html_for(company: str, report_date: date, title: str, summary: dict, highlights: list[dict], arrivals: list[dict],
                        breakdown_: dict, rows: list[dict], date_format: str, sources: str = "Pocket HRMS",
                        late_after: str | None = None, routing_columns: bool = True, *, recipient: str | None = None,
                        previous_rows: list[dict] | None = None, previous_date: date | None = None,
-                       patterns: dict[str, str] | None = None, subtitle: str | None = None) -> bytes:
+                       patterns: dict[str, str] | None = None, subtitle: str | None = None, company_view: bool = False) -> bytes:
     """The self-contained dashboard for any set of people. routing_columns=False (emailed dashboards) leaves out
     each person's department, HOD, team and reporting manager and greets the recipient by name."""
     keys = ("code", "name", "category", "department", "hod", "team", "manager", "permission", "status", "status_label",
             "in_time", "out_time", "work_hours", "late_minutes", "early_minutes", "leave_type", "flags")
-    if not routing_columns:
-        keys = tuple(k for k in keys if k not in ("department", "hod", "team", "manager"))
+    if not routing_columns:      # emailed: no hierarchy, except the HOD column of the Director's / HR's company view
+        keys = tuple(k for k in keys if k not in ("department", "team", "manager") and (company_view or k != "hod"))
     summary = summary or {}
     view = dashboard_view(rows, summary, previous_rows, patterns)
     emailed = not routing_columns
@@ -293,13 +295,15 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
     data_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     bd = breakdown_ or {"by": "Category", "rows": []}
     return _env.get_template("dashboard.html").render(
-        title=title, data_json=data_json, logo=logo_data_uri(), v=view, emailed=emailed, recipient=recipient,
-        heading="Daily Team Attendance Dashboard" if emailed else "Daily Attendance Dashboard",
-        subtitle=subtitle or ("Your team – attendance, exceptions & actions" if emailed else title),
+        title=title, data_json=data_json, logo=logo_data_uri(), v=view, emailed=emailed, recipient=recipient, company_view=company_view,
+        heading=("Daily Company Attendance Dashboard" if company_view else "Daily Team Attendance Dashboard") if emailed
+        else "Daily Attendance Dashboard",
+        subtitle=subtitle or (("Company – attendance by team, exceptions & actions" if company_view
+                               else "Your team – attendance, exceptions & actions") if emailed else title),
         day=report_date.strftime(date_format), long_day=f"{report_date:%a}, {report_date.day} {report_date:%b %Y}",
         previous_day=previous_date.strftime(date_format) if previous_date else None,
         highlights=[] if emailed else (highlights or []), arrivals=[] if emailed else (arrivals or []),
-        breakdown=bd if len(bd.get("rows") or []) > 1 and not emailed else None,
+        breakdown=bd if len(bd.get("rows") or []) > 1 and (company_view or not emailed) else None,
         avg_in=summary.get("avg_in_time"), avg_hours=hm(summary.get("avg_work_hours")),
         sources=sources, office_opens=t12(late_after) if late_after else None, company=company,
     ).encode("utf-8")

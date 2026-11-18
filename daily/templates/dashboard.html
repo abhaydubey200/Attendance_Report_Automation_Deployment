@@ -47,8 +47,8 @@
   <section class="greet">
     <div>
       {% if recipient %}
-      <h2>Dear {{ recipient }},</h2>
-      <p>Here is your team's attendance summary for {{ day }} and <em>actionable insights</em>. Click any card, chart or row to drill down.</p>
+      <h2>Dear {{ "HR team" if recipient == "HR Attendance" else recipient }},</h2>
+      <p>Here is {{ "the company's" if company_view else "your team's" }} attendance summary for {{ day }} and <em>actionable insights</em>. Click any card, chart or row to drill down.</p>
       {% else %}
       <h2>Attendance on {{ day }}</h2>
       <p>Summary, exceptions and <em>actionable insights</em>{% if avg_in %} · average arrival {{ avg_in }}{% endif %}{% if avg_hours %} · average working time {{ avg_hours }} (h:mm){% endif %}. Click any card, chart or row to drill down.</p>
@@ -128,9 +128,9 @@
       <ul class="hl">{% for h in highlights %}<li class="{{ h.kind }}">{{ h.text }}</li>{% endfor %}</ul></div>
     {% endif %}
     {% if breakdown %}
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("bars", 22) }}</span><h3>Attendance by {{ breakdown.by | lower }}</h3></div>
+    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("bars", 22) }}</span><h3>{{ "Attendance by HOD's team" if breakdown.by == "HOD" else "Attendance by " ~ (breakdown.by | lower) }}</h3></div>
       <div class="bars">
-        {% set fkey = {"Department": "dept", "Team": "team", "Category": "cat"}[breakdown.by] | default("dept") %}
+        {% set fkey = {"Department": "dept", "Team": "team", "Category": "cat", "HOD": "hod"}[breakdown.by] | default("dept") %}
         {% for r in breakdown.rows if r.attendance_pct is not none %}
         {% set col = "#dc2626" if r.attendance_pct < 75 else ("#d97706" if r.attendance_pct < 90 else "#16a34a") %}
         <div class="bar" data-filter="{{ fkey }}:{{ r.name }}" data-label="{{ r.name }}" tabindex="0" title="{{ r.name }}: {{ r.attendance_pct }}% of {{ r.tracked }} - click to filter"><span class="nm">{{ r.name }}</span>
@@ -153,8 +153,8 @@
   <section class="card section" id="exc">
     <div class="card-h" style="flex-wrap:wrap">
       <span style="color:var(--navy)">{{ icon("users", 28) }}</span>
-      <h3>{{ "Team attendance details" if recipient else "Attendance details" }} – Exceptions <span class="muted">(action required)</span></h3>
-      <span class="right need{% if not v.exceptions %} ok{% endif %}" id="need" data-filter="attention" data-label="Needs attention">{% if v.exceptions %}{{ v.exceptions | length }} employee{{ "s" if v.exceptions | length != 1 }} need{{ "s" if v.exceptions | length == 1 }} your attention{% else %}Nobody needs attention{% endif %}</span>
+      <h3>{{ "Company attendance details" if company_view else ("Team attendance details" if recipient else "Attendance details") }} – Exceptions <span class="muted">(action required)</span></h3>
+      <span class="right need{% if not v.exceptions %} ok{% endif %}" id="need" data-filter="attention" data-label="Needs attention">{% if v.need %}{{ v.need }} employee{{ "s" if v.need != 1 }} need{{ "s" if v.need == 1 }} {{ "attention" if company_view else "your attention" }}{% else %}Nobody needs attention{% endif %}{% if v.to_approve %} · {{ v.to_approve }} short-leave request{{ "s" if v.to_approve != 1 }} to approve{% endif %}</span>
     </div>
     {% if v.exceptions %}
     <div class="tablewrap" style="max-height:620px">
@@ -239,6 +239,7 @@ function matchesFilter(r) {
   if (kind === "attention") return !!r.exc;
   if (kind === "dept") return (r.department || "Not in employee master") === val;
   if (kind === "team") return (r.team || "Not in employee master") === val;
+  if (kind === "hod") return (r.hod || "No HOD assigned") === val;
   if (kind === "cat") return r.category === val;
   return true;
 }
@@ -274,7 +275,7 @@ function apply() {
 }
 
 // ---------------- full list
-const routingCols = {% if emailed %}[]{% else %}[["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]]{% endif %};
+const routingCols = {% if emailed and company_view %}[["hod","HOD"]]{% elif emailed %}[]{% else %}[["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]]{% endif %};
 const cols = [["code","Code"],["name","Name"], ...(ROWS.some((r) => r.department || r.hod) ? routingCols : []),
   ["status_label","Status"],["in_time","In"],["out_time","Out"],["work_hours","Hours (h:mm)"],["late_minutes","Late by (h:mm)"],
   ["early_minutes","Short by (h:mm)"],["leave_type","Leave"],["permission","Permission"]];

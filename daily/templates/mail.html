@@ -17,6 +17,7 @@
 </style>
 </head>
 <body style="margin:0;padding:0;background:#f5f6fa;font-family:Segoe UI,Arial,sans-serif;color:#1e2433;-webkit-text-size-adjust:100%;">
+{% set kind = b.kind %}
 {% macro arrow(d, good_when_down=True, unit="") -%}
   {%- if d is not none and d != 0 -%}
     {%- set up = d > 0 -%}
@@ -24,6 +25,7 @@
     <span style="font-size:11px;font-weight:bold;color:{{ '#15803d' if good else '#b91c1c' }};">{{ '▲' if up else '▼' }} {{ d|abs }}{{ unit }}</span>
   {%- elif d == 0 -%}<span style="font-size:11px;color:#6b7280;">same as before</span>{%- endif -%}
 {%- endmacro %}
+{% macro pct_color(p) -%}{{ "#15803d" if p is not none and p >= 90 else ("#b45309" if p is not none and p >= 75 else "#b91c1c") }}{%- endmacro %}
 {% macro tile(label, value, color, bg, d=none, good_when_down=True, unit="") -%}
   <td class="tile" width="25%" valign="top" style="background:{{ bg }};border:1px solid {{ color }}40;border-radius:10px;padding:10px 12px;">
     <div style="font-size:12px;font-weight:bold;color:#14213d;">{{ label }}</div>
@@ -33,7 +35,7 @@
 {%- endmacro %}
 {% macro tiles(c, ch) -%}
 {% set p = c.attendance_pct %}
-{% set pc = "#15803d" if p is not none and p >= 90 else ("#b45309" if p is not none and p >= 75 else "#b91c1c") %}
+{% set pc = pct_color(p) %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;">
   <tr>
     {{ tile("Attendance", "–" if p is none else p ~ "%", pc, "#f0faf3" if pc == "#15803d" else ("#fff8eb" if pc == "#b45309" else "#fef3f2"), ch.attendance_pct, False, " pts") }}
@@ -49,7 +51,33 @@
   {%- if c.no_record %}<br><span style="color:#6b7280;">{{ c.no_record }} not in the attendance file of {{ day }}.</span>{% endif %}
 </div>
 {%- endmacro %}
-{% macro people_table(rows, more, with_action=True) -%}
+{% macro trend_bars(t, avg) -%}
+{# last 7 uploaded days: simple bars that also work in Outlook (fixed-height cells) #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f8f9fc;border:1px solid #e6e8ef;border-radius:10px;">
+  <tr><td colspan="{{ t|length }}" style="padding:8px 12px 2px;font-size:12.5px;font-weight:bold;color:#14213d;">Last {{ t|length }} report days
+    {%- if avg is not none %} <span style="font-weight:normal;color:#5d6577;">· average before {{ day }}: {{ avg }}%</span>{% endif %}</td></tr>
+  <tr>
+    {% for x in t %}
+    {% set h = ((x.pct or 0) * 0.5) | round(0, "floor") | int %}
+    <td align="center" valign="bottom" style="padding:6px 4px 0;height:62px;">
+      {% if x.pct is not none %}
+      <div style="font-size:10.5px;font-weight:bold;color:{{ pct_color(x.pct) }};">{{ x.pct | round(0) | int }}%</div>
+      <div style="width:26px;height:{{ [h, 2] | max }}px;line-height:{{ [h, 2] | max }}px;font-size:0;background:{{ pct_color(x.pct) }};border-radius:4px 4px 0 0;{{ 'outline:2px solid #f5b800;' if loop.last else '' }}">&nbsp;</div>
+      {% else %}<div style="font-size:10px;color:#9ca3af;">off</div>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  <tr>
+    {% for x in t %}<td align="center" style="padding:3px 2px 8px;font-size:10.5px;color:{{ '#14213d' if loop.last else '#6b7280' }};{{ 'font-weight:bold;' if loop.last else '' }}">{{ x.label }}<br>{{ x.day }}</td>{% endfor %}
+  </tr>
+</table>
+{%- endmacro %}
+{% macro when(r) -%}
+  {%- if r.status == "MISSING_PUNCH" and r.in_time and not r.out_time -%}In {{ r.in_time|t12 }} · no out-punch
+  {%- elif r.status == "MISSING_PUNCH" and r.out_time and not r.in_time -%}Out {{ r.out_time|t12 }} · no in-punch
+  {%- elif r.in_time or r.out_time -%}{{ (r.in_time|t12) or "—" }} – {{ (r.out_time|t12) or "—" }}{%- endif -%}
+{%- endmacro %}
+{% macro people_table(rows, more, with_action=True, color=none) -%}
 <table role="presentation" width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e6e8ef;">
   <tr style="background:#14213d;color:#ffffff;">
     <th align="left">Employee</th><th align="left">{{ day }}</th><th align="left" class="hide-sm" style="white-space:nowrap;">In – Out</th>
@@ -59,14 +87,17 @@
   {% set red = r.status == "ABSENT" %}
   <tr style="border-bottom:1px solid #e6e8ef;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
     <td valign="top"><b style="color:#14213d;">{{ r.name }}</b><br><span style="font-size:11.5px;color:#5d6577;">{{ r.code }}</span></td>
-    <td valign="top"><span style="color:{{ '#b91c1c' if red else ('#7c3aed' if r.status == 'MISSING_PUNCH' else '#b45309') }};font-weight:bold;">{{ r.reason }}</span>
+    <td valign="top"><span style="color:{{ color or ('#b91c1c' if red else ('#7c3aed' if r.status == 'MISSING_PUNCH' else '#b45309')) }};font-weight:bold;">{{ r.reason }}</span>
       {% if r.pattern %}<br><span style="font-size:12px;color:#b91c1c;">⚠ {{ r.pattern }}</span>{% endif %}</td>
-    <td valign="top" class="hide-sm" style="white-space:nowrap;">{% if r.in_time or r.out_time %}{{ (r.in_time|t12) or "—" }} – {{ (r.out_time|t12) or "—" }}{% endif %}</td>
+    <td valign="top" class="hide-sm" style="white-space:nowrap;font-size:12.5px;">{{ when(r) }}</td>
     {% if with_action %}<td valign="top" style="font-size:12.5px;">{% if r.action %}<span style="display:inline-block;background:#fff8e1;border:1px solid #f5e3a6;border-radius:6px;padding:3px 8px;">{{ r.action }}</span>{% endif %}</td>{% endif %}
   </tr>
   {% endfor %}
 </table>
 {% if more %}<div style="font-size:12px;color:#5d6577;padding-top:5px;">… and {{ more }} more in the attachment.</div>{% endif %}
+{%- endmacro %}
+{% macro section(title, color="#14213d") -%}
+  <tr><td class="pad" style="padding:16px 24px 4px;font-size:16px;font-weight:800;color:{{ color }};">{{ title }}</td></tr>
 {%- endmacro %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6fa;"><tr><td align="center" style="padding:16px 6px;">
 <table role="presentation" class="wrap" width="680" cellpadding="0" cellspacing="0" style="width:680px;max-width:100%;background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;">
@@ -76,49 +107,122 @@
   <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
     <td height="4" style="height:4px;line-height:4px;font-size:0;background:#f5b800;border-radius:2px;">&nbsp;</td></tr></table></td></tr>
   <tr><td align="center" class="pad" style="padding:16px 24px 2px;">
-    <div style="font-size:22px;font-weight:800;color:#14213d;">{{ "Daily Attendance Exceptions" if b.exceptions and not b.team else "Daily Team Attendance" }}</div>
+    <div style="font-size:22px;font-weight:800;color:#14213d;">{{ {"hr": "Daily HR Action List", "director": "Daily Company Attendance"}.get(kind, "Daily Team Attendance") }}</div>
     <div style="display:inline-block;margin-top:8px;padding:5px 16px;border-radius:999px;background:#fff7dc;border:1px solid #f1cf6b;font-weight:bold;color:#14213d;font-size:14px;">{{ day }}</div>
   </td></tr>
   <tr><td class="pad" style="padding:16px 24px 4px;">
     <p style="font-size:15px;margin:0;font-weight:bold;color:#14213d;">{{ greeting }},</p>
   </td></tr>
 
-  {% if b.team_headline or b.summary_headline %}
-  {% set calm = not ((b.team and b.team.attention) or (b.summary and b.summary.attention) or (b.company and b.company.attention)) %}
+  {# ------------------------------------------------------------------ headline #}
+  {% if kind == "hr" %}
+  <tr><td class="pad" style="padding:8px 24px 4px;">
+    <div style="background:{{ '#fef3f2' if b.hr_total else '#f0faf3' }};border-left:4px solid {{ '#b91c1c' if b.hr_total else '#15803d' }};border-radius:6px;padding:10px 14px;font-size:15px;line-height:1.5;">
+      {% if b.hr_total %}{{ b.hr_total }} item{{ "s" if b.hr_total != 1 }} need{{ "s" if b.hr_total == 1 }} HR action for {{ day }}:
+        {{ b.hr_summary }}.
+      {% else %}Nothing needs HR action for {{ day }}.{% endif %}
+    </div>
+  </td></tr>
+  {% else %}
+  {% set lines = [b.company_headline, b.team_headline, b.summary_headline] | select | list %}
+  {% if lines %}
+  {% set calm = not ((b.team and b.team.attention and kind == "hod") or (b.summary and b.summary.attention) or (b.company and b.company.attention)) %}
   <tr><td class="pad" style="padding:8px 24px 4px;">
     <div style="background:{{ '#f0faf3' if calm else '#fff8eb' }};border-left:4px solid {{ '#15803d' if calm else '#d97706' }};border-radius:6px;padding:10px 14px;font-size:15px;line-height:1.5;color:#1e2433;">
-      {% if b.team_headline %}<div>{{ b.team_headline }}</div>{% endif %}
-      {% if b.summary_headline %}<div style="{{ 'margin-top:4px;' if b.team_headline else '' }}">{{ b.summary_headline }}</div>{% endif %}
+      {% for l in lines %}<div style="{{ 'margin-top:4px;' if not loop.first else '' }}">{{ l }}</div>{% endfor %}
+      {% if b.pending %}<div style="margin-top:4px;">Also: {{ b.pending|length }} short-leave request{{ "s are" if b.pending|length != 1 else " is" }} waiting for your approval.</div>{% endif %}
     </div>
     {% if b.previous_day %}<div style="font-size:11.5px;color:#6b7280;padding-top:4px;">▲▼ compared with {{ b.previous_day }}.</div>{% endif %}
   </td></tr>
-  {% elif b.exceptions %}
-  <tr><td class="pad" style="padding:8px 24px 4px;">
-    <div style="background:#fef3f2;border-left:4px solid #b91c1c;border-radius:6px;padding:10px 14px;font-size:15px;">{{ b.exceptions|length + b.exceptions_more }} record(s) on {{ day }} could not be routed to a manager and need HR action.</div>
+  {% endif %}
+  {% endif %}
+
+  {# ------------------------------------------------------------------ Director: the company first #}
+  {% if kind == "director" and b.company %}
+  {{ section("Company – " ~ day) }}
+  <tr><td class="pad" style="padding:0 18px;">{{ tiles(b.company, b.company_change) }}</td></tr>
+  {% if b.trend %}<tr><td class="pad" style="padding:0 24px 6px;">{{ trend_bars(b.trend, b.week_avg) }}</td></tr>{% endif %}
+  {% if b.concerns %}
+  {{ section("Top concerns") }}
+  <tr><td class="pad" style="padding:0 24px 6px;">
+    {% for c in b.concerns %}
+    {% set col = {"bad": "#b91c1c", "warn": "#d97706", "good": "#15803d"}.get(c.kind, "#3b6fb6") %}
+    <div style="border-left:4px solid {{ col }};background:{{ {'bad': '#fef3f2', 'warn': '#fff8eb', 'good': '#f0faf3'}.get(c.kind, '#eef4fd') }};border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:13.5px;line-height:1.5;">{{ c.text }}</div>
+    {% endfor %}
+  </td></tr>
+  {% endif %}
+  {% endif %}
+
+  {% if b.teams and kind == "director" %}
+  {{ section("Teams at a glance") }}
+  <tr><td class="pad" style="padding:0 24px 8px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#14213d;color:#ffffff;"><th align="left">HOD's team</th><th align="right">People</th><th align="right">Attendance</th>
+        <th align="right">Absent</th><th align="right" class="hide-sm">Late</th><th align="right" class="hide-sm">Missing punch</th></tr>
+      {% for t in b.teams %}
+      <tr style="border-bottom:1px solid #e6e8ef;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td><b style="color:#14213d;">{{ t.name }}</b></td><td align="right">{{ t.people }}</td>
+        <td align="right" style="white-space:nowrap;"><b style="color:{{ pct_color(t.pct) }};">{{ "–" if t.pct is none else t.pct ~ "%" }}</b>
+          {% if t.change %}<br>{{ arrow(t.change, False, " pts") }}{% endif %}</td>
+        <td align="right" style="color:{{ '#b91c1c' if t.absent else '#1e2433' }};">{{ t.absent }}</td>
+        <td align="right" class="hide-sm">{{ t.late }}</td><td align="right" class="hide-sm">{{ t.missing_punch }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div style="font-size:11.5px;color:#6b7280;padding-top:4px;">Weakest attendance first. Green 90%+ · amber 75–90% · red below 75%.</div>
   </td></tr>
   {% endif %}
 
+  {# ------------------------------------------------------------------ HR action list #}
+  {% if kind == "hr" %}
   {% if b.company %}
-  <tr><td class="pad" style="padding:14px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Company &ndash; {{ day }}</td></tr>
-  <tr><td class="pad" style="padding:0 18px;">{{ tiles(b.company, b.company_change) }}</td></tr>
+  <tr><td class="pad" style="padding:4px 24px 2px;font-size:12.5px;color:#5d6577;">Company on {{ day }}: <b style="color:{{ pct_color(b.company.attendance_pct) }};">{{ b.company.attendance_pct }}%</b> attendance · {{ b.company.absent }} absent · {{ b.company.late }} late · {{ b.company.missing_punch }} missing punch.</td></tr>
+  {% endif %}
+  {% for g in b.hr_groups %}
+  {{ section(loop.index ~ ". " ~ g.title ~ " (" ~ g.rows|length ~ ")", "#b91c1c" if g.key in ("not_in_master", "routing", "streaks") else "#14213d") }}
+  <tr><td class="pad" style="padding:0 24px 10px;">
+    <div style="font-size:12.5px;color:#5d6577;padding-bottom:4px;">{{ g.why }}</div>
+    <div style="display:inline-block;background:#fff8e1;border:1px solid #f5e3a6;border-radius:6px;padding:4px 10px;font-size:12.5px;margin-bottom:6px;"><b>Action:</b> {{ g.action }}</div>
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#14213d;color:#ffffff;"><th align="left">Employee</th><th align="left" class="hide-sm">HOD</th><th align="left">Details</th></tr>
+      {% for r in g.rows[:40] %}
+      <tr style="border-bottom:1px solid #e6e8ef;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td><b style="color:#14213d;">{{ r.name }}</b><br><span style="font-size:11.5px;color:#5d6577;">{{ r.code }}</span></td>
+        <td class="hide-sm">{{ r.hod or "—" }}</td><td>{{ r.detail }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if g.rows|length > 40 %}<div style="font-size:12px;color:#5d6577;padding-top:5px;">… and {{ g.rows|length - 40 }} more in the attachment.</div>{% endif %}
+  </td></tr>
+  {% endfor %}
   {% endif %}
 
-  {% if b.team %}
-  <tr><td class="pad" style="padding:14px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">{{ "Director Office staff" if b.company else "Your team" }}</td></tr>
+  {# ------------------------------------------------------------------ HOD: team #}
+  {% if b.team and kind != "hr" %}
+  {{ section("Director Office staff" if kind == "director" else "Your team") }}
   <tr><td class="pad" style="padding:0 18px;">{{ tiles(b.team, b.team_change) }}</td></tr>
+  {% if b.trend and kind == "hod" %}<tr><td class="pad" style="padding:0 24px 6px;">{{ trend_bars(b.trend, b.week_avg) }}</td></tr>{% endif %}
   <tr><td class="pad" style="padding:0 24px 12px;">
     {% if b.team_attention %}
     <div style="font-size:14px;font-weight:800;color:#b91c1c;padding:6px 0;">Needs your attention ({{ b.team_attention|length + b.team_attention_more }})</div>
     {{ people_table(b.team_attention, b.team_attention_more) }}
     {% else %}
-    <div style="font-size:13.5px;color:#15803d;font-weight:bold;padding:4px 0;">Nobody in your team needs attention on {{ day }}.</div>
+    <div style="font-size:13.5px;color:#15803d;font-weight:bold;padding:4px 0;">Nobody {{ "in the Director Office" if kind == "director" else "in your team" }} needs attention on {{ day }}.</div>
     {% endif %}
   </td></tr>
   {% endif %}
 
+  {% if b.pending %}
+  <tr><td class="pad" style="padding:0 24px 12px;">
+    <div style="font-size:14px;font-weight:800;color:#0369a1;padding:6px 0;">Short-leave requests to approve ({{ b.pending|length }})</div>
+    {{ people_table(b.pending, 0, True, "#0369a1") }}
+  </td></tr>
+  {% endif %}
+
   {% if b.summary %}
-  <tr><td class="pad" style="padding:14px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Your wider team &ndash; everyone under you</td></tr>
+  {{ section("Your wider team – everyone under you") }}
   <tr><td class="pad" style="padding:0 18px;">{{ tiles(b.summary, b.summary_change) }}</td></tr>
+  {% if b.trend and not b.team %}<tr><td class="pad" style="padding:0 24px 6px;">{{ trend_bars(b.trend, b.week_avg) }}</td></tr>{% endif %}
   {% if b.dept_patterns %}
   <tr><td class="pad" style="padding:4px 24px 12px;">
     <div style="font-size:14px;font-weight:800;color:#b91c1c;padding:6px 0;">Recurring patterns in your wider team</div>
@@ -127,26 +231,29 @@
   {% endif %}
   {% endif %}
 
-  {% if b.exceptions %}
-  <tr><td class="pad" style="padding:10px 24px 12px;">
+  {% if b.watch %}
+  <tr><td class="pad" style="padding:0 24px 12px;">
+    <div style="font-size:14px;font-weight:800;color:#b45309;padding:6px 0 2px;">Watch this week ({{ b.watch|length }})</div>
+    <div style="font-size:12.5px;color:#5d6577;padding-bottom:6px;">Fine on {{ day }}, but a pattern is forming over the last report days.</div>
     <table role="presentation" width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e6e8ef;">
-      <tr style="background:#14213d;color:#ffffff;"><th align="left">Code</th><th align="left">Name</th><th align="left">Issue</th><th align="left" class="hide-sm">{{ day }}</th></tr>
-      {% for x in b.exceptions %}
-      <tr style="border-bottom:1px solid #e6e8ef;"><td>{{ x.code }}</td><td>{{ x.name }}</td><td>{{ x.issue }}</td><td class="hide-sm">{{ x.status_label }}</td></tr>
+      {% for r in b.watch %}
+      <tr style="border-bottom:1px solid #e6e8ef;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td><b style="color:#14213d;">{{ r.name }}</b> <span style="font-size:11.5px;color:#5d6577;">{{ r.code }}</span></td>
+        <td style="color:#b45309;">{{ r.reason }}</td>
+      </tr>
       {% endfor %}
     </table>
-    {% if b.exceptions_more %}<div style="font-size:12px;color:#5d6577;padding-top:5px;">… and {{ b.exceptions_more }} more in the attachment.</div>{% endif %}
-    <div style="font-size:12.5px;color:#5d6577;padding-top:6px;">Fix these on the Employees screen (or in the routing workbook) so the next emails reach the right manager.</div>
   </td></tr>
   {% endif %}
 
-  {% if attach_name or (dashboard_name and not b.exceptions) %}
+  {# ------------------------------------------------------------------ attachments #}
+  {% if attach_name or dashboard_name %}
   <tr><td class="pad" style="padding:6px 24px 12px;">
     <table role="presentation" width="100%" cellpadding="10" cellspacing="0" style="border-collapse:collapse;background:#f6f7fb;border-radius:10px;font-size:13px;color:#33405c;">
       <tr><td>
         <div style="font-weight:bold;color:#14213d;padding-bottom:4px;">Attached</div>
-        {% if dashboard_name and not b.exceptions %}<div style="padding-bottom:4px;">📊 <b>{{ dashboard_name }}</b> – interactive dashboard: click any number or person. <i>Download it and open it in Chrome or Edge</i> (email previews cannot run it).</div>{% endif %}
-        {% if attach_name %}<div>📗 <b>{{ attach_name }}</b> – the full list{% if not b.exceptions %}, people needing attention first{% endif %}.</div>{% endif %}
+        {% if dashboard_name %}<div style="padding-bottom:4px;">📊 <b>{{ dashboard_name }}</b> – interactive dashboard{% if kind != "hod" %} of the whole company, by HOD's team{% endif %}: click any number or person. <i>Download it and open it in Chrome or Edge</i> (email previews cannot run it).</div>{% endif %}
+        {% if attach_name %}<div>📗 <b>{{ attach_name }}</b> – {% if kind == "hr" %}one sheet per action, plus the company list and the last 7 days{% elif kind == "director" %}summary, teams, people needing attention, the company list and the last 7 days{% else %}summary, people needing attention, your full list and the last 7 days{% endif %}.</div>{% endif %}
       </td></tr>
     </table>
   </td></tr>
@@ -154,7 +261,7 @@
   {% if app_url %}<tr><td class="pad" style="padding:0 24px 10px;font-size:13px;color:#5d6577;">Attendance app: <a href="{{ app_url }}" style="color:#14213d;">{{ app_url }}</a></td></tr>{% endif %}
   <tr><td class="pad" style="padding:12px 24px;border-top:1px solid #e6e8ef;font-size:11.5px;color:#6b7280;line-height:1.6;">
     Automated email from the APIS Daily Attendance tool (source: Pocket HRMS). Meant only for {{ greeting[5:] if greeting.startswith("Dear ") else "you" }} &ndash; please do not forward.
-    {% if hr_contact %}Questions or corrections: <a href="mailto:{{ hr_contact }}" style="color:#14213d;">{{ hr_contact }}</a>.{% else %}Please do not reply to this email.{% endif %}
+    {% if hr_contact and kind != "hr" %}Questions or corrections: <a href="mailto:{{ hr_contact }}" style="color:#14213d;">{{ hr_contact }}</a>.{% else %}Please do not reply to this email.{% endif %}
   </td></tr>
 </table>
 </td></tr></table>

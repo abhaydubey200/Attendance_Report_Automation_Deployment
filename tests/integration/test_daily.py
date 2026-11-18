@@ -164,7 +164,7 @@ def test_upload_replace_recalculate_and_send(engine, settings):
     assert len(outbox) == 2
     msgs = [email.message_from_bytes(p.read_bytes(), policy=email.policy.default) for p in outbox]
     msg = next(m for m in msgs if m["To"] == "hr@example.com")
-    assert "NOT_IN_EMPLOYEE_MASTER" in msg.get_body(("html",)).get_content()
+    assert "Not in the employee master" in msg.get_body(("html",)).get_content()
 
     with session_scope(engine) as s, pytest.raises(service.AlreadyUploaded):
         service.process_upload(s, settings, "summary.xlsx", data, "tester")

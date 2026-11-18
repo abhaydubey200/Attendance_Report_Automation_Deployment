@@ -50,7 +50,7 @@ body { margin: 0; background: var(--bg); }
 h1, h2, h3, h4 { color: var(--navy); font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
 h2 { font-size: 1.05rem; margin: 1.8rem 0 .7rem; display: flex; align-items: center; gap: .5rem; }
 a { color: var(--navy-700); }
-code { background: var(--surface-2); color: var(--navy); border: 1px solid var(--line); padding: .05rem .35rem; border-radius: 5px; font: .85em var(--mono); }
+code { background: var(--surface-2); color: var(--navy); border: 1px solid var(--line); padding: .05rem .35rem; border-radius: 5px; font: .85em var(--mono); overflow-wrap: anywhere; }   /* long folder paths wrap on a phone */
 .muted { color: var(--muted); }
 .small { font-size: .86rem; }
 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: 6px; }

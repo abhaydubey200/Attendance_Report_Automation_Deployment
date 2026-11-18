@@ -3,6 +3,7 @@ import { formatDate, formatDateTime, formatHours, formatTime } from "./format";
 test("formats calendar dates without timezone drift", () => {
   expect(formatDate("2026-11-13")).toBe("13-Nov-2026");
   expect(formatDate("2026-01-01")).toBe("01-Jan-2026");
+  expect(formatDate("2026-09-30")).toBe("30-Sep-2026");          // never "Sept" (the browser's own short name)
   expect(formatDate(null)).toBe("—");
 });
 

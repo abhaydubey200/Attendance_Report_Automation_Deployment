@@ -87,7 +87,9 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
   const managers = useMemo(() => [...new Set(list.employees.map((e) => e.reporting_manager).filter(Boolean))].sort(), [list]);
   const set = (patch: Partial<Draft>) => setD({ ...d, ...patch });
   const top = useRef<HTMLDivElement>(null);
-  useEffect(() => top.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), []);
+  // Braces matter: newer Chromium returns a Promise from smooth scrollIntoView, and an effect must return
+  // nothing or a cleanup function - returning the Promise blanked the app on leaving the page.
+  useEffect(() => { top.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, []);
 
   function pickHod(text: string) {
     setHodText(text);

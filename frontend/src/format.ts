@@ -1,10 +1,14 @@
 // All display dates are IST (Asia/Kolkata), e.g. 13-Nov-2026.
 
-const DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+// Numeric parts only: the browser's short month name varies ("Sep" vs "Sept"), so the names are fixed here and match
+// the emails and Excel files exactly.
+const DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "numeric", year: "numeric" });
 const TIME = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function dashed(d: Date): string {
-  return DATE.format(d).replace(/ /g, "-");
+  const p = Object.fromEntries(DATE.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.day}-${MONTHS[Number(p.month) - 1]}-${p.year}`;
 }
 
 /** "2026-11-13" -> "13-Nov-2026" (date-only values are calendar dates, not instants). */

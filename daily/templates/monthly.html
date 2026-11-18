@@ -15,7 +15,15 @@
 </style>
 </head>
 {% set t = b.totals %}
-{% macro delta(now, before, good_when_down=True, unit="", pct=False) -%}
+{% set view = b.view %}
+{% macro pct(v) -%}{{ "–" if v is none else "%g" | format(v) ~ "%" }}{%- endmacro %}
+{% macro pcol(v) -%}{{ "#94a3b8" if v is none else ("#15803d" if v >= 90 else ("#b45309" if v >= 75 else "#b91c1c")) }}{%- endmacro %}
+{% macro change(d) -%}
+  {%- if d is none -%}<span style="color:#94a3b8;">–</span>
+  {%- elif d == 0 -%}<span style="color:#6b7280;">=</span>
+  {%- else -%}<span style="font-weight:bold;color:{{ '#15803d' if d > 0 else '#b91c1c' }};">{{ '▲' if d > 0 else '▼' }} {{ "%g" | format(d | abs) }}</span>{%- endif -%}
+{%- endmacro %}
+{% macro delta(now, before, good_when_down=True, unit="") -%}
   {%- if before is none or now is none -%}<span style="font-size:11px;color:#94a3b8;">&nbsp;</span>
   {%- else -%}{%- set d = ((now - before) * 10) | round | int / 10 -%}
     {%- if d == 0 -%}<span style="font-size:11px;color:#6b7280;">no change vs. {{ prev_month }}</span>
@@ -31,6 +39,10 @@
     <div style="min-height:15px;">{{ delta(now, before, good_when_down, unit) }}</div>
   </td>
 {%- endmacro %}
+{% macro heading(text, note=none) -%}
+  <tr><td class="pad" style="padding:16px 24px 2px;"><div style="font-size:16px;font-weight:800;color:#14213d;">{{ text }}</div>
+    {% if note %}<div style="font-size:12px;color:#5d6577;padding-top:2px;">{{ note }}</div>{% endif %}</td></tr>
+{%- endmacro %}
 <body style="margin:0;padding:0;background:#f5f6fa;font-family:Segoe UI,Arial,sans-serif;color:#1e2433;-webkit-text-size-adjust:100%;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6fa;"><tr><td align="center" style="padding:18px 8px;">
 <table role="presentation" class="wrap" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;">
@@ -40,23 +52,33 @@
   <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
     <td height="4" style="height:4px;line-height:4px;font-size:0;background:#f5b800;border-radius:2px;">&nbsp;</td></tr></table></td></tr>
   <tr><td align="center" class="pad" style="padding:16px 24px 4px;">
-    <div style="font-size:23px;font-weight:800;color:#14213d;">{{ "Monthly Company Attendance Report" if b.is_director else "Monthly Team Attendance Report" }}</div>
+    <div style="font-size:23px;font-weight:800;color:#14213d;">{{ title }}</div>
     <div style="display:inline-block;margin-top:8px;padding:6px 16px;border-radius:999px;background:#fff7dc;border:1px solid #f1cf6b;font-weight:bold;color:#14213d;font-size:14px;">{{ month_long }}</div>
   </td></tr>
+
+  {# ---------------------------------------------------------------- greeting #}
   <tr><td class="pad" style="padding:16px 24px 4px;">
     <p style="font-size:15px;margin:0 0 4px;font-weight:bold;color:#14213d;">{{ greeting }},</p>
     <p style="font-size:14px;margin:0;color:#33405c;line-height:1.55;">
-      Here is {{ "the company's" if b.is_director else "your team's" }} attendance for <b>{{ month_long }}</b>:
-      {{ t.work_days }} working day{{ "s" if t.work_days != 1 }}{% if t.work_days != t.working_days %} ({{ t.working_days }} days uploaded){% endif %}, {{ t.employees }} employee{{ "s" if t.employees != 1 }}.
-      {% if attention_total %}<b style="color:#b42318;">{{ attention_total }} employee{{ "s" if attention_total != 1 }} need{{ "s" if attention_total == 1 }} your attention</b> for a recurring pattern (below).
-      {% else %}<b style="color:#15803d;">No recurring absence, late-arrival or missing-punch patterns.</b>{% endif %}
+      {% if view == "hr" %}
+        Here is the month-end payroll checklist for <b>{{ month_long }}</b> ({{ t.employees }} employees, {{ t.work_days }} working days).
+        {% set open = b.checklist | selectattr("rows") | list %}
+        {% if open %}<b style="color:#b42318;">{{ open | length }} thing{{ "s" if open | length != 1 }} to settle before payroll</b>, most urgent first.
+        {% else %}<b style="color:#15803d;">Nothing to settle before payroll.</b>{% endif %}
+      {% else %}
+        Here is {{ who }}'s attendance for <b>{{ month_long }}</b>:
+        {{ t.work_days }} working day{{ "s" if t.work_days != 1 }}{% if t.work_days != t.working_days %} ({{ t.working_days }} days uploaded){% endif %}, {{ t.employees }} employee{{ "s" if t.employees != 1 }}.
+        {% if attention_total %}<b style="color:#b42318;">{{ attention_total }} employee{{ "s" if attention_total != 1 }} need{{ "s" if attention_total == 1 }} {{ "attention" if view == "director" else "your attention" }}</b> for a recurring pattern.
+        {% else %}<b style="color:#15803d;">No recurring absence, late-arrival or missing-punch patterns.</b>{% endif %}
+      {% endif %}
     </p>
   </td></tr>
 
+  {# ---------------------------------------------------------------- KPI tiles #}
   <tr><td class="pad" style="padding:12px 18px 0;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;">
       <tr>
-        {{ tile("Average attendance", ("–" if t.attendance_pct is none else "%g" | format(t.attendance_pct) ~ "%"), "#15803d", "#f0faf3", t.attendance_pct, prev.attendance_pct if prev else none, False, " pts") }}
+        {{ tile("Average attendance", pct(t.attendance_pct), "#15803d", "#f0faf3", t.attendance_pct, prev.attendance_pct if prev else none, False, " pts") }}
         {{ tile("Absence days", t.absent, "#dc2626", "#fef3f2", t.absent, prev.absent if prev else none) }}
         {{ tile("Late arrivals", t.late, "#d97706", "#fff8eb", t.late, prev.late if prev else none) }}
         {{ tile("Missing punches", t.missing_punch, "#7c3aed", "#f6f2ff", t.missing_punch, prev.missing_punch if prev else none) }}
@@ -64,15 +86,51 @@
     </table>
     <div style="font-size:12.5px;color:#5d6577;padding:2px 8px 6px;line-height:1.7;">
       {{ t.leave + t.half_day }} leave day{{ "s" if (t.leave + t.half_day) != 1 }} · {{ t.wfh }} work-from-home · {{ t.od }} on duty · {{ t.left_early }} left early
-      {%- if t.avg_in_time %} · average arrival {{ t.avg_in_time }}{% endif %}{% if avg_hours %} · average duty {{ avg_hours }} (h:mm){% endif %}
+      {%- if t.avg_in_time %} · average arrival {{ t.avg_in_time | t12 }}{% endif %}{% if avg_hours %} · average duty {{ avg_hours }} (h:mm){% endif %}
     </div>
   </td></tr>
 
-  {% if ins and ins.takeaways %}
-  <tr><td class="pad" style="padding:12px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Key takeaways</td></tr>
+  {# ---------------------------------------------------------------- HR: payroll checklist #}
+  {% if view == "hr" %}
+  {% set ns = namespace(n=0) %}
+  {% for g in b.checklist if g.rows %}{% set ns.n = ns.n + 1 %}
+  <tr><td class="pad" style="padding:14px 24px 2px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="30" valign="top"><div style="width:24px;height:24px;border-radius:12px;background:{{ g.color }};color:#ffffff;font-weight:800;font-size:13px;text-align:center;line-height:24px;">{{ ns.n }}</div></td>
+      <td valign="top"><div style="font-size:15px;font-weight:800;color:#14213d;">{{ g.title }} <span style="font-weight:normal;color:#5d6577;font-size:13px;">· {{ g.rows | length }} {{ "person" if g.rows | length == 1 else "people" }}{% if g.total != g.rows | length %}, {{ g.total }} in all{% endif %}</span></div>
+        <div style="font-size:12.5px;color:#5d6577;">{{ g.how }}</div></td></tr></table>
+  </td></tr>
+  <tr><td class="pad" style="padding:4px 24px 4px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e6e8ef;border-left:4px solid {{ g.color }};">
+      {% for r in g.rows[:8] %}
+      <tr style="border-bottom:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td><b style="color:#14213d;">{{ r.name }}</b> <span style="font-size:11.5px;color:#5d6577;">{{ r.code }}</span></td>
+        <td class="hide-sm" style="font-size:12px;color:#5d6577;">{{ r.team }}</td>
+        <td align="right" style="font-weight:bold;color:{{ g.color }};white-space:nowrap;">{{ r.detail }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if g.rows | length > 8 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">… and {{ g.rows | length - 8 }} more in the Payroll sheet of the Excel attachment.</div>{% endif %}
+  </td></tr>
+  {% endfor %}
+  {% endif %}
+
+  {# ---------------------------------------------------------------- Director: concerns #}
+  {% if view == "director" and b.concerns %}
+  {{ heading("Needs your attention") }}
+  <tr><td class="pad" style="padding:4px 24px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px;">
+      {% for x in b.concerns %}<tr><td style="background:#fef3f2;border-left:4px solid #b91c1c;border-radius:6px;padding:8px 12px;font-size:13.5px;line-height:1.5;">{{ x }}</td></tr>{% endfor %}
+    </table>
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- key takeaways #}
+  {% if view != "hr" and ins and ins.takeaways %}
+  {{ heading("Key takeaways") }}
   <tr><td class="pad" style="padding:4px 24px 6px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px;">
-      {% for x in ins.takeaways[:7] %}
+      {% for x in ins.takeaways[:(5 if view == "hod" else 4)] %}
       {% set col = {"good": "#15803d", "warn": "#b45309", "bad": "#b91c1c", "info": "#0369a1"}[x.kind] %}
       {% set bg = {"good": "#f0faf3", "warn": "#fff8eb", "bad": "#fef3f2", "info": "#eff8ff"}[x.kind] %}
       <tr><td style="background:{{ bg }};border-left:4px solid {{ col }};border-radius:6px;padding:8px 12px;font-size:13.5px;color:#1e2433;line-height:1.5;">
@@ -82,9 +140,33 @@
   </td></tr>
   {% endif %}
 
-  {% if t.trend %}
-  {% set pcts = t.trend | selectattr("attendance_pct") | list %}
-  <tr><td class="pad" style="padding:10px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Daily attendance</td></tr>
+  {# ---------------------------------------------------------------- Director / HR: teams #}
+  {% if b.groups and view in ("director", "hr") %}
+  {{ heading("Teams at a glance", "By HOD's team, best attendance first." ~ (" Change is in points vs. " ~ prev_month ~ "." if prev else "")) }}
+  <tr><td class="pad" style="padding:4px 24px 8px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#14213d;color:#ffffff;"><th align="left">#</th><th align="left">HOD's team</th><th align="center" class="hide-sm">People</th><th align="left">Attendance</th>{% if prev %}<th align="center">Change</th>{% endif %}<th align="center">Absent</th><th align="center" class="hide-sm">Missing punch</th></tr>
+      {% set nt = b.groups | length %}
+      {% for g in b.groups[:20] %}
+      <tr style="border-bottom:1px solid #eef0f5;background:{{ '#f0faf3' if loop.index <= 3 and nt > 5 else ('#fef3f2' if loop.index > nt - 3 and nt > 5 else '#ffffff') }};">
+        <td style="color:#5d6577;">{{ g.rank }}</td>
+        <td><b style="color:#14213d;">{{ g.name }}</b>{% if g.attention %}<br><span style="font-size:11px;color:#b42318;">{{ g.attention }} need{{ "s" if g.attention == 1 }} attention</span>{% endif %}</td>
+        <td align="center" class="hide-sm">{{ g.employees }}</td>
+        <td style="white-space:nowrap;"><span style="display:inline-block;width:56px;height:7px;background:#eef1f6;border-radius:4px;vertical-align:middle;"><span style="display:block;width:{{ (g.attendance_pct or 0) | round | int }}%;height:7px;background:{{ pcol(g.attendance_pct) }};border-radius:4px;"></span></span>
+          <b style="color:{{ pcol(g.attendance_pct) }};">&nbsp;{{ pct(g.attendance_pct) }}</b></td>
+        {% if prev %}<td align="center" style="white-space:nowrap;">{{ change(g.change) }}</td>{% endif %}
+        <td align="center">{{ g.absent }}</td>
+        <td align="center" class="hide-sm">{{ g.missing_punch }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if b.groups | length > 20 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">… and {{ b.groups | length - 20 }} more teams in the Teams sheet.</div>{% endif %}
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- daily bars + week by week #}
+  {% if t.trend and view != "hr" %}
+  {{ heading("Daily attendance") }}
   <tr><td class="pad" style="padding:4px 24px 6px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
       {% for d in t.trend %}
@@ -96,31 +178,83 @@
       </td>
       {% endfor %}
     </tr></table>
-    <div style="font-size:11.5px;color:#5d6577;padding-top:4px;">Green 90%+ · amber 75–90% · red below 75%. Full interactive chart in the dashboard attachment.</div>
+    <div style="font-size:11.5px;color:#5d6577;padding-top:4px;">Green 90%+ · amber 75–90% · red below 75% · grey = week off / holiday.</div>
   </td></tr>
   {% endif %}
-
-  <tr><td class="pad" style="padding:14px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Recurring patterns – action required</td></tr>
-  <tr><td class="pad" style="padding:2px 24px 10px;">
-    {% if b.attention %}
-    <div style="font-size:12px;color:#5d6577;padding-bottom:6px;">{{ thresholds.absent }}+ absences, {{ thresholds.late }}+ late arrivals or {{ thresholds.missing_punch }}+ missing punches in the month.</div>
-    <table role="presentation" width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e6e8ef;">
-      <tr style="background:#14213d;color:#ffffff;"><th align="left">Employee</th><th align="center">Absent</th><th align="center">Late</th><th align="center" class="hide-sm">Missing punch</th><th align="left">Action required</th></tr>
-      {% for p in b.attention %}
-      <tr style="border-bottom:1px solid #e6e8ef;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
-        <td><b style="color:#14213d;">{{ p.name }}</b><br><span style="font-size:11.5px;color:#5d6577;">{{ p.code }} · {{ "–" if p.attendance_pct is none else "%g" | format(p.attendance_pct) ~ "%" }} attendance</span></td>
-        <td align="center" style="color:{{ '#dc2626' if p.absent >= thresholds.absent else '#1e2433' }};font-weight:{{ 'bold' if p.absent >= thresholds.absent else 'normal' }};">{{ p.absent }}</td>
-        <td align="center" style="color:{{ '#d97706' if p.late >= thresholds.late else '#1e2433' }};font-weight:{{ 'bold' if p.late >= thresholds.late else 'normal' }};">{{ p.late }}</td>
-        <td align="center" class="hide-sm" style="color:{{ '#7c3aed' if p.missing_punch >= thresholds.missing_punch else '#1e2433' }};font-weight:{{ 'bold' if p.missing_punch >= thresholds.missing_punch else 'normal' }};">{{ p.missing_punch }}</td>
-        <td style="font-size:12.5px;"><span style="display:inline-block;background:#fff8e1;border:1px solid #f5e3a6;border-radius:6px;padding:4px 8px;">{{ p.action }}</span></td>
+  {% if b.weeks | length > 1 %}
+  {{ heading("Week by week") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    {% set best = b.weeks | selectattr("attendance_pct") | sort(attribute="attendance_pct") | list %}
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#f6f7fb;color:#14213d;"><th align="left">Week</th><th align="left">Attendance</th><th align="center">Absent</th><th align="center">Late</th><th align="center">Missing punch</th></tr>
+      {% for w in b.weeks %}
+      <tr style="border-top:1px solid #eef0f5;">
+        <td style="white-space:nowrap;"><b style="color:#14213d;">{{ w.week }}</b> <span style="color:#5d6577;font-size:11.5px;">{{ w.range }}</span>
+          {% if best and w is sameas best[0] and best | length > 1 %}<span style="font-size:10.5px;font-weight:bold;color:#b91c1c;"> · weakest</span>{% endif %}
+          {% if best and w is sameas best[-1] and best | length > 1 %}<span style="font-size:10.5px;font-weight:bold;color:#15803d;"> · best</span>{% endif %}</td>
+        <td style="white-space:nowrap;"><span style="display:inline-block;width:56px;height:7px;background:#eef1f6;border-radius:4px;vertical-align:middle;"><span style="display:block;width:{{ (w.attendance_pct or 0) | round | int }}%;height:7px;background:{{ pcol(w.attendance_pct) }};border-radius:4px;"></span></span>
+          <b style="color:{{ pcol(w.attendance_pct) }};">&nbsp;{{ pct(w.attendance_pct) }}</b></td>
+        <td align="center">{{ w.absent }}</td><td align="center">{{ w.late }}</td><td align="center">{{ w.missing_punch }}</td>
       </tr>
       {% endfor %}
     </table>
-    {% if b.attention_more %}<div style="font-size:12px;color:#5d6577;padding-top:6px;">… and {{ b.attention_more }} more in the attachments.</div>{% endif %}
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- action list (HOD full, Director top 12) #}
+  {% if view != "hr" %}
+  {{ heading("Action required" if view == "hod" else "People with a recurring pattern",
+             thresholds.absent ~ "+ absences, " ~ thresholds.late ~ "+ late arrivals or " ~ thresholds.missing_punch ~ "+ missing punches in the month." ~ (" ▲▼ = attendance points vs. " ~ prev_month ~ "." if prev else "")) }}
+  <tr><td class="pad" style="padding:2px 24px 8px;">
+    {% if b.attention %}
+    {% for g in b.action_groups %}
+    <div style="font-size:13.5px;font-weight:800;color:{{ g.color }};padding:10px 0 5px;">{{ g.title }} ({{ g.people | length }})</div>
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;border:1px solid #e6e8ef;border-left:4px solid {{ g.color }};">
+      {% for p in g.people %}
+      <tr style="border-bottom:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td><b style="color:#14213d;">{{ p.name }}</b> <span style="font-size:11.5px;color:#5d6577;">{{ p.code }}</span>{% if view == "director" %}<br><span style="font-size:11px;color:#5d6577;">{{ p.hod or "No HOD assigned" }}</span>{% endif %}</td>
+        <td align="right" style="white-space:nowrap;font-size:12.5px;">
+          <span style="color:{{ '#dc2626' if p.absent >= thresholds.absent else '#5d6577' }};{{ 'font-weight:bold;' if p.absent >= thresholds.absent }}">{{ p.absent }} absent</span> ·
+          <span style="color:{{ '#d97706' if p.late >= thresholds.late else '#5d6577' }};{{ 'font-weight:bold;' if p.late >= thresholds.late }}">{{ p.late }} late</span> ·
+          <span style="color:{{ '#7c3aed' if p.missing_punch >= thresholds.missing_punch else '#5d6577' }};{{ 'font-weight:bold;' if p.missing_punch >= thresholds.missing_punch }}">{{ p.missing_punch }} MP</span></td>
+        <td align="right" style="white-space:nowrap;"><b style="color:{{ pcol(p.attendance_pct) }};">{{ pct(p.attendance_pct) }}</b>{% if p.change is not none %}<br><span style="font-size:11px;">{{ change(p.change) }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endfor %}
+    {% if b.attention_more %}<div style="font-size:12px;color:#5d6577;padding-top:6px;">… and {{ b.attention_more }} more in the Needs attention sheet.</div>{% endif %}
     {% else %}<div style="font-size:13.5px;color:#15803d;font-weight:bold;">Nobody has a recurring absence, late-arrival or missing-punch pattern in {{ month_long }}.</div>{% endif %}
   </td></tr>
+  {% endif %}
 
-  <tr><td class="pad" style="padding:8px 24px 2px;font-size:16px;font-weight:800;color:#14213d;">Next-month planning</td></tr>
+  {# ---------------------------------------------------------------- changes vs last month (HOD) #}
+  {% if view == "hod" and (b.improved or b.declined) %}
+  {{ heading("Change vs. " ~ prev_month, "People whose attendance moved 5 points or more.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      {% for title, rows, col in [("Slipped", b.declined, "#b91c1c"), ("Improved", b.improved, "#15803d")] if rows %}
+      <td valign="top" width="50%" style="padding:0 4px 0 0;">
+        <div style="font-size:13px;font-weight:800;color:{{ col }};padding-bottom:4px;">{{ title }}</div>
+        {% for x in rows %}<div style="font-size:12.5px;padding:3px 0;border-bottom:1px solid #eef0f5;"><b style="color:#14213d;">{{ x.name }}</b> <span style="color:#5d6577;">{{ "%g" | format(x.before) }}% → </span><b style="color:{{ col }};">{{ "%g" | format(x.now) }}%</b></div>{% endfor %}
+      </td>
+      {% endfor %}
+    </tr></table>
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- recognition #}
+  {% if b.perfect and view != "hr" %}
+  {{ heading("Full attendance – worth a word of thanks", "Present every working day: no absence, leave, late arrival, missing punch or early leaving.") }}
+  <tr><td class="pad" style="padding:6px 24px 8px;">
+    <div style="background:#f0faf3;border:1px solid #bfe3cb;border-radius:10px;padding:10px 12px;line-height:2;">
+      {% for p in b.perfect[:(40 if view == "hod" else 24)] %}<span style="display:inline-block;background:#ffffff;border:1px solid #bfe3cb;border-radius:999px;padding:0 10px;margin:0 4px 0 0;font-size:12.5px;color:#14532d;white-space:nowrap;">★ {{ p.name }}</span>{% endfor %}
+      {% if b.perfect | length > (40 if view == "hod" else 24) %}<span style="font-size:12px;color:#15803d;"> + {{ b.perfect | length - (40 if view == "hod" else 24) }} more</span>{% endif %}
+    </div>
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- planning + attachments #}
+  {{ heading("Next-month planning") }}
   <tr><td class="pad" style="padding:2px 24px 10px;font-size:13.5px;color:#33405c;">
     <ul style="margin:4px 0;padding-left:18px;">{% for n in b.planning %}<li style="margin-bottom:5px;">{{ n }}</li>{% endfor %}</ul>
   </td></tr>
@@ -130,8 +264,8 @@
     <table role="presentation" width="100%" cellpadding="10" cellspacing="0" style="border-collapse:collapse;background:#f6f7fb;border-radius:10px;font-size:13px;">
       <tr><td>
         <div style="font-weight:bold;color:#14213d;padding-bottom:4px;">Attached</div>
-        {% if dashboard_name %}<div style="padding-bottom:4px;">📊 <b>{{ dashboard_name }}</b> – the interactive report: pick any week or dates, trends, every person's month, a calendar and an action plan you can tick off. <i>Download it and open it in Chrome or Edge.</i></div>{% endif %}
-        {% if attach_name %}<div>📗 <b>{{ attach_name }}</b> – summary with chart, key takeaways and patterns, people needing attention, every employee's month and a colour-coded calendar.</div>{% endif %}
+        {% if dashboard_name %}<div style="padding-bottom:4px;">📊 <b>{{ dashboard_name }}</b> – the interactive report: pick any week or dates, trends,{% if view != "hod" %} a team comparison,{% endif %} every person's month vs. {{ prev_month }}, a calendar, an action plan you can tick off and a one-page printable summary. <i>Download it and open it in Chrome or Edge.</i></div>{% endif %}
+        {% if attach_name %}<div>📗 <b>{{ attach_name }}</b> – summary with chart, {% if view != "hod" %}teams, {% endif %}week by week, a payroll sheet (days present, absent, leave and what to settle before payroll), people needing attention, every employee's month and a colour-coded calendar.</div>{% endif %}
       </td></tr>
     </table>
   </td></tr>

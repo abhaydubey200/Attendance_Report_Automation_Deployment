@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date
 
-from daily import reports
+from daily import analysis, reports
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 TARGET = 90.0                  # attendance % target shown on charts and in the takeaways
@@ -174,7 +174,7 @@ def build(people: list[dict], days: list[date], by_code: dict, rules, totals: di
         n = sum(1 for p in people if p["late"])
         take.append({"kind": "warn", "view": "people:late",
                      "text": f"{totals['late']} late arrivals by {n} {'person' if n == 1 else 'people'}; average arrival "
-                             f"{totals.get('avg_in_time') or '-'}."})
+                             f"{analysis.t12(totals.get('avg_in_time')) or '-'}."})
     if down:
         take.append({"kind": "bad", "view": "people:declined",
                      "text": f"{len(down)} {'person' if len(down) == 1 else 'people'} slipped {MOVE_PTS:g}+ pts on last month: "

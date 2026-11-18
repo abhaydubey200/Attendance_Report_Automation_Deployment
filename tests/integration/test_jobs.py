@@ -215,7 +215,23 @@ def test_monthly_report_archive_and_guarded_cleanup(engine, settings, master):
         director = next(i for i in items if i.recipient_key == "MONTHLY:DIRECTOR")
         html, text, files = mail.render(s, settings, director)
         assert "Monthly Company Attendance Report" in html and "Next-month planning" in html and "not a measure of productivity" in html
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Insights", "Needs attention", "Employees", "Calendar"]
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Teams", "Insights", "Needs attention", "Weeks",
+                                                                         "Payroll", "Employees", "Calendar"]
+        assert "Teams at a glance" in html          # (one week of test data: no week table)
+        assert 'data-act="tab:teams"' in files[1].content.decode()
+        # HR: the month-end payroll checklist (company-wide), never a list of "your team"
+        hr = next(i for i in items if i.recipient_key == "MONTHLY:HR")
+        h_html, h_text, h_files = mail.render(s, settings, hr)
+        assert "Monthly HR Payroll Checklist" in h_html and "Dear HR team" in h_html and "Payroll" in h_text
+        assert load_workbook(io.BytesIO(h_files[0].content)).sheetnames[:2] == ["Summary", "Payroll"]
+        # an HOD: grouped action list, no team table, no HOD names, payroll sheet without an HOD column
+        hod = next(i for i in items if i.role.startswith("Monthly - HOD") or i.role.startswith("Monthly - Team"))
+        o_html, _, o_files = mail.render(s, settings, hod)
+        assert "Monthly Team Attendance Report" in o_html and "Teams at a glance" not in o_html and "HOD" not in o_html
+        wb = load_workbook(io.BytesIO(o_files[0].content))
+        assert "Teams" not in wb.sheetnames and "Payroll" in wb.sheetnames
+        assert "HOD's team" not in [c.value for c in wb["Payroll"][4]]
+        assert 'data-act="tab:teams"' not in o_files[1].content.decode()
         dash = files[1].content.decode()
         assert files[1].filename.endswith("_dashboard.html") and "Monthly Company Attendance Report" in dash
         assert "Key takeaways" in dash and 'data-act="tab:actions"' in dash and "Dear Director" in dash and "Key takeaways" in html

@@ -457,7 +457,7 @@ function vOverview(I) {
   <section class="grid2">
     <div class="card warm"><div class="card-h"><span style="color:#d99a00">${ICON.bars}</span><h3>Key takeaways <span class="muted">– ${esc(periodText())}</span></h3></div>${takes}</div>
     <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.trend}</span><h3>Attendance health</h3></div>${gauge(t.pct)}
-      <div style="margin-top:10px">${donut(mix, t.P + t.OD + t.WFH + t.HD + t.L + t.A + t.MP + t.WO, "person-days")}</div></div>
+      <div style="margin-top:10px">${donut(mix, t.P + t.OD + t.WFH + t.HD + t.L + t.A + t.MP + t.WO + t.HO, "person-days")}</div></div>
   </section>
   <section class="grid2e">
     <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.calendar}</span><h3>By weekday <span class="muted">– attendance %</span></h3></div>
@@ -538,7 +538,7 @@ function vTrends(I) {
   const ins = SS.flatMap((s) => s.ins), buckets = [];
   if (ins.length) { const lo = Math.floor(Math.min(...ins) / 30) * 30, hi = Math.floor(Math.max(...ins) / 30) * 30;
     for (let b = lo; b <= hi; b += 30) buckets.push({l: `${t12(b)} – ${t12(b + 30)}`, v: ins.filter((m) => m >= b && m < b + 30).length, c: b + 30 > R.lateAfter ? "#d97706" : "#0d9488"}); }
-  const hrs = SS.flatMap((s) => s.hrs), hb = [["Under 6 h", 0, 360], ["6 – 8 h", 360, R.minHours * 60], [`${R.minHours} – 9 h`, R.minHours * 60, 540], ["9 – 10 h", 540, 600], ["10 h +", 600, 1e9]]
+  const hrs = SS.flatMap((s) => s.hrs), hb = [["Under 6 h", 0, 360], [`6 – ${R.minHours} h`, 360, R.minHours * 60], [`${R.minHours} – 9 h`, R.minHours * 60, 540], ["9 – 10 h", 540, 600], ["10 h +", 600, 1e9]]
     .map(([l, a, b]) => ({l, v: hrs.filter((m) => m >= a && m < b).length, c: a < R.minHours * 60 ? "#d97706" : "#16a34a"}));
   const lt = {}; SS.forEach((s) => Object.entries(s.leaveT).forEach(([k, v]) => { lt[k] = (lt[k] || 0) + v; }));
   return `<section class="card" style="margin-top:16px">

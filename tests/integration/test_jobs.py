@@ -214,7 +214,7 @@ def test_monthly_report_archive_and_guarded_cleanup(engine, settings, master):
         assert not mail.items_for(s, date(2026, 11, 30))                # monthly mails stay off the daily screen
         director = next(i for i in items if i.recipient_key == "MONTHLY:DIRECTOR")
         html, text, files = mail.render(s, settings, director)
-        assert "Monthly Company Attendance Report" in html and "Next-month planning" not in html and "Teams at a glance" in html and "not a measure of productivity" in html
+        assert "Monthly Company Attendance Report" in html and "Next-month planning" not in html and "Teams at a glance" in html and "not a measure of productivity" not in html and "Details:" not in html
         assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Teams", "Insights", "Needs attention", "Weeks",
                                                                          "Employees", "Calendar"]
         assert "Teams at a glance" in html          # (one week of test data: no week table)

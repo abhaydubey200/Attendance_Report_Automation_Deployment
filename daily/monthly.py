@@ -8,7 +8,7 @@ Sequence (Automation screen or ``main.py monthly`` / ``main.py cleanup``):
                  backup succeeded: removes that month's daily employee rows and stored upload files. The summary,
                  the employee master, settings, email and job logs are kept.
 
-Attendance % is a workforce-availability indicator, not a measure of productivity (said in every report).
+Attendance % is a workforce-availability indicator, not a measure of productivity (said in the Excel and dashboard).
 """
 
 from __future__ import annotations
@@ -436,9 +436,7 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
                 lines += ["", f"{title}: " + ", ".join(f"{x['name']} ({x['before']:g}% -> {x['now']:g}%)" for x in rows)]
         if blocks["perfect"]:
             lines += ["", "Full attendance: " + ", ".join(p["name"] for p in blocks["perfect"][:40])]
-    lines += ["", f"Details: {', '.join(attached) or 'nothing'} attached.",
-              "Attendance is a workforce-availability indicator, not a measure of productivity.",
-              "Automated email from the APIS Daily Attendance tool."]
+    lines += ["", "Automated email from the APIS Daily Attendance tool."]
     return "\n".join(lines)
 
 

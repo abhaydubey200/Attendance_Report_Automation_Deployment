@@ -41,7 +41,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "zonal_name": ("zonalhead", "zonalmanager", "regionalmanager", "regionalhead", "zonalheadname"),
     "zonal_email": ("zonalheademail", "zonalmanageremail", "regionalmanageremail", "zonalemail", "regionalheademail"),
     "hod_name": ("hod", "hodname", "headofdepartment"),
-    "hod_email": ("hodemail", "hodmail", "hodmailid", "hodemailid"),
+    "hod_email": ("hodemail", "hodmail", "hodmailid", "hodemailid", "emailidhod", "emailhod", "mailidhod"),
     "date_of_joining": ("dateofjoining", "doj", "joiningdate"),
     "status": ("status", "employeestatus", "userstatus"),
     "exit_date": ("exitdate", "dateofleaving", "lastworkingday", "dol", "leavingdate"),
@@ -72,17 +72,22 @@ def _header(rows: list[list[str]]) -> tuple[int, dict[str, int]]:
     raise StaffError("No header row with an employee code column (Emp Code / Emp Id) and a name column was found.")
 
 
-def import_rows(session: Session, rows: list[list[str]], actor: str, source: str) -> dict:
-    """Add new staff and update the given fields of existing ones. Blank cells never wipe a stored value."""
+def import_rows(session: Session, rows: list[list[str]], actor: str, source: str, codes: list[str] | None = None) -> dict:
+    """Add new staff and update the given fields of existing ones. Blank cells never wipe a stored value.
+    ``codes``: only employee codes matching one of these patterns are taken (field sales, e.g. ^SL); others are skipped."""
     at, cols = _header(rows)
+    keep = [re.compile(p, re.IGNORECASE) for p in (codes or [])]
     existing = {e.code: e for e in session.scalars(select(SalesEmployee))}
-    added = updated = unchanged = 0
+    added = updated = unchanged = not_field_sales = 0
     problems: list[str] = []
     seen: set[str] = set()
     for n, r in enumerate(rows[at + 1:], start=at + 2):
         g = lambda f: str(r[cols[f]]).strip() if f in cols and cols[f] < len(r) and r[cols[f]] is not None else ""  # noqa: E731
         code = norm_code(g("code"))
         if not code:
+            continue
+        if keep and not any(k.search(code) for k in keep):
+            not_field_sales += 1                       # e.g. HO / RK staff: Module 1's people
             continue
         if code in seen:
             problems.append(f"Row {n}: {code} appears more than once; the first row was used.")
@@ -128,8 +133,8 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
             else:
                 unchanged += 1
     session.flush()
-    return {"added": added, "updated": updated, "unchanged": unchanged, "problems": problems[:50], "problem_count": len(problems),
-            "columns": sorted(cols)}
+    return {"added": added, "updated": updated, "unchanged": unchanged, "not_field_sales": not_field_sales, "problems": problems[:50],
+            "problem_count": len(problems), "columns": sorted(cols)}
 
 
 def to_dict(e: SalesEmployee) -> dict:

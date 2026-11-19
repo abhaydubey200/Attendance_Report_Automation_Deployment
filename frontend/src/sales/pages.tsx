@@ -312,7 +312,7 @@ export function SalesStaffPage() {
         <>
           <div className="kpi-grid">
             <KpiCard label="Active staff" value={s.active} hint={`${s.left} left`} />
-            <KpiCard label="With manager email" value={s.with_email.manager ?? 0} />
+            <KpiCard label="With team head email" value={s.with_email.manager ?? 0} hint="HR file: Sub split ID" />
             <KpiCard label="With zonal head email" value={s.with_email.zonal ?? 0} />
             <KpiCard label="With HOD email" value={s.with_email.hod ?? 0} />
             <KpiCard label="No email route" value={s.no_route} tone={s.no_route ? "warn" : "ok"} hint="only in the Director / HR emails" />
@@ -321,7 +321,7 @@ export function SalesStaffPage() {
             <DataTable rows={data.data?.staff ?? []} rowKey={(e) => e.code} search exportName="field_sales_staff" columns={[
               { header: "Code", render: (e) => e.code }, { header: "Name", render: (e) => <strong>{e.name}</strong>, value: (e) => e.name },
               { header: "Role", render: (e) => e.designation ?? "" }, { header: "Zone", render: (e) => e.zone ?? "" },
-              { header: "Manager", render: (e) => <>{e.manager_name}{e.manager_email && <div className="muted small wrap-any">{e.manager_email}</div>}</>, value: (e) => e.manager_name },
+              { header: "Team head", render: (e) => <>{e.manager_name}{e.manager_email && <div className="muted small wrap-any">{e.manager_email}</div>}</>, value: (e) => e.manager_name },
               { header: "Zonal head", render: (e) => <>{e.zonal_name}{e.zonal_email && <div className="muted small wrap-any">{e.zonal_email}</div>}</>, value: (e) => e.zonal_name },
               { header: "HOD", render: (e) => <>{e.hod_name}{e.hod_email && <div className="muted small wrap-any">{e.hod_email}</div>}</>, value: (e) => e.hod_name },
               { header: "Status", render: (e) => <span className={`badge badge-${e.status === "ACTIVE" ? "ok" : "warn"}`}>{e.status}</span>, value: (e) => e.status },
@@ -373,7 +373,7 @@ export function SalesSettingsPage() {
             <span className="check-row">{(["manager", "asm", "zonal", "hod"] as const).map((l) => (
               <label key={l} className="check"><input type="checkbox" checked={email.levels.includes(l)}
                 onChange={(e) => setEmail({ ...email, levels: e.target.checked ? [...email.levels, l] : email.levels.filter((x) => x !== l) })} />
-                {{ manager: "Managers", asm: "ASM / RSM", zonal: "Zonal heads", hod: "HODs" }[l]}</label>))}</span></Field>
+                {{ manager: "Team heads", asm: "ASM / RSM", zonal: "Zonal heads", hod: "HODs" }[l]}</label>))}</span></Field>
         </Card>
         <Card title="Counting and warning signs" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}
           onClick={() => void run(() => api.put("/v1/sales/settings/rules", rules), "Rules saved. They apply to the next upload (upload again with replace to recount).")}>Save</button>}>

@@ -166,7 +166,8 @@ async def staff_import(file: UploadFile = File(...), principal: Principal = Depe
     data = await file.read(10 * 1024 * 1024 + 1)
     try:
         rows = bizom.read_rows(data, file.filename or "staff.xlsx")
-        return staff.import_rows(db, [[("" if c is None else str(c)) for c in r] for r in rows], principal.username, file.filename or "upload")
+        return staff.import_rows(db, [[("" if c is None else str(c)) for c in r] for r in rows], principal.username, file.filename or "upload",
+                                 codes=get_rules(db).staff_codes)
     except (bizom.BizomError, staff.StaffError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
 

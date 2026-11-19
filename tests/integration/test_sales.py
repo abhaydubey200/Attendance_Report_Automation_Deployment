@@ -210,3 +210,24 @@ def test_test_mode_setting_survives(engine):
     with session_scope(engine) as s:
         save_email(s, SalesEmail(mode="live", director_emails=["d@example.com"]), "tester")
         assert get_email(s).mode == "live" and get_email(s).director_emails == ["d@example.com"]
+
+
+def test_hr_amendment_file_only_field_sales_and_right_names(engine):
+    """HR's Employee Amendment file holds the whole company; Sub split ID = team head email, Reporting Manager = name."""
+    from sales.routing import display_name
+    rows = [[None] * 9,
+            [None, "EMPLOYEE CODE", "Employee Name", "Department", "DOJ", "HOD", "Email ID - HOD", "Sub split ID", "Reporting Manager\xa0"],
+            [1, "SL00007", "ASIF ALI ANSARI", "GENERAL TRADE", "2017-08-01", "ARUN MISHRA", "arun.mishra@apisindia.com", "asifansari@apisindia.com", "ASIF ALI ANSARI"],
+            [2, "SL00100", "TEAM MEMBER", "GENERAL TRADE", "2020-01-01", "ARUN MISHRA", "arun.mishra@apisindia.com", "avdhesh@apisindia.com", "ARUN MISHRA"],
+            [3, "SL04274", "VAIBHAV MISHRA", "Alternate Channels", "", "AMIT ANAND", "amit@apisindia.com", "=G269", "AMIT ANAND"],
+            [4, "HO0034", "AMIT ANAND", "Director Office", "", "", "", "", ""],
+            [5, "RK00255", "SUNIL KUMAR", "Production", "", "VIPUL", "vipul@apisindia.com", "", ""]]
+    with session_scope(engine) as s:
+        r = staff.import_rows(s, [[("" if c is None else str(c)) for c in row] for row in rows], "tester", "amendment", codes=["^SL"])
+        assert r["added"] == 3 and r["not_field_sales"] == 2 and r["problem_count"] == 1          # '=G269' is not an email
+        sm = staff.summary(s)
+        assert sm["total"] == 3 and sm["with_email"] == {"manager": 2, "asm": 0, "zonal": 0, "hod": 3}
+    assert display_name("ARUN MISHRA", "avdhesh@apisindia.com") == "Avdhesh"
+    assert display_name("SHAKIL AHMED", "shakeel@apisindia.com") == "SHAKIL AHMED"
+    assert display_name("GOURI SHANKAR", "vaibhav.mishra@apisindia.com") == "Vaibhav Mishra"
+    assert display_name("ASIF ALI ANSARI", "asifansari@apisindia.com") == "ASIF ALI ANSARI"

@@ -23,6 +23,9 @@ class SalesRules(BaseModel):
     not_marked_is_absent: bool = True             # active staff missing from the attendance file = absent
     include_promoters: bool = False               # AP... codes / designation Promoter
     promoter_codes: list[str] = Field(default_factory=lambda: ["^AP"])
+    # The staff import takes only these codes: HR's Employee Amendment file holds the whole company (HO / RK / NA are
+    # Module 1's people and must never become field sales staff).
+    staff_codes: list[str] = Field(default_factory=lambda: ["^SL"])
     exclude_codes: list[str] = Field(default_factory=lambda: ["^VACANT", "^TEST"])
     # warning signs ("needs checking")
     # Supervisors rarely transact themselves (18-Nov: 34 of 39 ASE, 18 of 19 ASM, all RSM had no transaction), so the

@@ -109,12 +109,12 @@ def test_bizom_file_is_refused(engine, settings):
         service.process_files(s, settings, [("bizom.csv", bizom)], "tester")
 
 
-def test_pocket_hrms_short_minutes_are_tens():
-    """Pocket HRMS writes 10:40 as "10:4" and 16:00 as "16:0" in the Permission Report."""
+def test_pocket_hrms_minutes_are_not_padded():
+    """Pocket HRMS writes the minutes without padding: 16:00 as "16:0" and 10:08 as "10:8" (real October 2026 report:
+    a 2-hour short leave "10:8" to "12:8"). "10:80" is not a time, so a single digit is never read as tens."""
     from daily.permissions import _time
 
-    assert [_time(v) for v in ("16:0", "10:4", "9:30", "09:30", "12:4", "4:05 PM")] == \
-           ["16:00", "10:40", "09:30", "09:30", "12:40", "16:05"]
+    assert [_time(v) for v in ("16:0", "10:8", "12:8", "10:4", "9:30", "09:30", "4:05 PM")] ==            ["16:00", "10:08", "12:08", "10:04", "09:30", "09:30", "16:05"]
 
 
 def test_approved_afternoon_short_leave_excuses_leaving_early():

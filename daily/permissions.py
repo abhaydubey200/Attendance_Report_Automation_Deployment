@@ -72,8 +72,9 @@ def _date(v: str) -> date:
 
 def _time(v: str) -> str:
     v = _clean(v)
-    # Pocket HRMS drops the trailing zero of the minutes: "16:0" = 16:00, "10:4" = 10:40 (not 10:04).
-    v = re.sub(r"^(\d{1,2}):(\d)(?=$|\s)", r"\g<1>:\g<2>0", v)
+    # Pocket HRMS writes the minutes without padding: "16:0" = 16:00, "10:8" = 10:08 (seen in the real October 2026
+    # report as "10:8" to "12:8", a 2-hour short leave - "10:80" is not a time).
+    v = re.sub(r"^(\d{1,2}):(\d)(?=$|\s)", r"\g<1>:0\g<2>", v)
     for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p"):
         try:
             return datetime.strptime(v.upper(), fmt).strftime("%H:%M")

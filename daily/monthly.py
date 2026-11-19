@@ -438,12 +438,20 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
     else:
         if ins and ins["takeaways"]:
             lines += ["Key takeaways:"] + [f"- {x['text']}" for x in ins["takeaways"][:3]] + [""]
+        if len(blocks["weeks"]) > 1:
+            lines += ["Week by week:"] + [f"- {w['week']} ({w['range']}): {'-' if w['attendance_pct'] is None else str(w['attendance_pct']) + '%'}, "
+                                         f"{w['absent']} absent, {w['late']} late, {w['missing_punch']} missing punches" for w in blocks["weeks"]] + [""]
         if blocks["attention"]:
             lines += ["Action required:"] + [f"- {p['name']} ({p['code']}): {p['reason']} - {p['action']}" for p in blocks["attention"][:10]]
             if len(blocks["attention"]) + blocks["attention_more"] > 10:
                 lines.append(f"+ {len(blocks['attention']) + blocks['attention_more'] - 10} more in the attachments.")
         else:
             lines.append("Nobody has a recurring absence, late-arrival or missing-punch pattern.")
+        for title, rows in (("Slipped 5+ pts vs last month", blocks["declined"]), ("Improved 5+ pts", blocks["improved"])):
+            if rows:
+                lines += ["", f"{title}: " + ", ".join(f"{x['name']} ({x['before']:g}% -> {x['now']:g}%)" for x in rows)]
+        if blocks["perfect"]:
+            lines += ["", "Full attendance: " + ", ".join(p["name"] for p in blocks["perfect"][:40])]
     lines += ["", f"Details: {', '.join(attached) or 'nothing'} attached.",
               "Attendance is a workforce-availability indicator, not a measure of productivity.",
               "Automated email from the APIS Daily Attendance tool."]

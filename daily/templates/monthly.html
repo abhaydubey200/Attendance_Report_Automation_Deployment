@@ -144,6 +144,43 @@
     </table>
   </td></tr>
   {% endif %}
+  {# ---------------------------------------------------------------- daily bars + week by week #}
+  {% if t.trend and view != "hr" %}
+  {{ heading("Daily attendance") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
+      {% for d in t.trend %}
+      {% set v = d.attendance_pct or 0 %}
+      {% set col = "#cbd5e1" if d.attendance_pct is none else ("#dc2626" if v < 75 else ("#f59e0b" if v < 90 else "#16a34a")) %}
+      <td valign="bottom" align="center" style="padding:0 1px;">
+        <div title="{{ d.date }}: {{ d.attendance_pct }}%" style="height:{{ (60 * v / 100) | round | int }}px;background:{{ col }};border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</div>
+        <div style="font-size:9px;color:#5d6577;padding-top:2px;">{{ d.date[8:10] }}</div>
+      </td>
+      {% endfor %}
+    </tr></table>
+    <div style="font-size:11.5px;color:#5d6577;padding-top:4px;">Green 90%+ · amber 75–90% · red below 75% · grey = week off / holiday.</div>
+  </td></tr>
+  {% endif %}
+  {% if b.weeks | length > 1 %}
+  {{ heading("Week by week") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    {% set best = b.weeks | selectattr("attendance_pct") | sort(attribute="attendance_pct") | list %}
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#f6f7fb;color:#14213d;"><th align="left">Week</th><th align="left">Attendance</th><th align="center">Absent</th><th align="center">Late</th><th align="center">Missing punch</th></tr>
+      {% for w in b.weeks %}
+      <tr style="border-top:1px solid #eef0f5;">
+        <td style="white-space:nowrap;"><b style="color:#14213d;">{{ w.week }}</b> <span style="color:#5d6577;font-size:11.5px;">{{ w.range }}</span>
+          {% if best and w is sameas best[0] and best | length > 1 %}<span style="font-size:10.5px;font-weight:bold;color:#b91c1c;"> · weakest</span>{% endif %}
+          {% if best and w is sameas best[-1] and best | length > 1 %}<span style="font-size:10.5px;font-weight:bold;color:#15803d;"> · best</span>{% endif %}</td>
+        <td style="white-space:nowrap;"><span style="display:inline-block;width:56px;height:7px;background:#eef1f6;border-radius:4px;vertical-align:middle;"><span style="display:block;width:{{ (w.attendance_pct or 0) | round | int }}%;height:7px;background:{{ pcol(w.attendance_pct) }};border-radius:4px;"></span></span>
+          <b style="color:{{ pcol(w.attendance_pct) }};">&nbsp;{{ pct(w.attendance_pct) }}</b></td>
+        <td align="center">{{ w.absent }}</td><td align="center">{{ w.late }}</td><td align="center">{{ w.missing_punch }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </td></tr>
+  {% endif %}
+
   {% if b.attention %}
   {{ heading("Action required", thresholds.absent ~ "+ absences, " ~ thresholds.late ~ "+ late arrivals or " ~ thresholds.missing_punch ~ "+ missing punches in the month.") }}
   <tr><td class="pad" style="padding:4px 24px 6px;">
@@ -159,6 +196,32 @@
     {% set more = attention_total - (b.attention[:10] | length) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
   </td></tr>
   {% endif %}
+  {# ---------------------------------------------------------------- changes vs last month (HOD) #}
+  {% if view == "hod" and (b.improved or b.declined) %}
+  {{ heading("Change vs. " ~ prev_month, "People whose attendance moved 5 points or more.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      {% for title, rows, col in [("Slipped", b.declined, "#b91c1c"), ("Improved", b.improved, "#15803d")] if rows %}
+      <td valign="top" width="50%" style="padding:0 4px 0 0;">
+        <div style="font-size:13px;font-weight:800;color:{{ col }};padding-bottom:4px;">{{ title }}</div>
+        {% for x in rows %}<div style="font-size:12.5px;padding:3px 0;border-bottom:1px solid #eef0f5;"><b style="color:#14213d;">{{ x.name }}</b> <span style="color:#5d6577;">{{ "%g" | format(x.before) }}% → </span><b style="color:{{ col }};">{{ "%g" | format(x.now) }}%</b></div>{% endfor %}
+      </td>
+      {% endfor %}
+    </tr></table>
+  </td></tr>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- recognition #}
+  {% if b.perfect and view != "hr" %}
+  {{ heading("Full attendance – worth a word of thanks", "Present every working day: no absence, leave, late arrival, missing punch or early leaving.") }}
+  <tr><td class="pad" style="padding:6px 24px 8px;">
+    <div style="background:#f0faf3;border:1px solid #bfe3cb;border-radius:10px;padding:10px 12px;line-height:2;">
+      {% for p in b.perfect[:(40 if view == "hod" else 24)] %}<span style="display:inline-block;background:#ffffff;border:1px solid #bfe3cb;border-radius:999px;padding:0 10px;margin:0 4px 0 0;font-size:12.5px;color:#14532d;white-space:nowrap;">★ {{ p.name }}</span>{% endfor %}
+      {% if b.perfect | length > (40 if view == "hod" else 24) %}<span style="font-size:12px;color:#15803d;"> + {{ b.perfect | length - (40 if view == "hod" else 24) }} more</span>{% endif %}
+    </div>
+  </td></tr>
+  {% endif %}
+
   {% endif %}
 
   {# ---------------------------------------------------------------- attachments (one line) + footer #}

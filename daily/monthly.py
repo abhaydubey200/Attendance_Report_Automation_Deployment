@@ -8,7 +8,7 @@ Sequence (Automation screen or ``main.py monthly`` / ``main.py cleanup``):
                  backup succeeded: removes that month's daily employee rows and stored upload files. The summary,
                  the employee master, settings, email and job logs are kept.
 
-Attendance % is a workforce-availability indicator, not a measure of productivity (said in every report).
+Attendance % is a workforce-availability indicator, not a measure of productivity (said in the Excel and dashboard).
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from core.config import Settings
 from core.timeutils import now_utc
 from daily import jobs, mail, month_insights, reports, routing
+from daily import analysis
 from daily.analysis import hm
 from daily.branding import excel_banner
 from daily.mailer import Attachment
@@ -40,6 +41,7 @@ from ingestion.checksum import sha256_bytes
 PREFIX = "MONTHLY:"
 XLSX = mail.XLSX
 _env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=select_autoescape(["html"]))
+_env.filters["t12"] = analysis.t12
 STATUS_CODE = {"PRESENT": "P", "MISSING_PUNCH": "MP", "ON_DUTY": "OD", "WFH": "WFH", "HALF_DAY": "HD", "LEAVE": "L",
                "ABSENT": "A", "WEEK_OFF": "WO", "HOLIDAY": "HO", "NOT_TRACKED": "-", mail.NO_RECORD: ""}
 ATTENTION = {"absent": 3, "late": 5, "missing_punch": 3}       # monthly thresholds for "needs attention"
@@ -80,6 +82,7 @@ def _person(code: str, name: str, route: routing.Route | None, per_day: dict[dat
     t = reports._tally(days, rules)
     t["wfh"] = sum(1 for d in days if d["status"] == "WFH")
     t["od"] = sum(1 for d in days if d["status"] == "ON_DUTY")
+    t["pending"] = sum(1 for d in days if "PERMISSION_PENDING" in d["flags"])     # short-leave requests not yet approved
     last = days[-1] if days else {}
     reasons = [f"{t[k]} {k.replace('_', ' ')}" for k, n in ATTENTION.items() if t.get(k, 0) >= n]
     return {"code": code, "name": name or last.get("name", ""), "department": (route.department if route else last.get("department", "")),
@@ -123,6 +126,94 @@ def _groups(people: list[dict], key: str) -> list[dict]:
                     "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
                     "attention": sum(1 for p in ps if p["reason"])})
     return out
+
+
+def team_table(people: list[dict], prev_people: dict[str, dict] | None) -> list[dict]:
+    """Director / HR: one row per HOD's team, best attendance first, with the change vs last month (same people)."""
+    rows = _groups(people, "hod")
+    before = {g["name"]: g for g in _groups(list(prev_people.values()), "hod")} if prev_people else {}
+    for g in rows:
+        b = before.get(g["name"])
+        g["before"] = b["attendance_pct"] if b else None
+        g["change"] = (round(g["attendance_pct"] - b["attendance_pct"], 1)
+                       if b and b["attendance_pct"] is not None and g["attendance_pct"] is not None else None)
+    rows.sort(key=lambda g: (g["attendance_pct"] is None, -(g["attendance_pct"] or 0), g["name"]))
+    for n, g in enumerate(rows, start=1):
+        g["rank"] = n
+    return rows
+
+
+ACTION_GROUPS = [  # key, heading in the email, colour
+    ("talk", "Speak to them about repeated absences", "#b91c1c"),
+    ("payroll", "Regularise missing punches before payroll", "#6d28d9"),
+    ("punctuality", "Counsel on punctuality", "#b45309"),
+]
+
+
+def action_group(p: dict) -> str:
+    if p["absent"] >= ATTENTION["absent"]:
+        return "talk"
+    if p["missing_punch"] >= ATTENTION["missing_punch"]:
+        return "payroll"
+    return "punctuality"
+
+
+def director_concerns(teams: list[dict], ins: dict, totals: dict, attention: list[dict]) -> list[str]:
+    """The Director's short list of what needs a decision or a word with an HOD."""
+    out = []
+    weak = [g for g in teams if g["attendance_pct"] is not None and g["attendance_pct"] < 85 and g["employees"] >= 3]
+    if weak:
+        out.append(f"{len(weak)} team{'s' if len(weak) != 1 else ''} below 85% attendance: "
+                   + ", ".join(f"{g['name']} ({g['attendance_pct']:g}%)" for g in weak[:5]) + ".")
+    slipped = [g for g in teams if g["change"] is not None and g["change"] <= -5]
+    if slipped:
+        out.append("Slipped 5+ pts on last month: " + ", ".join(f"{g['name']} ({g['before']:g}% → {g['attendance_pct']:g}%)"
+                                                               for g in sorted(slipped, key=lambda g: g["change"])[:5]) + ".")
+    if ins["streaks"]:
+        n = len(ins["streaks"])
+        out.append(f"{n} employee{'s were' if n != 1 else ' was'} absent 3+ report days in a row.")
+    if attention:
+        n = len(attention)
+        out.append(f"{n} employee{'s have' if n != 1 else ' has'} a recurring absence, late-arrival or missing-punch pattern.")
+    if totals.get("missing_punch"):
+        out.append(f"{totals['missing_punch']} missing punches to be regularised before payroll.")
+    return out
+
+
+def routing_issue_text(issue: str | None) -> str:
+    text = issue or ""
+    for code, plain in (("HOD_EMAIL_CONFLICT", "Two different HOD emails"), ("NO_HOD_EMAIL", "No HOD email"),
+                        ("NOT_IN_EMPLOYEE_MASTER", "Not in the employee master")):
+        if text.startswith(code):
+            return plain
+    return text or "Held for HR"
+
+
+def hr_checklist(people: list[dict], ins: dict, held: list[dict]) -> list[dict]:
+    """HR's month-end payroll checklist: numbered groups, most urgent first. Each row: name, code, team, detail."""
+    def rows(ps, detail):
+        return [{"name": p["name"], "code": p["code"], "team": p.get("hod") or NO_HOD, "detail": detail(p)} for p in ps]
+
+    def n(x, word, many=None):
+        return f"{x} {word if x == 1 else (many or word + 's')}"
+    mp = sorted([p for p in people if p["missing_punch"]], key=lambda p: (-p["missing_punch"], p["name"]))
+    ab = sorted([p for p in people if p["absent"]], key=lambda p: (-p["absent"], p["name"]))
+    pend = sorted([p for p in people if p.get("pending")], key=lambda p: (-p["pending"], p["name"]))
+    by_code = {p["code"].upper(): p for p in people}
+    groups = [
+        ("mp", "Missing punches to regularise", "Regularise in Pocket HRMS so the day is paid correctly.", "#6d28d9",
+         rows(mp, lambda p: n(p["missing_punch"], "missing punch", "missing punches")), sum(p["missing_punch"] for p in mp)),
+        ("absent", "Absent days to confirm: leave or loss of pay", "Check whether leave was applied; otherwise mark loss of pay.", "#b91c1c",
+         rows(ab, lambda p: n(p["absent"], "absent day")), sum(p["absent"] for p in ab)),
+        ("pending", "Short-leave requests still pending", "Ask the manager to approve or reject them in Pocket HRMS.", "#0369a1",
+         rows(pend, lambda p: n(p["pending"], "request")), sum(p["pending"] for p in pend)),
+        ("streak", "Long absence runs (3+ report days in a row)", "Confirm the reason with the HOD; long leave may need approval.", "#b45309",
+         [{"name": x["name"], "code": x["code"], "team": (by_code.get(x["code"].upper()) or {}).get("hod") or NO_HOD,
+           "detail": f"{x['days']} days, {x['from']:%d %b} – {x['to']:%d %b}"} for x in ins["streaks"]], len(ins["streaks"])),
+        ("routing", "Employees whose report has no HOD to go to", "Fix the HOD email in Employee mapping so their manager gets their report.",
+         "#475569", [{"name": h["name"], "code": h["code"], "team": "-", "detail": routing_issue_text(h["issue"])} for h in held], len(held)),
+    ]
+    return [{"key": k, "title": t, "how": how, "color": c, "rows": r, "total": tot} for k, t, how, c, r, tot in groups]
 
 
 def _planning(scope_people: list[dict], groups: list[dict]) -> list[str]:
@@ -206,14 +297,17 @@ def _generate(s: Session, settings: Settings, month: str, mode: str | None, acto
     last_upload = _days(s, month)[days[-1]]
     items = []
     for rec in routing.recipients(s, cfg, end, rs):
-        if rec.key == routing.HR:
-            continue
-        team = [r.code for r in rec.team if r.code.upper() in people]
+        is_hr = rec.key == routing.HR
+        kind = "hr" if is_hr else "director" if rec.company else "hod"
+        # HR gets the company-wide payroll checklist; the people held for HR are listed as routing problems, not as a team
+        held = [{"code": r.code, "name": r.name, "issue": r.issue or r.rule} for r in rec.team] if is_hr else []
+        team = [] if is_hr else [r.code for r in rec.team if r.code.upper() in people]
         summ = [r.code for r in rec.summary if r.code.upper() in people]
-        if not team and not summ and not rec.company:
+        company_wide = rec.company or is_hr
+        if not team and not summ and not company_wide:
             continue
-        scope = [people[c.upper()] for c in dict.fromkeys(team + summ)]
-        totals = _scope_totals(scope if not rec.company else everyone, days, by_code, rules)
+        scope = everyone if company_wide else [people[c.upper()] for c in dict.fromkeys(team + summ)]
+        totals = _scope_totals(scope, days, by_code, rules)
         status, note = (mail.PENDING, None) if rec.status == "OK" else (rec.status, rec.note)
         if status == mail.HELD and cfg.test_recipient:
             status, note = mail.PENDING, f"Testing: {rec.note}"
@@ -222,8 +316,9 @@ def _generate(s: Session, settings: Settings, month: str, mode: str | None, acto
         item = MailItem(upload_id=last_upload, report_date=end, recipient_key=f"{PREFIX}{rec.key}", recipient_name=rec.name,
                         role=f"Monthly - {rec.role}", to_addrs=", ".join(rec.to) or None, cc_addrs=", ".join(rec.cc) or None,
                         subject=f"Monthly Attendance | {label(month)} | {rec.name}",
-                        content=json.dumps({"kind": "monthly", "month": month, "team": team, "summary": summ, "company": rec.company}),
-                        counts=json.dumps({"team": {"total": len(scope or everyone), "attention": sum(1 for p in (scope or everyone) if p["reason"]),
+                        content=json.dumps({"kind": "monthly", "month": month, "team": team, "summary": summ, "company": company_wide,
+                                            "view": kind, "held": held}),
+                        counts=json.dumps({"team": {"total": len(scope), "attention": sum(1 for p in scope if p["reason"]),
                                                     "attendance_pct": totals["attendance_pct"]},
                                            "summary": None, "company": None, "exceptions": 0}),
                         status=status, note=note, attempts=0)
@@ -257,61 +352,117 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     pick = lambda codes: [people_all[x.upper()] for x in codes if x.upper() in people_all]  # noqa: E731
     team, summ = pick(c["team"]), pick(c["summary"])
     company = sorted(people_all.values(), key=lambda p: (p["department"], p["name"])) if c.get("company") else []
+    view = c.get("view") or ("director" if company else "hod")       # hod | director | hr
     scope = company or list({p["code"]: p for p in team + summ}.values())
     totals = _scope_totals(scope, days, by_code, rules)
-    groups: list[dict] = []          # emails never name HODs, teams or reporting managers (no per-HOD / per-team breakdown)
-    # everyone this recipient covers (their team and, for an HOD, the people under them) - same set as the dashboard
-    attention = sorted([p for p in scope if p["reason"]], key=lambda p: (-p["absent"], -p["missing_punch"], -p["late"], p["name"]))
-    blocks = {"totals": totals, "group_by": "HOD" if company else "Team", "groups": groups, "attention": attention[:40],
-              "attention_more": max(0, len(attention) - 40), "planning": _planning(scope, groups),
-              "team_size": len(team), "is_director": bool(company)}
-    greeting = f"Dear {item.recipient_name}"
-    stem = f"Monthly_Attendance_{month}_{''.join(ch if ch.isalnum() else '_' for ch in item.recipient_name).strip('_')}"
     cfg = get_email_settings(session, settings)
     prev, prev_attention, prev_people, prev_trend = _previous(session, settings, month, {p["code"].upper() for p in scope}, rules)
-    ins = month_insights.build(scope, days, by_code, rules, totals, prev, prev_people,
-                               "the company" if company else "your team")
-    for p in blocks["attention"]:
-        p["action"] = monthly_action(p)[0]
+    who = "the company" if company else "your team"
+    ins = month_insights.build(scope, days, by_code, rules, totals, prev, prev_people, who)
+    # HOD emails never name HODs, teams or managers; the Director's and HR's show a team-by-team table by HOD
+    teams = team_table(scope, prev_people) if company else []
+    attention = sorted([p for p in scope if p["reason"]], key=lambda p: (-p["absent"], -p["missing_punch"], -p["late"], p["name"]))
+    for p in scope:
+        b = (prev_people or {}).get(p["code"].upper())
+        p["before"] = b["attendance_pct"] if b else None
+        p["change"] = (round(p["attendance_pct"] - b["attendance_pct"], 1)
+                       if b and b["attendance_pct"] is not None and p["attendance_pct"] is not None else None)
+        p["action"] = monthly_action(p)[0] if p["reason"] else ""
+    limit = 12 if view == "director" else 40
+    groups_of = [{"key": k, "title": t, "color": col, "people": [p for p in attention[:limit] if action_group(p) == k]}
+                 for k, t, col in ACTION_GROUPS]
+    blocks = {"totals": totals, "group_by": "HOD" if company else "Team", "groups": teams, "attention": attention[:limit],
+              "attention_more": max(0, len(attention) - limit), "planning": _planning(scope, teams),
+              "team_size": len(team), "is_director": view == "director", "view": view, "action_groups": [g for g in groups_of if g["people"]],
+              "weeks": ins["weeks"], "perfect": ins["perfect"], "improved": ins["improved"][:5], "declined": ins["declined"][:5],
+              "concerns": director_concerns(teams, ins, totals, attention) if view == "director" else [],
+              "checklist": hr_checklist(scope, ins, c.get("held") or []) if view == "hr" else [],
+              "held": c.get("held") or []}
+    greeting = "Dear HR team" if view == "hr" else f"Dear {item.recipient_name}"
+    stem = f"Monthly_Attendance_{month}_{''.join(ch if ch.isalnum() else '_' for ch in item.recipient_name).strip('_')}"
+    title = {"hod": "Monthly Team Attendance Report", "director": "Monthly Company Attendance Report",
+             "hr": "Monthly HR Payroll Checklist"}[view]
     html = _env.get_template("monthly.html").render(subject=item.subject, month=label(month), month_long=month_bounds(month)[0].strftime("%B %Y"),
-                                                    greeting=greeting, company=settings.app.company, b=blocks,
+                                                    greeting=greeting, company=settings.app.company, b=blocks, title=title,
                                                     attach_name=f"{stem}.xlsx" if cfg.attach_excel else None,
                                                     dashboard_name=f"{stem}_dashboard.html" if cfg.attach_dashboard and scope else None,
                                                     thresholds=ATTENTION, prev=prev, prev_month=label(previous_month_of(month)),
                                                     prev_attention=prev_attention, attention_total=len(attention),
-                                                    avg_hours=hm(totals.get("avg_work_hours")), ins=ins)
-    lines = [f"{greeting},", "", f"Monthly attendance for {label(month)} ({totals['work_days']} working days of {totals['working_days']} days uploaded, "
-             f"{totals['employees']} employees).", "",
-             f"Average attendance {totals['attendance_pct']}% | Absences {totals['absent']} | Leave {totals['leave'] + totals['half_day']} | "
-             f"OD {totals['od']} | WFH {totals['wfh']} | Late {totals['late']} | Missing punches {totals['missing_punch']}", ""]
-    lines += ["Next month planning:"] + [f"- {n}" for n in blocks["planning"]]
-    attached = [f"{stem}.xlsx"] * bool(cfg.attach_excel) + [f"{stem}_dashboard.html"] * bool(cfg.attach_dashboard and scope)
-    lines += ["", "Attendance is a workforce-availability indicator, not a measure of productivity.",
-              f"Attached: {', '.join(attached) or 'nothing'}", "This is an automated email from the APIS Daily Attendance tool."]
+                                                    avg_hours=hm(totals.get("avg_work_hours")), ins=ins, who=who)
     files = []
     if cfg.attach_excel:
-        files.append(Attachment(f"{stem}.xlsx", _xlsx(settings, item, month, days, scope, totals, groups, blocks, ins), XLSX))
+        files.append(Attachment(f"{stem}.xlsx", _xlsx(settings, item, month, days, scope, totals, teams, blocks, ins), XLSX))
     if cfg.attach_dashboard and scope:
         files.append(Attachment(f"{stem}_dashboard.html",
                                 dashboard_html(settings, item, month, days, scope, totals, blocks, by_code, prev, prev_people,
                                                prev_trend, ins, rules),
                                 "text/html"))
-    return html, "\n".join(lines), files
+    return html, _text(greeting, month, totals, blocks, ins, [f.filename for f in files]), files
+
+
+def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, attached: list[str]) -> str:
+    """Plain-text version of the (short) month-end email, for mail clients that do not show HTML. Details are attached."""
+    view = blocks["view"]
+    pct = "-" if totals["attendance_pct"] is None else f"{totals['attendance_pct']:g}%"
+    lines = [f"{greeting},", "", f"Attendance for {label(month)}: {totals['work_days']} working days, {totals['employees']} employees.",
+             f"Average attendance {pct} | Absences {totals['absent']} | Late {totals['late']} | Missing punches {totals['missing_punch']}", ""]
+    if view == "hr":
+        lines.append("Before payroll:")
+        open_checks = [g for g in blocks["checklist"] if g["rows"]]
+        if not open_checks:
+            lines.append("- Nothing to settle.")
+        for n, g in enumerate(open_checks, start=1):
+            more = f" + {len(g['rows']) - 5} more" if len(g["rows"]) > 5 else ""
+            lines.append(f"{n}. {g['title']} ({len(g['rows'])}): " + ", ".join(f"{r['name']} ({r['detail']})" for r in g["rows"][:5]) + more)
+    elif view == "director":
+        if blocks["concerns"]:
+            lines += ["Needs your attention:"] + [f"- {x}" for x in blocks["concerns"][:4]] + [""]
+        teams = blocks["groups"]
+        shown = teams if len(teams) <= 10 else teams[:5] + teams[-5:]
+        lines += ["Teams (best first" + (", best 5 and weakest 5" if len(teams) > 10 else "") + "):"] + [
+            f"{g['rank']}. {g['name']}: {'-' if g['attendance_pct'] is None else str(g['attendance_pct']) + '%'}, {g['absent']} absent" for g in shown]
+    else:
+        if len(blocks["weeks"]) > 1:
+            lines += ["Week by week:"] + [f"- {w['week']} ({w['range']}): {'-' if w['attendance_pct'] is None else str(w['attendance_pct']) + '%'}, "
+                                         f"{w['absent']} absent, {w['late']} late, {w['missing_punch']} missing punches" for w in blocks["weeks"]] + [""]
+        if blocks["attention"]:
+            lines += ["Action required:"] + [f"- {p['name']} ({p['code']}): {p['reason']} - {p['action']}" for p in blocks["attention"][:10]]
+            if len(blocks["attention"]) + blocks["attention_more"] > 10:
+                lines.append(f"+ {len(blocks['attention']) + blocks['attention_more'] - 10} more in the attachments.")
+        else:
+            lines.append("Nobody has a recurring absence, late-arrival or missing-punch pattern.")
+        for title, rows in (("Slipped 5+ pts vs last month", blocks["declined"]), ("Improved 5+ pts", blocks["improved"])):
+            if rows:
+                lines += ["", f"{title}: " + ", ".join(f"{x['name']} ({x['before']:g}% -> {x['now']:g}%)" for x in rows)]
+        if blocks["perfect"]:
+            lines += ["", "Full attendance: " + ", ".join(p["name"] for p in blocks["perfect"][:40])]
+    lines += ["", "Automated email from the APIS Daily Attendance tool."]
+    return "\n".join(lines)
 
 
 def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], people: list[dict], totals: dict, groups: list[dict],
           blocks: dict, ins: dict | None = None) -> bytes:
+    """Month-end workbook. Sheet order by recipient:
+    HOD      Summary, Insights, Needs attention, Weeks, Employees, Calendar
+    Director Summary, Teams, Insights, Needs attention, Weeks, Employees, Calendar
+    HR       Summary, Teams, Needs attention, Routing problems, Weeks, Insights, Employees, Calendar"""
+    view = blocks.get("view", "hod")
+    company = view in ("director", "hr")
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
     head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter",
                           "border": 1, "border_color": "#14213D"})
     cell = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter"})
+    num = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center"})
+    zero = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center", "font_color": "#B6BCC8"})
     bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
     flag = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bg_color": "#FDECEC", "valign": "vcenter"})
     wrap = wb.add_format({"border": 1, "border_color": "#E6E8EF", "text_wrap": True, "valign": "vcenter"})
     act = wb.add_format({"border": 1, "border_color": "#F5E3A6", "bg_color": "#FFF8E1", "text_wrap": True, "valign": "vcenter"})
     note = wb.add_format({"italic": True, "font_color": "#5D6577"})
     big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D"})
+    up = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#15803D", "align": "center"})
+    down = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#B91C1C", "align": "center"})
     pct_fmt = {"good": wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#15803D", "bg_color": "#F0FAF3"}),
                "warn": wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#B45309", "bg_color": "#FFF8EB"}),
                "bad": wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#B91C1C", "bg_color": "#FEF3F2"})}
@@ -319,112 +470,234 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
     def band(v):
         return "good" if v is not None and v >= 90 else "warn" if v is not None and v >= 75 else "bad"
 
+    def chg(v):
+        return ("", zero) if v is None else (v, up if v > 0 else down if v < 0 else num)
+
     day_fmt = {code: wb.add_format({"align": "center", "valign": "vcenter", "bold": True, "font_size": 9, "border": 1,
                                     "border_color": "#FFFFFF", "bg_color": col,
                                     "font_color": "#334155" if code in ("WO", "HO", "-") else "#FFFFFF"})
                for code, _, col in DAY_CODES}
     day_fmt[""] = wb.add_format({"border": 1, "border_color": "#F1F5F9", "bg_color": "#F8FAFC"})
+    team_col = [("HOD's team", "hod", 24)] if company else []
 
-    ws = wb.add_worksheet("Summary")
-    ws.set_column(0, 0, 30)
-    ws.set_column(1, 8, 13)
-    excel_banner(wb, ws, [30] + [13] * 8, f"Monthly attendance - {label(month)} - {item.recipient_name}")
-    kpis = [("Employees", totals["employees"]), ("Working days", totals["work_days"]), ("Days uploaded", totals["working_days"]),
-            ("Average attendance %", totals["attendance_pct"] if totals["attendance_pct"] is not None else "-"),
-            ("Absences (days)", totals["absent"]), ("Leave (days)", totals["leave"] + totals["half_day"]), ("On duty", totals["od"]),
-            ("Work from home", totals["wfh"]), ("Late arrivals", totals["late"]), ("Missing punches", totals["missing_punch"])]
-    for i, (k, v) in enumerate(kpis, start=2):
-        ws.write(i, 0, k, bold)
-        ws.write(i, 1, v, pct_fmt[band(totals["attendance_pct"])] if k.startswith("Average") else big)
-    r = 3 + len(kpis)
-    if groups:
-        ws.write(r, 0, f"By {blocks['group_by'].lower()}", head)
-        cols = [(blocks["group_by"], "name"), ("Employees", "employees"), ("Attendance %", "attendance_pct"), ("Absences", "absent"),
-                ("Leave", "leave"), ("Late", "late"), ("Missing punch", "missing_punch"), ("Need attention", "attention")]
-        for j, (h, _) in enumerate(cols):
-            ws.write(r + 1, j, h, head)
-        for i, g in enumerate(groups, start=r + 2):
-            for j, (_, k) in enumerate(cols):
-                ws.write(i, j, "" if g[k] is None else g[k], cell)
-        r = r + 3 + len(groups)
-    ws.write(r, 0, "Daily trend (attendance %)", head)
-    ws.write(r, 1, "Attendance %", head)
-    for i, t in enumerate(totals["trend"], start=r + 1):
-        ws.write(i, 0, date.fromisoformat(t["date"]).strftime(settings.app.date_format + " (%a)"), cell)
-        ws.write(i, 1, "" if t["attendance_pct"] is None else t["attendance_pct"], pct_fmt[band(t["attendance_pct"])])
-    if totals["trend"]:
-        chart = wb.add_chart({"type": "column"})
-        chart.add_series({"name": "Attendance %", "categories": ["Summary", r + 1, 0, r + len(totals["trend"]), 0],
-                          "values": ["Summary", r + 1, 1, r + len(totals["trend"]), 1], "fill": {"color": "#16A34A"}, "gap": 40})
-        chart.set_title({"name": "Daily attendance %", "name_font": {"size": 11, "color": "#14213D"}})
-        chart.set_legend({"none": True})
-        chart.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
-        chart.set_size({"width": 620, "height": 260})
-        ws.insert_chart(r, 3, chart)
-    r = r + 2 + len(totals["trend"])
-    ws.write(r, 0, "Next month planning", head)
-    for i, n in enumerate(blocks["planning"], start=r + 1):
-        ws.write(i, 0, "- " + n)
-    ws.write(r + 2 + len(blocks["planning"]), 0, "Attendance is a workforce-availability indicator, not a measure of productivity.", note)
+    def summary():
+        ws = wb.add_worksheet("Summary")
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 8, 13)
+        excel_banner(wb, ws, [30] + [13] * 8, f"Monthly attendance - {label(month)} - {item.recipient_name}")
+        kpis = [("Employees", totals["employees"]), ("Working days", totals["work_days"]), ("Days uploaded", totals["working_days"]),
+                ("Average attendance %", totals["attendance_pct"] if totals["attendance_pct"] is not None else "-"),
+                ("Absences (days)", totals["absent"]), ("Leave (days)", totals["leave"] + totals["half_day"]), ("On duty", totals["od"]),
+                ("Work from home", totals["wfh"]), ("Late arrivals", totals["late"]), ("Missing punches", totals["missing_punch"]),
+                ("Full attendance (people)", len(blocks.get("perfect") or []))]
+        for i, (k, v) in enumerate(kpis, start=2):
+            ws.write(i, 0, k, bold)
+            ws.write(i, 1, v, pct_fmt[band(totals["attendance_pct"])] if k.startswith("Average") else big)
+        r = 3 + len(kpis)
+        if blocks.get("concerns"):
+            ws.write(r, 0, "Needs your attention", head)
+            for i, x in enumerate(blocks["concerns"], start=r + 1):
+                ws.write(i, 0, "- " + x)
+            r += 2 + len(blocks["concerns"])
+        if view == "hr" and blocks.get("checklist"):
+            ws.write(r, 0, "Before payroll", head)
+            ws.write(r, 1, "People", head)
+            ws.write(r, 2, "In all", head)
+            for i, g in enumerate(blocks["checklist"], start=r + 1):
+                ws.write(i, 0, g["title"], cell)
+                ws.write(i, 1, len(g["rows"]), num if g["rows"] else zero)
+                ws.write(i, 2, g["total"], num if g["total"] else zero)
+            r += 2 + len(blocks["checklist"])
+        ws.write(r, 0, "Daily trend (attendance %)", head)
+        ws.write(r, 1, "Attendance %", head)
+        for i, t in enumerate(totals["trend"], start=r + 1):
+            ws.write(i, 0, date.fromisoformat(t["date"]).strftime(settings.app.date_format + " (%a)"), cell)
+            ws.write(i, 1, "" if t["attendance_pct"] is None else t["attendance_pct"], pct_fmt[band(t["attendance_pct"])])
+        if totals["trend"]:
+            chart = wb.add_chart({"type": "column"})
+            chart.add_series({"name": "Attendance %", "categories": ["Summary", r + 1, 0, r + len(totals["trend"]), 0],
+                              "values": ["Summary", r + 1, 1, r + len(totals["trend"]), 1], "fill": {"color": "#16A34A"}, "gap": 40})
+            chart.set_title({"name": "Daily attendance %", "name_font": {"size": 11, "color": "#14213D"}})
+            chart.set_legend({"none": True})
+            chart.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
+            chart.set_size({"width": 620, "height": 260})
+            ws.insert_chart(r, 3, chart)
+        r = r + 2 + len(totals["trend"])
+        ws.write(r, 0, "Next month planning", head)
+        for i, n in enumerate(blocks["planning"], start=r + 1):
+            ws.write(i, 0, "- " + n)
+        r += 2 + len(blocks["planning"])
+        if blocks.get("perfect"):
+            ws.write(r, 0, "Full attendance - worth a word of thanks", head)
+            for i, x in enumerate(blocks["perfect"], start=r + 1):
+                ws.write(i, 0, f"{x['name']} ({x['code']})", cell)
+            r += 2 + len(blocks["perfect"])
+        ws.write(r, 0, "Attendance is a workforce-availability indicator, not a measure of productivity.", note)
 
-    if ins:
-        _insights_sheet(wb, ins, month, head, cell, bold, wrap, note, pct_fmt, band)
-    attention = sorted([p for p in people if p["reason"]], key=lambda p: (-p["absent"], -p["missing_punch"], -p["late"], p["name"]))
-    wsa = wb.add_worksheet("Needs attention")
-    acols = [("Code", "code", 11), ("Name", "name", 26), ("Absent", "absent", 8), ("Late", "late", 7), ("Missing punch", "missing_punch", 9),
-             ("Attendance %", "attendance_pct", 11), ("Pattern", "reason", 30), ("Action required (manager)", "action", 52)]
-    excel_banner(wb, wsa, [w for _, _, w in acols], f"Recurring patterns - action required - {label(month)}",
-                 f"{ATTENTION['absent']}+ absences, {ATTENTION['late']}+ late arrivals or {ATTENTION['missing_punch']}+ missing punches")
-    hr = 3
-    for j, (h, _, w) in enumerate(acols):
-        wsa.write(hr, j, h, head)
-        wsa.set_column(j, j, w)
-    for i, p in enumerate(attention, start=hr + 1):
-        for j, (_, k, _) in enumerate(acols):
-            v = monthly_action(p)[0] if k == "action" else p.get(k)
-            fmt = act if k == "action" else pct_fmt[band(v)] if k == "attendance_pct" else wrap if k == "reason" else cell
-            wsa.write(i, j, "" if v is None else v, fmt)
-    if not attention:
-        wsa.write(hr + 1, 0, "No recurring absence, late-arrival or missing-punch patterns this month.", note)
-    wsa.freeze_panes(hr + 1, 2)
+    def teams():
+        ws = wb.add_worksheet("Teams")
+        cols = [("Rank", "rank", 6), ("HOD's team", "name", 30), ("People", "employees", 8), ("Attendance %", "attendance_pct", 12),
+                (f"{label(previous_month_of(month))} %", "before", 11), ("Change (pts)", "change", 11), ("Absences", "absent", 10),
+                ("Leave", "leave", 8), ("Late", "late", 8), ("Missing punch", "missing_punch", 10), ("Need attention", "attention", 10)]
+        excel_banner(wb, ws, [w for _, _, w in cols], f"Teams at a glance - {label(month)}", "By HOD's team, best attendance first")
+        for j, (h, _, w) in enumerate(cols):
+            ws.write(3, j, h, head)
+            ws.set_column(j, j, w)
+        for i, g in enumerate(groups, start=4):
+            for j, (_, k, _) in enumerate(cols):
+                v = g.get(k)
+                if k == "change":
+                    v, f = chg(v)
+                else:
+                    f = pct_fmt[band(v)] if k in ("attendance_pct", "before") and v is not None else bold if k == "name" else num
+                ws.write(i, j, "" if v is None else v, f)
+        last = 3 + len(groups)
+        if groups:
+            chart = wb.add_chart({"type": "bar"})
+            chart.add_series({"name": "Attendance %", "categories": ["Teams", 4, 1, last, 1], "values": ["Teams", 4, 3, last, 3],
+                              "fill": {"color": "#14213D"}, "gap": 50, "data_labels": {"value": True, "num_format": "0.0"}})
+            chart.set_title({"name": "Attendance % by team", "name_font": {"size": 11, "color": "#14213D"}})
+            chart.set_legend({"none": True})
+            chart.set_x_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
+            chart.set_y_axis({"reverse": True})
+            chart.set_size({"width": 620, "height": max(260, 24 * len(groups) + 80)})
+            ws.insert_chart(last + 2, 1, chart)
+        ws.freeze_panes(4, 2)
 
-    ws2 = wb.add_worksheet("Employees")
-    cols = [("Code", "code", 11), ("Name", "name", 26), ("Needs attention", "reason", 26),
-            ("Days", "days", 6), ("Present", "present", 8), ("Absent", "absent", 8), ("Leave", "leave", 7),
-            ("Half day", "half_day", 8), ("WFH", "wfh", 6), ("OD", "od", 5), ("Late", "late", 6), ("Missing punch", "missing_punch", 9),
-            ("Week off", "week_off", 8), ("Attendance %", "attendance_pct", 11), ("Avg arrival", "avg_in_time", 10)]
-    for j, (h, _, w) in enumerate(cols):
-        ws2.write(0, j, h, head)
-        ws2.set_column(j, j, w)
-    ordered = sorted(people, key=lambda p: (not p["reason"], p["department"], p["name"]))
-    for i, p in enumerate(ordered, start=1):
-        for j, (_, k, _) in enumerate(cols):
-            v = p.get(k)
-            fmt = pct_fmt[band(v)] if k == "attendance_pct" else flag if p["reason"] else cell
-            ws2.write(i, j, "" if v is None else v, fmt)
-    ws2.autofilter(0, 0, len(ordered), len(cols) - 1)
-    ws2.freeze_panes(1, 2)
+    def needs_attention():
+        attention = sorted([p for p in people if p["reason"]], key=lambda p: (-p["absent"], -p["missing_punch"], -p["late"], p["name"]))
+        wsa = wb.add_worksheet("Needs attention")
+        acols = [("Code", "code", 11), ("Name", "name", 26)] + team_col + [
+            ("Absent", "absent", 8), ("Late", "late", 7), ("Missing punch", "missing_punch", 9),
+            ("Attendance %", "attendance_pct", 11), ("Change vs last month (pts)", "change", 12), ("Pattern", "reason", 30),
+            ("Action required (manager)", "action", 52)]
+        excel_banner(wb, wsa, [w for _, _, w in acols], f"Recurring patterns - action required - {label(month)}",
+                     f"{ATTENTION['absent']}+ absences, {ATTENTION['late']}+ late arrivals or {ATTENTION['missing_punch']}+ missing punches")
+        hr = 3
+        for j, (h, _, w) in enumerate(acols):
+            wsa.write(hr, j, h, head)
+            wsa.set_column(j, j, w)
+        for i, p in enumerate(attention, start=hr + 1):
+            for j, (_, k, _) in enumerate(acols):
+                v = monthly_action(p)[0] if k == "action" else p.get(k)
+                if k == "change":
+                    v, fmt = chg(v)
+                else:
+                    fmt = act if k == "action" else pct_fmt[band(v)] if k == "attendance_pct" else wrap if k == "reason" else cell
+                wsa.write(i, j, "" if v is None else v, fmt)
+        if not attention:
+            wsa.write(hr + 1, 0, "No recurring absence, late-arrival or missing-punch patterns this month.", note)
+        wsa.freeze_panes(hr + 1, 2)
 
-    ws3 = wb.add_worksheet("Calendar")
-    ws3.write(0, 0, "Code", head)
-    ws3.write(0, 1, "Name", head)
-    ws3.set_column(0, 0, 10)
-    ws3.set_column(1, 1, 26)
-    ws3.set_row(0, 30)
-    for j, d in enumerate(days, start=2):
-        ws3.write(0, j, d.strftime("%d") + chr(10) + d.strftime("%a")[:2], head)
-        ws3.set_column(j, j, 4.3)
-    ws3.write(0, len(days) + 2, "Att. %", head)
-    ws3.set_column(len(days) + 2, len(days) + 2, 8)
-    for i, p in enumerate(sorted(people, key=lambda p: p["name"]), start=1):
-        ws3.write(i, 0, p["code"], cell)
-        ws3.write(i, 1, p["name"], flag if p["reason"] else cell)
+    def weeks_sheet():
+        ws = wb.add_worksheet("Weeks")
+        wk = (ins or {}).get("weeks") or []
+        cols = [("Week", 10), ("Dates", 18), ("Days", 7), ("Attendance %", 12), ("Absent", 9), ("Late", 8), ("Missing punch", 10)]
+        excel_banner(wb, ws, [w for _, w in cols], f"Week by week - {label(month)}")
+        for j, (h, w) in enumerate(cols):
+            ws.write(3, j, h, head)
+            ws.set_column(j, j, w)
+        ok = [w for w in wk if w["attendance_pct"] is not None]
+        lo = min(ok, key=lambda w: w["attendance_pct"]) if len(ok) > 1 else None
+        hi = max(ok, key=lambda w: w["attendance_pct"]) if len(ok) > 1 else None
+        for i, w in enumerate(wk, start=4):
+            ws.write(i, 0, w["week"] + (" (weakest)" if w is lo else " (best)" if w is hi else ""), bold)
+            ws.write(i, 1, w["range"], cell)
+            ws.write(i, 2, w["days"], num)
+            ws.write(i, 3, "" if w["attendance_pct"] is None else w["attendance_pct"], pct_fmt[band(w["attendance_pct"])])
+            for j, k in ((4, "absent"), (5, "late"), (6, "missing_punch")):
+                ws.write(i, j, w[k], num if w[k] else zero)
+        ws.set_column(0, 0, 18)
+        if wk:
+            last = 3 + len(wk)
+            c1 = wb.add_chart({"type": "column"})
+            c1.add_series({"name": "Attendance %", "categories": ["Weeks", 4, 1, last, 1], "values": ["Weeks", 4, 3, last, 3],
+                           "fill": {"color": "#16A34A"}, "gap": 60, "data_labels": {"value": True, "num_format": "0.0"}})
+            c1.set_title({"name": "Attendance % by week", "name_font": {"size": 11, "color": "#14213D"}})
+            c1.set_legend({"none": True})
+            c1.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
+            c1.set_size({"width": 480, "height": 260})
+            ws.insert_chart(last + 2, 0, c1)
+            c2 = wb.add_chart({"type": "column"})
+            for col, name, colour in ((4, "Absent", "#DC2626"), (5, "Late", "#D97706"), (6, "Missing punch", "#7C3AED")):
+                c2.add_series({"name": name, "categories": ["Weeks", 4, 1, last, 1], "values": ["Weeks", 4, col, last, col],
+                               "fill": {"color": colour}, "gap": 60})
+            c2.set_title({"name": "Absences, late arrivals and missing punches by week", "name_font": {"size": 11, "color": "#14213D"}})
+            c2.set_legend({"position": "bottom"})
+            c2.set_size({"width": 480, "height": 260})
+            ws.insert_chart(last + 2, 4, c2)
+
+    def routing_problems():
+        held = blocks.get("held") or []
+        if not held:
+            return
+        ws = wb.add_worksheet("Routing problems")
+        cols = [("Code", 12), ("Name", 28), ("Problem", 34), ("What to do", 60)]
+        excel_banner(wb, ws, [w for _, w in cols], f"Employees whose report has no HOD to go to - {label(month)}")
+        for j, (h, w) in enumerate(cols):
+            ws.write(3, j, h, head)
+            ws.set_column(j, j, w)
+        for i, h in enumerate(held, start=4):
+            ws.write(i, 0, h["code"], cell)
+            ws.write(i, 1, h["name"], bold)
+            ws.write(i, 2, routing_issue_text(h["issue"]), wrap)
+            ws.write(i, 3, "Fix the HOD email in Employee mapping so their manager gets their report.", act)
+
+    def employees_sheet():
+        ws2 = wb.add_worksheet("Employees")
+        cols = [("Code", "code", 11), ("Name", "name", 26)] + team_col + [("Needs attention", "reason", 26),
+                ("Days", "days", 6), ("Present", "present", 8), ("Absent", "absent", 8), ("Leave", "leave", 7),
+                ("Half day", "half_day", 8), ("WFH", "wfh", 6), ("OD", "od", 5), ("Late", "late", 6), ("Missing punch", "missing_punch", 9),
+                ("Week off", "week_off", 8), ("Attendance %", "attendance_pct", 11), ("Change vs last month (pts)", "change", 12),
+                ("Avg arrival", "avg_in_time", 10)]
+        for j, (h, _, w) in enumerate(cols):
+            ws2.write(0, j, h, head)
+            ws2.set_column(j, j, w)
+        ordered = sorted(people, key=lambda p: (not p["reason"], p["department"], p["name"]))
+        for i, p in enumerate(ordered, start=1):
+            for j, (_, k, _) in enumerate(cols):
+                v = p.get(k)
+                if k == "avg_in_time":
+                    v = analysis.t12(v)
+                if k == "change":
+                    v, fmt = chg(v)
+                else:
+                    fmt = pct_fmt[band(v)] if k == "attendance_pct" else flag if p["reason"] else cell
+                ws2.write(i, j, "" if v is None else v, fmt)
+        ws2.autofilter(0, 0, len(ordered), len(cols) - 1)
+        ws2.freeze_panes(1, 2)
+
+    def calendar_sheet():
+        ws3 = wb.add_worksheet("Calendar")
+        ws3.write(0, 0, "Code", head)
+        ws3.write(0, 1, "Name", head)
+        ws3.set_column(0, 0, 10)
+        ws3.set_column(1, 1, 26)
+        ws3.set_row(0, 30)
         for j, d in enumerate(days, start=2):
-            c = p["codes"].get(d.isoformat(), "")
-            ws3.write(i, j, "" if c == "P" else c, day_fmt.get(c, day_fmt[""]))
-        ws3.write(i, len(days) + 2, "" if p["attendance_pct"] is None else p["attendance_pct"], pct_fmt[band(p["attendance_pct"])])
-    ws3.write(len(people) + 2, 1, "Blank green = present · MP missing punch · OD on duty · WFH · HD half day · L leave · A absent · WO week off · - not tracked", note)
-    ws3.freeze_panes(1, 2)
+            ws3.write(0, j, d.strftime("%d") + chr(10) + d.strftime("%a")[:2], head)
+            ws3.set_column(j, j, 4.3)
+        ws3.write(0, len(days) + 2, "Att. %", head)
+        ws3.set_column(len(days) + 2, len(days) + 2, 8)
+        for i, p in enumerate(sorted(people, key=lambda p: p["name"]), start=1):
+            ws3.write(i, 0, p["code"], cell)
+            ws3.write(i, 1, p["name"], flag if p["reason"] else cell)
+            for j, d in enumerate(days, start=2):
+                c = p["codes"].get(d.isoformat(), "")
+                ws3.write(i, j, "" if c == "P" else c, day_fmt.get(c, day_fmt[""]))
+            ws3.write(i, len(days) + 2, "" if p["attendance_pct"] is None else p["attendance_pct"], pct_fmt[band(p["attendance_pct"])])
+        ws3.write(len(people) + 2, 1, "Blank green = present · MP missing punch · OD on duty · WFH · HD half day · L leave · A absent · WO week off · - not tracked", note)
+        ws3.freeze_panes(1, 2)
+
+    def insights():
+        if ins:
+            _insights_sheet(wb, ins, month, head, cell, bold, wrap, note, pct_fmt, band)
+
+    order = {"hod": [summary, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
+             "director": [summary, teams, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
+             "hr": [summary, teams, needs_attention, routing_problems, weeks_sheet, insights, employees_sheet, calendar_sheet]}[view]
+    for sheet in order:
+        sheet()
     wb.close()
     return buf.getvalue()
 
@@ -469,6 +742,8 @@ def dashboard_html(settings: Settings, item: MailItem, month: str, days: list[da
     recomputes every figure in the browser for any period the viewer picks. No network access, no external files."""
     from daily.branding import logo_data_uri
 
+    view = blocks.get("view", "hod")
+    company = view in ("director", "hr")
     rows = []
     for p in sorted(people, key=lambda p: p["name"]):
         per = by_code.get(p["code"].upper(), {})
@@ -482,7 +757,7 @@ def dashboard_html(settings: Settings, item: MailItem, month: str, days: list[da
                       round(x["work_hours"] * 60) if x["work_hours"] is not None else None, x["late_minutes"] or 0,
                       x["early_minutes"] or 0, x.get("leave_type") or "", "".join(_FLAG_LETTER.get(f, "") for f in x["flags"])])
         b = (prev_people or {}).get(p["code"].upper())
-        rows.append({"code": p["code"], "name": p["name"], "d": d,
+        rows.append({"code": p["code"], "name": p["name"], "d": d, **({"hod": p.get("hod") or NO_HOD} if company else {}),
                      "prev": {"pct": b["attendance_pct"], "absent": b["absent"], "late": b["late"], "mp": b["missing_punch"],
                               "leave": b["leave"] + b["half_day"]} if b else None})
     first = month_bounds(month)[0]
@@ -498,13 +773,15 @@ def dashboard_html(settings: Settings, item: MailItem, month: str, days: list[da
         "codes": {c: {"label": lbl, "color": col} for c, lbl, col in DAY_CODES},
         "storeKey": f"apis-month-{month}-{item.recipient_key}",
         "planning": blocks["planning"],
+        "view": view, "recipient": item.recipient_name,
+        "prevTeams": {g["name"]: g["before"] for g in blocks.get("groups") or [] if g.get("before") is not None},
     }
     data_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     data_json = data_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    is_director = blocks["is_director"]
-    return _env.get_template("monthly_dashboard.html").render(
+    is_director = company
+    return _env.get_template("monthly_dashboard.html").render(company=company,
         title=f"Monthly Attendance - {label(month)} - {item.recipient_name}", logo=logo_data_uri(), data_json=data_json,
-        recipient=item.recipient_name, month_long=first.strftime("%B %Y"),
+        recipient="HR team" if view == "hr" else item.recipient_name, month_long=first.strftime("%B %Y"),
         heading="Monthly Company Attendance Report" if is_director else "Monthly Team Attendance Report",
         subtitle=("The company" if is_director else "Your team") + " – month-end insights, trends & action plan",
         who="the company" if is_director else "your team", t=totals, n=len(people), ins=ins, has_prev=prev is not None,

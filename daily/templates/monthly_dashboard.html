@@ -29,15 +29,15 @@
   .grid2e { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px; }
   .grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:16px; }
   .kpis8 { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
-  .k { position:relative; text-align:left; font:inherit; color:inherit; border-radius:14px; padding:12px 14px; border:1.5px solid; cursor:pointer; background:#fff;
+  .kpis8 .k { position:relative; text-align:left; font:inherit; color:inherit; border-radius:14px; padding:12px 14px; border:1.5px solid; cursor:pointer; background:#fff;
        transition:transform .12s, box-shadow .12s; min-height:118px; display:flex; flex-direction:column; gap:2px; }
-  .k:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(20,33,61,.12); }
-  .k .top2 { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:13.5px; }
-  .k .bdg { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:none; }
-  .k .v { font-size:28px; font-weight:800; line-height:1.1; margin-top:4px; font-variant-numeric:tabular-nums; }
-  .k .s { font-size:12px; color:var(--muted); }
-  .k .dl { font-size:12px; font-weight:700; }
-  .k svg.spark { display:block; width:100%; max-width:110px; height:20px; margin-top:auto; padding-top:4px; }   /* in the flow, under the numbers: never overlaps the value */
+  .kpis8 .k:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(20,33,61,.12); }
+  .kpis8 .k .top2 { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:13.5px; }
+  .kpis8 .k .bdg { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:none; }
+  .kpis8 .k .v { font-size:28px; font-weight:800; line-height:1.1; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .kpis8 .k .s { font-size:12px; color:var(--muted); }
+  .kpis8 .k .dl { font-size:12px; font-weight:700; }
+  .kpis8 .k svg.spark { display:block; width:100%; max-width:110px; height:20px; margin-top:auto; padding-top:4px; }   /* in the flow, under the numbers: never overlaps the value */
   .take { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
   .take li { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#fff; cursor:pointer; transition:background .12s; }
   .take li:hover { background:#fff8e1; }
@@ -98,7 +98,32 @@
   .empty2 { color:var(--muted); padding:14px; text-align:center; }
   @media (max-width: 980px) { .grid2, .grid2e, .grid3 { grid-template-columns:minmax(0,1fr); } .period { margin-left:0; } }
   @media (max-width: 560px) { .appbar-in { padding:8px 12px; } .period input[type=search] { width:100%; } .tab { padding:7px 9px; font-size:12.5px; } }
-  @media print { .appbar, .panel, .scrim, .tip { display:none !important; } .view { display:block !important; page-break-after:always; } }
+  .stars { display:flex; flex-wrap:wrap; gap:6px; }
+  .stars button { font:inherit; font-size:12.5px; border:1px solid #bfe3cb; background:#f0faf3; color:#14532d; border-radius:999px; padding:4px 10px; cursor:pointer; }
+  .stars button:hover { border-color:#15803d; }
+  .mover { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); cursor:pointer; font-size:13.5px; }
+  .mover:hover { background:#fafbfd; }
+  .slope { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:13px; }
+  table.cmp { width:100%; border-collapse:collapse; font-size:13px; margin-top:6px; }
+  table.cmp th, table.cmp td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:center; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align:left; }
+  .teamchip { display:inline-flex; gap:8px; align-items:center; background:var(--navy); color:#fff; border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:700; margin-bottom:10px; }
+  .teamchip button { border:0; background:transparent; color:#fff; cursor:pointer; font:inherit; }
+  #onepage { display:none; }
+  @media print {
+    .appbar, .panel, .scrim, .tip { display:none !important; } .view { display:block !important; page-break-after:always; }
+    body.one header.top, body.one .greet, body.one .app, body.one footer, body.one .static { display:none !important; }
+    body.one #onepage { display:block !important; }
+  }
+  #onepage { font-size:12px; color:#1e2433; }
+  #onepage h1 { font-size:20px; margin:0; color:#14213d; } #onepage h2 { font-size:14px; margin:14px 0 6px; color:#14213d; border-bottom:2px solid #f5b800; padding-bottom:3px; }
+  #onepage .ophead { display:flex; align-items:center; gap:14px; border-bottom:3px solid #f5b800; padding-bottom:8px; }
+  #onepage .ophead img { height:44px; }
+  #onepage .opk { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:10px; }
+  #onepage .opk div { border:1px solid #e6e8ef; border-radius:8px; padding:6px 8px; } #onepage .opk b { display:block; font-size:18px; }
+  #onepage table { width:100%; border-collapse:collapse; } #onepage td, #onepage th { border-bottom:1px solid #e6e8ef; padding:3px 6px; text-align:left; }
+  #onepage .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  #onepage ul { margin:0; padding-left:16px; } #onepage li { margin-bottom:3px; }
 </style>
 </head>
 <body>
@@ -127,6 +152,7 @@
     <div class="tabs" role="tablist">
       <button class="tab on" data-act="tab:overview" role="tab">{{ icon("bars", 16) }}Overview</button>
       <button class="tab" data-act="tab:trends" role="tab">{{ icon("trend", 16) }}Trends</button>
+      {% if company %}<button class="tab" data-act="tab:teams" role="tab">{{ icon("users", 16) }}Teams</button>{% endif %}
       <button class="tab" data-act="tab:people" role="tab">{{ icon("users", 16) }}People</button>
       <button class="tab" data-act="tab:calendar" role="tab">{{ icon("calendar", 16) }}Calendar</button>
       <button class="tab" data-act="tab:actions" role="tab">{{ icon("check-square", 16) }}Action plan <span class="cnt" id="actcnt"></span></button>
@@ -137,7 +163,8 @@
       <span class="rangebox" id="rangebox"><select id="from" aria-label="From"></select> to <select id="to" aria-label="To"></select></span>
       <input type="search" id="q" placeholder="Find a person…" aria-label="Find a person">
       <button type="button" class="tb-btn" data-act="csv" title="Download the people (and their figures) for this period">{{ icon("download", 16) }}CSV</button>
-      <button type="button" class="tb-btn" data-act="print" title="Print every section">{{ icon("printer", 16) }}</button>
+      <button type="button" class="tb-btn" data-act="onepage" title="Print a one-page summary (or save it as PDF)">{{ icon("printer", 16) }}One-page summary</button>
+      <button type="button" class="tb-btn" data-act="print" title="Print every section">{{ icon("printer", 16) }}All</button>
     </div>
   </div>
 </nav>
@@ -163,6 +190,7 @@
   <div class="app">
     <section class="view on" id="v-overview"></section>
     <section class="view" id="v-trends"></section>
+    <section class="view" id="v-teams"></section>
     <section class="view" id="v-people"></section>
     <section class="view" id="v-calendar"></section>
     <section class="view" id="v-actions"></section>
@@ -175,6 +203,7 @@
   </footer>
 </main>
 
+<section id="onepage" aria-hidden="true"></section>
 <div class="tip" id="tip"></div>
 <div class="scrim" id="scrim" data-act="close"></div>
 <aside class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="pname">
@@ -187,6 +216,7 @@
 </aside>
 
 {% for n in ["bars", "trend", "users", "calendar", "check-square", "alert", "user-x", "clock", "scan", "check", "pin", "download", "chat", "user-cog"] %}<template data-icon="{{ n }}">{{ icon(n, 20) }}</template>{% endfor %}
+<template id="logo-src"><img src="{{ logo }}" alt="apis"></template>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
 <script>
 {% raw %}
@@ -214,7 +244,8 @@ const store = { get() { try { return JSON.parse(localStorage.getItem(D.storeKey)
 
 // ------------------------------------------------------------------ state
 const S = {tab: "overview", from: 0, to: N - 1, filter: "all", sort: "attention", q: "", metric: "pct", overlay: true, cal: "status",
-           done: store.get(), drawer: null, list: []};
+           done: store.get(), drawer: null, list: [], team: ""};
+const COMPANY = !!(P[0] && "hod" in P[0]);
 const idx = () => { const a = []; for (let i = S.from; i <= S.to; i++) a.push(i); return a; };
 const whole = () => S.from === 0 && S.to === N - 1;
 
@@ -247,7 +278,7 @@ function stats(p, I) {
   s.attention = s.A >= TH.absent || s.late >= TH.late || s.MP >= TH.mp;
   s.perfect = s.tracked > 0 && !s.A && !s.late && !s.MP && !s.L && !s.HD && !s.early;
   s.mfFlag = s.monfri >= 2 && s.monfri * 2 >= s.A;
-  s.prev = p.prev;
+  s.prev = p.prev; s.hod = p.hod || "";
   s.delta = whole() && p.prev && p.prev.pct !== null && s.pct !== null ? r1(s.pct - p.prev.pct) : null;
   s.reasons = [s.A >= TH.absent ? `${s.A} absent` : "", s.late >= TH.late ? `${s.late} late` : "", s.MP >= TH.mp ? `${s.MP} missing punch` : ""].filter(Boolean);
   s.action = s.streak >= 3 ? "Speak to them about the absence run; confirm leave is applied in Pocket HRMS"
@@ -259,8 +290,8 @@ function stats(p, I) {
 }
 function allStats(I) { return P.map((p) => stats(p, I)); }
 function total(ss) {
-  const t = {people: ss.length, tracked: 0, pe: 0, A: 0, MP: 0, L: 0, HD: 0, WFH: 0, OD: 0, P: 0, WO: 0, HO: 0, late: 0, early: 0, short: 0, ins: [], hrs: []};
-  for (const s of ss) { for (const k of ["tracked", "pe", "A", "MP", "L", "HD", "WFH", "OD", "P", "WO", "HO", "late", "early", "short"]) t[k] += s[k];
+  const t = {people: ss.length, rec: 0, tracked: 0, pe: 0, A: 0, MP: 0, L: 0, HD: 0, WFH: 0, OD: 0, P: 0, WO: 0, HO: 0, late: 0, early: 0, short: 0, ins: [], hrs: []};
+  for (const s of ss) { for (const k of ["rec", "tracked", "pe", "A", "MP", "L", "HD", "WFH", "OD", "P", "WO", "HO", "late", "early", "short"]) t[k] += s[k];
     t.ins.push(...s.ins); t.hrs.push(...s.hrs); }
   t.pct = t.tracked ? r1(100 * t.pe / t.tracked) : null;
   t.avgIn = t.ins.length ? t.ins.reduce((a, b) => a + b, 0) / t.ins.length : null;
@@ -291,7 +322,7 @@ function weeks(I) {
 }
 function weekdayRows(I) {
   return WD.map((w, k) => { const J = I.filter((i) => wdOf(i) === k); if (!J.length) return null;
-    const t = total(allStats(J)); return {k, name: WDL[k], short: w, days: J.length, t}; }).filter(Boolean);
+    const t = total(allStats(J)); return t.tracked < 0.2 * t.rec ? null : {k, name: WDL[k], short: w, days: J.length, t}; }).filter(Boolean);   // Sundays / weekly off: almost nobody due -> not compared
 }
 
 // ------------------------------------------------------------------ takeaways (same rules as the email)
@@ -367,7 +398,7 @@ function gauge(pct) {
   const v = Math.max(0, Math.min(100, pct ?? 0)), a = Math.PI * (1 - v / 100), x = 100 + 80 * Math.cos(a), y = 100 - 80 * Math.sin(a);
   const ta = Math.PI * (1 - R.target / 100), tx = 100 + 80 * Math.cos(ta), ty = 100 - 80 * Math.sin(ta);
   return `<svg viewBox="0 -6 200 126" style="width:100%;max-width:260px;display:block;margin:0 auto"><path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#eef1f6" stroke-width="16" stroke-linecap="round"/>`
-    + `<path d="M20 100 A80 80 0 ${v > 50 ? 1 : 0} 1 ${x} ${y}" fill="none" stroke="${color(pct)}" stroke-width="16" stroke-linecap="round"/>`
+    + `<path d="M20 100 A80 80 0 0 1 ${x} ${y}" fill="none" stroke="${color(pct)}" stroke-width="16" stroke-linecap="round"/>`
     + `<line x1="${100 + 68 * Math.cos(ta)}" y1="${100 - 68 * Math.sin(ta)}" x2="${tx + 12 * Math.cos(ta)}" y2="${ty - 12 * Math.sin(ta)}" stroke="#14213d" stroke-width="2.5"/>`
     + `<text x="100" y="92" text-anchor="middle" font-size="30" font-weight="800" fill="#14213d">${pctS(pct)}</text>`
     + `<text x="100" y="112" text-anchor="middle" font-size="11" fill="#5d6577">attendance · target ${R.target}%</text></svg>`;
@@ -426,13 +457,56 @@ function vOverview(I) {
   <section class="grid2">
     <div class="card warm"><div class="card-h"><span style="color:#d99a00">${ICON.bars}</span><h3>Key takeaways <span class="muted">– ${esc(periodText())}</span></h3></div>${takes}</div>
     <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.trend}</span><h3>Attendance health</h3></div>${gauge(t.pct)}
-      <div style="margin-top:10px">${donut(mix, t.P + t.OD + t.WFH + t.HD + t.L + t.A + t.MP + t.WO, "person-days")}</div></div>
+      <div style="margin-top:10px">${donut(mix, t.P + t.OD + t.WFH + t.HD + t.L + t.A + t.MP + t.WO + t.HO, "person-days")}</div></div>
   </section>
   <section class="grid2e">
     <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.calendar}</span><h3>By weekday <span class="muted">– attendance %</span></h3></div>
       ${hbars(wd.map((w) => ({l: `${w.name} (${w.days})`, v: w.t.pct ?? 0, vl: pctS(w.t.pct), c: color(w.t.pct), act: "go:trends:weekday", tip: `${w.t.A} absence days, ${w.t.late} late`})), {max: 100})}</div>
     <div class="card"><div class="card-h"><span style="color:#dc2626">${ICON["user-x"]}</span><h3>Who drives the absences</h3></div>
       ${top.length ? hbars(top.map((s) => ({l: s.name, v: s.A, vl: `${s.A} day${s.A === 1 ? "" : "s"}`, c: "#dc2626", act: `person:${s.code}`, tip: s.streak >= 3 ? `${s.streak} days in a row` : ""}))) : '<div class="empty2">No absences in this period.</div>'}</div>
+  </section>
+  <section class="grid2e">${recognition()}${movers()}</section>`;
+}
+function recognition() {
+  const pf = SS.filter((s) => s.perfect).sort(SORTS.name);
+  return `<div class="card"><div class="card-h"><span style="color:#16a34a">${ICON.check}</span><h3>Full attendance <span class="muted">– worth a word of thanks</span></h3></div>
+    ${pf.length ? `<p class="mut" style="margin:0 0 10px;font-size:12.5px">${plural(pf.length, "person", "people")} present every working day in ${esc(periodText())}: no absence, leave, late arrival, missing punch or early leaving.</p>
+    <div class="stars">${pf.map((s) => `<button type="button" data-act="person:${esc(s.code)}">★ ${esc(s.name)}${COMPANY ? ` <span class="mut">· ${esc(s.hod)}</span>` : ""}</button>`).join("")}</div>`
+      : '<div class="empty2">Nobody had full attendance in this period.</div>'}</div>`;
+}
+function movers() {
+  if (!whole() || !D.prevTotals) return `<div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.trend}</span><h3>Change vs ${esc(D.prevLabel)}</h3></div><div class="empty2">${D.prevTotals ? "Pick the whole month to compare with " + esc(D.prevLabel) + "." : "No " + esc(D.prevLabel) + " data to compare with."}</div></div>`;
+  const ch = SS.filter((s) => s.delta !== null), dn = ch.filter((s) => s.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 5), up = ch.filter((s) => s.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
+  const row = (s) => `<div class="mover" data-act="person:${esc(s.code)}"><span><b>${esc(s.name)}</b>${COMPANY ? ` <span class="mut" style="font-size:12px">${esc(s.hod)}</span>` : ""}</span>
+    <span class="slope"><span class="mut">${pctS(s.prev.pct)}</span> → <b style="color:${color(s.pct)}">${pctS(s.pct)}</b> <span class="${s.delta >= 0 ? "ok" : "bad"}" style="font-weight:700">${s.delta > 0 ? "▲" : "▼"} ${Math.abs(s.delta)}</span></span></div>`;
+  return `<div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.trend}</span><h3>Biggest changes vs ${esc(D.prevLabel)} <span class="muted">– same people</span></h3></div>
+    <div class="sec-t" style="margin-top:0;color:#b42318">Slipped most</div>${dn.length ? dn.map(row).join("") : '<p class="mut" style="margin:0">Nobody slipped.</p>'}
+    <div class="sec-t" style="color:#15803d">Improved most</div>${up.length ? up.map(row).join("") : '<p class="mut" style="margin:0">Nobody improved.</p>'}
+    <p style="margin:10px 0 0"><button type="button" class="tb-btn" data-act="go:people:declined">See everyone's change ›</button></p></div>`;
+}
+function teamRows(I) {
+  const g = {};
+  SS.forEach((s) => { (g[s.hod || "No HOD assigned"] = g[s.hod || "No HOD assigned"] || []).push(s); });
+  return Object.entries(g).map(([name, ss]) => { const t = total(ss); const b = D.prevTeams[name];
+    return {name, n: ss.length, t, need: ss.filter((s) => s.attention).length, perfect: ss.filter((s) => s.perfect).length,
+            before: b === undefined ? null : b, delta: whole() && b !== undefined && t.pct !== null ? r1(t.pct - b) : null}; })
+    .sort((a, b) => (b.t.pct ?? -1) - (a.t.pct ?? -1) || a.name.localeCompare(b.name));
+}
+function vTeams(I) {
+  const rows = teamRows(I), n = rows.length;
+  const chart = hbars(rows.map((r) => ({l: `${r.name} (${r.n})`, v: r.t.pct ?? 0, vl: pctS(r.t.pct), c: color(r.t.pct), act: `team:${encodeURIComponent(r.name)}`,
+    tip: `${r.t.A} absence days · ${r.t.MP} missing punches · ${r.need} need attention`})), {max: 100});
+  const body = rows.map((r, k) => `<tr data-act="team:${encodeURIComponent(r.name)}" tabindex="0" title="Show this team's people" style="${n > 5 && k < 3 ? "background:#f3faf5" : n > 5 && k >= n - 3 ? "background:#fef6f5" : ""}">
+    <td class="num mut">${k + 1}</td><td><b>${esc(r.name)}</b></td><td class="num">${r.n}</td>
+    <td class="num"><span class="pbar"><i style="width:${r.t.pct ?? 0}%;background:${color(r.t.pct)}"></i></span><b>${pctS(r.t.pct)}</b></td>
+    ${whole() && D.prevTotals ? `<td class="num">${r.delta === null ? '<span class="mut">–</span>' : `<span class="${r.delta >= 0 ? "ok" : "bad"}">${r.delta > 0 ? "▲" : r.delta < 0 ? "▼" : "="} ${Math.abs(r.delta)}</span>`}</td>` : ""}
+    <td class="num">${r.t.A}</td><td class="num">${r.t.late}</td><td class="num">${r.t.MP}</td><td class="num">${r.t.leave}</td>
+    <td class="num">${r.need ? `<b style="color:#b42318">${r.need}</b>` : ""}</td><td class="num">${r.perfect || ""}</td></tr>`).join("");
+  return `<section class="grid2">
+    <div class="card"><div class="card-h"><span style="color:var(--navy)">${ICON.users}</span><h3>Teams at a glance <span class="muted">– ${esc(periodText())} · click a team for its people</span></h3></div>
+      <div class="tablewrap" style="max-height:680px"><table class="grid" style="font-size:13px"><thead><tr><th>#</th><th>HOD's team</th><th>People</th><th>Attendance</th>${whole() && D.prevTotals ? `<th>vs ${esc(D.prevLabel)}</th>` : ""}<th>Absent</th><th>Late</th><th>Missing<br>punch</th><th>Leave</th><th>Need<br>attention</th><th>Full<br>attendance</th></tr></thead><tbody>${body}</tbody></table></div></div>
+    <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.bars}</span><h3>Attendance by team</h3></div>${chart}
+      <p class="mut" style="font-size:12px;margin:10px 0 0">Green ${R.target}%+ · amber 75–${R.target}% · red below 75%. Top three and bottom three are shaded in the table.</p></div>
   </section>`;
 }
 const METRICS = {pct: ["Attendance %", (d) => d.pct, (v) => pctS(v), true], absent: ["Absent", (d) => d.A.length, (v) => v], late: ["Late", (d) => d.late.length, (v) => v],
@@ -464,7 +538,7 @@ function vTrends(I) {
   const ins = SS.flatMap((s) => s.ins), buckets = [];
   if (ins.length) { const lo = Math.floor(Math.min(...ins) / 30) * 30, hi = Math.floor(Math.max(...ins) / 30) * 30;
     for (let b = lo; b <= hi; b += 30) buckets.push({l: `${t12(b)} – ${t12(b + 30)}`, v: ins.filter((m) => m >= b && m < b + 30).length, c: b + 30 > R.lateAfter ? "#d97706" : "#0d9488"}); }
-  const hrs = SS.flatMap((s) => s.hrs), hb = [["Under 6 h", 0, 360], ["6 – 8 h", 360, R.minHours * 60], [`${R.minHours} – 9 h`, R.minHours * 60, 540], ["9 – 10 h", 540, 600], ["10 h +", 600, 1e9]]
+  const hrs = SS.flatMap((s) => s.hrs), hb = [["Under 6 h", 0, 360], [`6 – ${R.minHours} h`, 360, R.minHours * 60], [`${R.minHours} – 9 h`, R.minHours * 60, 540], ["9 – 10 h", 540, 600], ["10 h +", 600, 1e9]]
     .map(([l, a, b]) => ({l, v: hrs.filter((m) => m >= a && m < b).length, c: a < R.minHours * 60 ? "#d97706" : "#16a34a"}));
   const lt = {}; SS.forEach((s) => Object.entries(s.leaveT).forEach(([k, v]) => { lt[k] = (lt[k] || 0) + v; }));
   return `<section class="card" style="margin-top:16px">
@@ -490,7 +564,7 @@ function vTrends(I) {
 function vPeople(I) {
   const f = FILTERS.find((x) => x[0] === S.filter) || FILTERS[0];
   const q = S.q.toLowerCase();
-  const list = SS.filter((s) => f[2](s) && (!q || s.name.toLowerCase().includes(q) || String(s.code).toLowerCase().includes(q))).sort(SORTS[S.sort]);
+  const list = SS.filter((s) => f[2](s) && (!S.team || s.hod === S.team) && (!q || s.name.toLowerCase().includes(q) || String(s.code).toLowerCase().includes(q))).sort(SORTS[S.sort]);
   S.list = list.map((s) => s.code);
   const chips = FILTERS.map(([k, l, fn]) => { const n = SS.filter(fn).length, off = (k === "declined" || k === "improved") && !whole();
     return `<button class="chip ${S.filter === k ? "on" : ""}" data-act="filter:${k}" ${off ? "disabled title='Only for the whole month'" : ""}>${l}<span class="n">${off ? "" : n}</span></button>`; }).join("");
@@ -500,16 +574,17 @@ function vPeople(I) {
       + (s.perfect ? `<span class="badge2" style="background:#e8f6ec;color:#15803d">Perfect</span>` : "")
       + (s.pend ? `<span class="badge2" style="background:#e0f2fe;color:#0369a1">permission pending</span>` : "");
     const dl = s.delta === null ? '<span class="mut">–</span>' : `<span class="${s.delta >= 0 ? "ok" : "bad"}">${s.delta > 0 ? "▲" : s.delta < 0 ? "▼" : "="} ${Math.abs(s.delta)}</span>`;
-    return `<tr data-act="person:${esc(s.code)}" tabindex="0"><td class="who">${s.attention ? '<span style="color:#b42318" title="Needs attention">●</span> ' : ""}<b>${esc(s.name)}</b><span class="code">(${esc(s.code)})</span><br>${badges}</td>
+    return `<tr data-act="person:${esc(s.code)}" tabindex="0"><td class="who">${s.attention ? '<span style="color:#b42318" title="Needs attention">●</span> ' : ""}<b>${esc(s.name)}</b><span class="code">(${esc(s.code)})</span><br>${badges}</td>${COMPANY ? `<td style="font-size:12.5px">${esc(s.hod)}</td>` : ""}
       <td class="num"><span class="pbar"><i style="width:${s.pct ?? 0}%;background:${color(s.pct)}"></i></span><b>${pctS(s.pct)}</b></td><td class="num">${dl}</td>
       <td class="num">${s.A || ""}</td><td class="num">${s.late || ""}</td><td class="num">${s.MP || ""}</td><td class="num">${s.leave || ""}</td>
       <td class="num">${t12(s.avgIn)}</td><td class="num">${hmm(s.avgH)}</td><td>${stripOf(P.find((p) => p.code === s.code), I)}</td></tr>`; }).join("");
   return `<section class="card" style="margin-top:16px">
     <div class="card-h"><span style="color:var(--navy)">${ICON.users}</span><h3>People <span class="muted">– ${list.length} of ${SS.length} · click anyone for their month</span></h3></div>
+    ${S.team ? `<div class="teamchip">HOD's team: ${esc(S.team)} <button type="button" data-act="team:" aria-label="Show everyone">✕</button></div>` : ""}
     <div class="chips">${chips}</div>
     <div class="tblbar"><label class="mut" style="font-size:13px">Sort <select id="sort">${[["attention", "Needs attention first"], ["low", "Attendance: lowest first"], ["high", "Attendance: highest first"], ["absent", "Most absences"], ["late", "Most late arrivals"], ["mp", "Most missing punches"], ["change", "Biggest drop vs last month"], ["name", "Name"]].map(([k, l]) => `<option value="${k}" ${S.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-    <div class="tablewrap" style="max-height:640px"><table class="grid"><thead><tr><th>Employee</th><th>Attendance</th><th>vs ${esc(D.prevLabel)}</th><th>Absent</th><th>Late</th><th>Missing punch</th><th>Leave</th><th>Avg arrival</th><th>Avg duty</th><th>Day by day</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="10" class="empty2">Nobody matches.</td></tr>`}</tbody></table></div>
+    <div class="tablewrap" style="max-height:640px"><table class="grid"><thead><tr><th>Employee</th>${COMPANY ? "<th>HOD's team</th>" : ""}<th>Attendance</th><th>vs ${esc(D.prevLabel)}</th><th>Absent</th><th>Late</th><th>Missing punch</th><th>Leave</th><th>Avg arrival</th><th>Avg duty</th><th>Day by day</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="11" class="empty2">Nobody matches.</td></tr>`}</tbody></table></div>
   </section>`;
 }
 function heat(x, mode) {
@@ -566,6 +641,26 @@ function vActions(I) {
       <ul class="plan">${D.planning.map((p) => `<li>${esc(p)}</li>`).join("")}${weekdayRows(I).length >= 3 ? (() => { const w = weekdayRows(I).filter((x) => x.t.pct !== null).sort((a, b) => a.t.pct - b.t.pct)[0]; return w ? `<li>Expect lower attendance on ${w.name}s (${w.t.pct}% this period) – avoid scheduling key work then.</li>` : ""; })() : ""}</ul></div>
   </section>`;
 }
+function onePage() {
+  const I = idx(), ss = allStats(I), t = total(ss), tk = takeaways(ss, t, I).slice(0, 6), wk = weeks(I);
+  const need = ss.filter((s) => s.attention).sort((a, b) => b.A - a.A || b.MP - a.MP).slice(0, 12), pf = ss.filter((s) => s.perfect).sort(SORTS.name);
+  const k = (l, v, c) => `<div><span style="color:#5d6577">${l}</span><b style="color:${c || "#14213d"}">${v}</b></div>`;
+  const teams = COMPANY ? teamRows(I) : [];
+  $("onepage").innerHTML = `<div class="ophead">${document.getElementById("logo-src").innerHTML}<div><h1>${esc(document.querySelector("header h1").textContent)}</h1>
+      <div style="color:#5d6577">${esc(D.recipient)} · ${esc(periodText())} · ${ss.length} employees</div></div></div>
+    <div class="opk">${k("Attendance", pctS(t.pct), color(t.pct))}${k("Absence days", t.A, "#dc2626")}${k("Late arrivals", t.late, "#d97706")}${k("Missing punches", t.MP, "#7c3aed")}${k("Leave days", t.leave)}${k("Need attention", ss.filter((s) => s.attention).length, "#b42318")}</div>
+    <h2>Key takeaways</h2><ul>${tk.map((x) => `<li>${esc(x.text)}</li>`).join("")}</ul>
+    <div class="cols"><div><h2>Week by week</h2><table><tr><th>Week</th><th>Attendance</th><th>Absent</th><th>Late</th><th>MP</th></tr>${wk.map((w) => `<tr><td>Week ${w.n} (${DT[w.from].getDate()}–${DT[w.to].getDate()})</td><td><b style="color:${color(w.t.pct)}">${pctS(w.t.pct)}</b></td><td>${w.t.A}</td><td>${w.t.late}</td><td>${w.t.MP}</td></tr>`).join("")}</table>
+      ${teams.length ? `<h2>Teams</h2><table><tr><th>HOD's team</th><th>People</th><th>Attendance</th><th>Absent</th></tr>${teams.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td><b style="color:${color(r.t.pct)}">${pctS(r.t.pct)}</b></td><td>${r.t.A}</td></tr>`).join("")}</table>` : ""}</div>
+    <div><h2>Action required</h2>${need.length ? `<table><tr><th>Employee</th><th>A</th><th>Late</th><th>MP</th><th>%</th></tr>${need.map((s) => `<tr><td>${esc(s.name)} <span style="color:#5d6577">${esc(s.code)}</span></td><td>${s.A}</td><td>${s.late}</td><td>${s.MP}</td><td>${pctS(s.pct)}</td></tr>`).join("")}</table>${ss.filter((s) => s.attention).length > need.length ? `<p style="color:#5d6577">… and ${ss.filter((s) => s.attention).length - need.length} more.</p>` : ""}` : "<p>Nobody needs attention.</p>"}
+      <h2>Full attendance</h2><p>${pf.length ? pf.map((s) => esc(s.name)).join(", ") : "Nobody this period."}</p>
+      <h2>Next-month planning</h2><ul>${D.planning.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div></div>
+    <p style="color:#5d6577;margin-top:12px">Source: Pocket HRMS. Attendance is a workforce-availability indicator, not a measure of productivity.</p>`;
+  document.body.classList.add("one");
+  const done = () => { document.body.classList.remove("one"); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  window.print();
+}
 function periodText() { return whole() ? D.monthLong : `${fmtD(S.from)} – ${fmtD(S.to)} (${S.to - S.from + 1} days)`; }
 
 // ------------------------------------------------------------------ drawers
@@ -588,6 +683,10 @@ function openPerson(code) {
   $("pbody").innerHTML = `<div class="facts">${fact("Attendance", pctS(s.pct), color(s.pct))}${fact("vs " + D.prevLabel, p.prev && whole() ? `${dl}<div style="font-size:11px;color:var(--muted);font-weight:600">was ${pctS(p.prev.pct)}</div>` : "–")}${fact("Absent", s.A, s.A ? "#dc2626" : "")}
       ${fact("Late", s.late + (s.late ? `<div style="font-size:11px;color:var(--muted);font-weight:600">avg ${hmm(s.lateMin / s.late)} hrs</div>` : ""), s.late ? "#d97706" : "")}${fact("Missing punch", s.MP, s.MP ? "#7c3aed" : "")}${fact("Leave", s.leave)}
       ${fact("Avg arrival", t12(s.avgIn))}${fact("Avg duty", hmm(s.avgH))}${fact("Left early", s.early)}</div>
+    ${p.prev && whole() ? (() => { const pv = p.prev, cmp = (l, a, b, goodDown) => { const d = a === null || b === null ? null : r1(a - b);
+        return `<tr><td>${l}</td><td>${b === null ? "–" : b}</td><td><b>${a === null ? "–" : a}</b></td><td>${d === null || d === 0 ? '<span class="mut">=</span>' : `<span class="${(goodDown ? d < 0 : d > 0) ? "ok" : "bad"}">${d > 0 ? "▲" : "▼"} ${Math.abs(d)}</span>`}</td></tr>`; };
+      return `<div class="sec-t">${esc(D.monthLong.split(" ")[0])} vs ${esc(D.prevLabel)}</div><table class="cmp"><thead><tr><th></th><th>${esc(D.prevLabel)}</th><th>This month</th><th>Change</th></tr></thead><tbody>
+        ${cmp("Attendance %", s.pct, pv.pct, false)}${cmp("Absent days", s.A, pv.absent, true)}${cmp("Late arrivals", s.late, pv.late, true)}${cmp("Missing punches", s.MP, pv.mp, true)}${cmp("Leave days", s.leave, pv.leave, true)}</tbody></table>`; })() : ""}
     <div class="mcal">${cal}</div>
     ${s.action ? `<div class="sec-t">Action required</div><div class="act" style="min-width:0">${ICON.chat}<span>${esc(s.action)}</span></div>` : ""}
     <div class="sec-t">Absences by weekday</div>${s.A ? hbars(WD.slice(0, 7).map((w, k) => ({l: WDL[k], v: s.absWd[k], c: "#dc2626"})).filter((x, k) => I.some((i) => wdOf(i) === k))) : '<p class="ok" style="margin:0;font-weight:600">No absences.</p>'}
@@ -630,7 +729,9 @@ document.querySelectorAll("template[data-icon]").forEach((t) => { ICON[t.dataset
 function render() {
   const I = idx(); SS = allStats(I); T = total(SS);
   if (S.tab !== "people" && S.tab !== "calendar") S.list = SS.slice().sort(SORTS.name).map((s) => s.code);
-  const v = {overview: vOverview, trends: vTrends, people: vPeople, calendar: vCalendar, actions: vActions};
+  const v = {overview: vOverview, trends: vTrends, teams: vTeams, people: vPeople, calendar: vCalendar, actions: vActions};
+  if (!COMPANY) delete v.teams;
+  if (!v[S.tab]) S.tab = "overview";
   for (const k of Object.keys(v)) $("v-" + k).classList.toggle("on", k === S.tab);
   try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* file:// in some browsers */ }
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("on", b.dataset.act === "tab:" + S.tab));
@@ -670,7 +771,9 @@ function csv(rows, name) {
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const a = el.dataset.act, [k, v, w] = a.split(":");
-  if (k === "tab") { S.tab = v; if (v === "people") { S.filter = "all"; S.sort = "attention"; } render(); }
+  if (k === "tab") { S.tab = v; if (v === "people") { S.filter = "all"; S.sort = "attention"; S.team = ""; } render(); }
+  else if (k === "team") { S.team = decodeURIComponent(a.slice(5)); S.tab = "people"; S.filter = "all"; render(); }
+  else if (k === "onepage") onePage();
   else if (k === "go") go(a.slice(3));
   else if (k === "person") openPerson(a.slice(7));
   else if (k === "day") openDay(Number(v));
@@ -683,8 +786,8 @@ document.addEventListener("click", (e) => {
   else if (k === "step") step(Number(v));
   else if (k === "print") window.print();
   else if (k === "csv") { const I = idx(), ss = allStats(I);
-    csv([["Code", "Name", "Attendance %", "vs " + D.prevLabel, "Absent", "Late", "Missing punch", "Leave", "WFH", "On duty", "Avg arrival", "Avg duty (h:mm)", "Needs attention", "Action"].concat(I.map((i) => fmtD(i)))]
-      .concat(ss.map((s) => { const p = P.find((x) => x.code === s.code); return [s.code, s.name, s.pct, s.delta, s.A, s.late, s.MP, s.leave, s.WFH, s.OD, t12(s.avgIn), hmm(s.avgH), s.reasons.join(", "), s.action]
+    csv([["Code", "Name"].concat(COMPANY ? ["HOD's team"] : []).concat(["Attendance %", "vs " + D.prevLabel, "Absent", "Late", "Missing punch", "Leave", "WFH", "On duty", "Avg arrival", "Avg duty (h:mm)", "Needs attention", "Action"]).concat(I.map((i) => fmtD(i)))]
+      .concat(ss.map((s) => { const p = P.find((x) => x.code === s.code); return [s.code, s.name].concat(COMPANY ? [s.hod] : []).concat([s.pct, s.delta, s.A, s.late, s.MP, s.leave, s.WFH, s.OD, t12(s.avgIn), hmm(s.avgH), s.reasons.join(", "), s.action])
         .concat(I.map((i) => (p.d[i] || [""])[0])); })), `attendance_${D.month}${whole() ? "" : "_" + D.days[S.from] + "_to_" + D.days[S.to]}.csv`); }
   else if (k === "csvact") { const rows = [["Group", "Code", "Name", "Why", "Action", "Done"]];
     document.querySelectorAll(".actitem").forEach((it) => { const g = it.closest(".actgrp").querySelector("h4").textContent.replace(/\(\d+\)/, "").trim();
@@ -709,7 +812,7 @@ function bindTips() {
   });
 }
 const start = (location.hash || "").slice(1);
-if (["overview", "trends", "people", "calendar", "actions"].includes(start)) S.tab = start;
+if (["overview", "trends", "teams", "people", "calendar", "actions"].includes(start)) S.tab = start;
 render();
 })();
 {% endraw %}

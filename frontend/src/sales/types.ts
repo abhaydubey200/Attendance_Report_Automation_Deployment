@@ -63,10 +63,47 @@ export interface SalesRules {
 }
 
 export interface SalesEmailSettings {
-  mode: "test" | "live"; approval_required: boolean; test_recipient: string | null; director_name: string; director_emails: string[];
+  mode: "test" | "live"; approval_required: boolean; auto_send: boolean; test_recipient: string | null; director_name: string; director_emails: string[];
   hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean;
 }
 
 export const STATUS_COLOR: Record<SalesStatus, string> = {
   PRESENT: "#16a34a", LATE: "#d97706", HALF_DAY: "#f59e0b", LEAVE: "#64748b", WEEK_OFF: "#94a3b8", ABSENT: "#dc2626",
 };
+
+export interface SalesWarnCount { code: string; label: string; level: "high" | "medium" | "low"; days: number }
+
+export interface SalesReportPerson {
+  code: string; name: string; designation: string; zone: string; team_head: string; hod: string; days: number; present: number; late: number;
+  half_day: number; leave: number; week_off: number; absent: number; attendance_pct: number | null; avg_market: string; km: number;
+  flag_days: number; warnings: SalesWarnCount[]; repeat: string[];
+}
+
+export interface SalesReport {
+  from: string; to: string; days_uploaded: number; people: SalesReportPerson[]; repeat_days: number;
+  days: { date: string; people: number; attendance_pct: number | null; present: number; late: number; absent: number; flagged: number }[];
+  totals: { attendance_pct: number | null; person_days: number; flagged_days: number; repeat_people: number; absent: number; late: number; leave: number };
+  filters: { hods: string[]; teams: string[] };
+}
+
+export interface SalesEmployeeReport {
+  code: string; name: string; designation: string; team_head: string; team_head_email: string; hod: string; status: string; from: string; to: string;
+  summary: { days: number; present: number; late: number; half_day: number; leave: number; week_off: number; absent: number; attendance_pct: number | null; flagged_days: number };
+  days: { date: string; status: SalesStatus; status_label: string; leave: string; not_marked: boolean; att: string; first: string; last: string;
+    market: string; km: number | null; eod: string; calls: number | null; productive: number | null; warnings: string[] }[];
+}
+
+export interface SalesEmailLogRow {
+  id: number; report_date: string; kind: "Daily" | "Month-end"; recipient: string; role: string; to: string; subject: string; status: string;
+  note: string | null; sent_at: string; sent_by: string | null;
+}
+
+export interface SalesJobRun {
+  id: number; job: string; target: string | null; trigger: string; status: string; summary: Record<string, unknown> | null; error: string | null;
+  started_by: string; started_at: string; finished_at: string | null; seconds: number | null;
+}
+
+export interface SalesJobs { inbox: string; waiting: string[]; auto_send: boolean; mode: "test" | "live"; runs: SalesJobRun[] }
+
+export interface SalesMonthList { months: { month: string; label: string; days: number; emails: number }[]; default: string }
+export interface SalesMonthMail { month: string; label: string; mode: "test" | "live"; testing: string | null; items: SalesMailItem[] }

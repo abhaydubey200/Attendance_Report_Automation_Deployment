@@ -56,6 +56,7 @@ class SalesRules(BaseModel):
 class SalesEmail(BaseModel):
     mode: str = "test"                             # test = saved to the outbox, never sent | live
     approval_required: bool = True
+    auto_send: bool = False                        # daily job: send the prepared emails without waiting for Approve
     test_recipient: str | None = None              # testing: every email goes here instead
     director_name: str = "Director"
     director_emails: list[str] = Field(default_factory=list)

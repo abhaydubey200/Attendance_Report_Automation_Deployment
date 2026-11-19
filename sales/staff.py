@@ -190,3 +190,55 @@ def restore(session: Session, code: str, actor: str) -> SalesEmployee:
     e.status, e.exit_date, e.updated_by = "ACTIVE", None, actor
     session.flush()
     return e
+
+
+EDITABLE = [f for f in FIELDS if f not in ("code", "status", "exit_date")]
+
+
+def _clean_values(data: dict) -> dict:
+    out = {}
+    for f in EDITABLE:
+        if f not in data:
+            continue
+        v = data[f]
+        v = (str(v).strip() if v is not None else "") or None
+        if v and f.endswith("_email"):
+            v = v.lower()
+            if not valid_email(v):
+                raise StaffError(f"'{v}' is not an email address.")
+        if v and f == "date_of_joining":
+            d = _date(v)
+            if d is None:
+                raise StaffError("Date of joining: use YYYY-MM-DD.")
+            v = d
+        out[f] = v
+    return out
+
+
+def add(session: Session, data: dict, actor: str) -> SalesEmployee:
+    code = norm_code(str(data.get("code") or ""))
+    if not re.match(r"^[A-Z]{2}\d{3,}$", code):
+        raise StaffError("Enter the employee code, e.g. SL04650.")
+    if session.scalar(select(SalesEmployee).where(SalesEmployee.code == code)):
+        raise StaffError(f"{code} is already on the staff list.")
+    values = _clean_values(data)
+    if not values.get("name"):
+        raise StaffError("Enter the name.")
+    e = SalesEmployee(code=code, status="ACTIVE", source="added in the app", updated_by=actor, **values)
+    session.add(e)
+    session.flush()
+    return e
+
+
+def update(session: Session, code: str, data: dict, actor: str) -> SalesEmployee:
+    e = session.scalar(select(SalesEmployee).where(SalesEmployee.code == norm_code(code)))
+    if e is None:
+        raise LookupError(code)
+    values = _clean_values(data)
+    if "name" in values and not values["name"]:
+        raise StaffError("The name cannot be empty.")
+    for f, v in values.items():
+        setattr(e, f, v)
+    e.updated_by, e.source = actor, "edited in the app"
+    session.flush()
+    return e

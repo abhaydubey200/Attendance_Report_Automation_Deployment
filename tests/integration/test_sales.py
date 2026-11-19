@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 from api.main import CSRF_HEADER, create_app
 from database.connection import session_scope
 from database.models.sales import SalesEmployeeDay
-from sales import bizom, mail, report, service, staff
+from sales import bizom, mail, report, reports, service, staff
 from sales.config import SalesEmail, get_email, save_email
 
 H = {CSRF_HEADER: "1"}
@@ -231,3 +231,90 @@ def test_hr_amendment_file_only_field_sales_and_right_names(engine):
     assert display_name("SHAKIL AHMED", "shakeel@apisindia.com") == "SHAKIL AHMED"
     assert display_name("GOURI SHANKAR", "vaibhav.mishra@apisindia.com") == "Vaibhav Mishra"
     assert display_name("ASIF ALI ANSARI", "asifansari@apisindia.com") == "ASIF ALI ANSARI"
+
+
+def test_staff_add_and_edit(staffed):
+    with session_scope(staffed) as s:
+        e = staff.add(s, {"code": "sl04650", "name": "New Person", "manager_email": "RAVI@example.com", "date_of_joining": "2026-11-01"}, "tester")
+        assert e.code == "SL04650" and e.manager_email == "ravi@example.com" and e.status == "ACTIVE"
+        with pytest.raises(staff.StaffError, match="already"):
+            staff.add(s, {"code": "SL04650", "name": "Again"}, "tester")
+        with pytest.raises(staff.StaffError):
+            staff.update(s, "SL04650", {"hod_email": "nope"}, "tester")
+        assert staff.update(s, "SL04650", {"zone": "GTR02"}, "tester").zone == "GTR02"
+        with pytest.raises(LookupError):
+            staff.update(s, "SL77777", {"zone": "x"}, "tester")
+
+
+def test_inbox_job_reports_and_month_end(staffed, settings, tmp_path):
+    from sales import jobs, monthly
+    inbox = jobs.inbox_dir(settings)
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "Attendancereport.csv").write_bytes(attendance_csv())
+    (inbox / "EOD.csv").write_bytes(eod_csv())
+    (inbox / "notes.csv").write_bytes(b"a,b\n1,2\n")
+    r = jobs.run_daily(settings, staffed, date(2026, 11, 18), trigger="TEST", actor="tester")
+    assert r["status"] == "SUCCESS" and sorted(r["processed"]) == ["Attendancereport.csv", "EOD.csv"] and r["send"] == "waiting for approval"
+    assert not (inbox / "Attendancereport.csv").exists() and (inbox / "notes.csv").exists()     # Bizom files deleted after use
+    assert jobs.run_daily(settings, staffed, date(2026, 11, 18), trigger="TEST", actor="tester")["status"] == "SUCCESS"   # rerun is safe
+    assert jobs.run_daily(settings, staffed, date(2026, 11, 17), trigger="TEST", actor="tester")["status"] == "FAILED"    # nothing for that day
+    (inbox / "Attendancereport.csv").write_bytes(attendance_csv("2026-11-19"))
+    jobs.run_daily(settings, staffed, date(2026, 11, 19), trigger="TEST", actor="tester")
+    with session_scope(staffed) as s:
+        assert [h["status"] for h in jobs.history(s)][:4] == ["SUCCESS", "FAILED", "SUCCESS", "SUCCESS"]
+        rep = reports.attendance_report(s, date(2026, 11, 1), date(2026, 11, 30))
+        assert rep["days_uploaded"] == 2 and rep["totals"]["person_days"] == 18
+        assert len(reports.attendance_report(s, date(2026, 11, 1), date(2026, 11, 30), q="asha")["people"]) == 1
+        load_workbook(io.BytesIO(reports.report_excel(rep)))
+        emp = reports.employee_report(s, "SL00003", date(2026, 11, 1), date(2026, 11, 30))
+        assert emp["summary"]["days"] == 2 and emp["days"][0]["warnings"] and emp["summary"]["flagged_days"] == 2
+        with pytest.raises(reports.ReportError):
+            reports.attendance_report(s, date(2026, 11, 30), date(2026, 11, 1))
+        daily_before = len(mail.items_for(s, date(2026, 11, 30)))
+    g = monthly.generate(settings, staffed, "2026-11", trigger="TEST", actor="tester")
+    assert g["status"] == "SUCCESS" and g["days"] == 2
+    with session_scope(staffed) as s:
+        items = {i.recipient_key: i for i in monthly.items(s, "2026-11")}
+        assert set(items) == {f"MONTHLY:{k}" for k in ("ravi@example.com", "zonal1@example.com", "zonal2@example.com", "hod1@example.com", "DIRECTOR", "HR")}
+        assert len(mail.items_for(s, date(2026, 11, 30))) == daily_before                      # month-end kept out of the daily list
+        html, text, files = mail.render(s, items["MONTHLY:ravi@example.com"])
+        assert "November 2026" in html and "Dear Ravi Manager" in html and "Ravi Manager" in text
+        assert "fraud" not in html.lower() and "9999999999" not in html + files[1].content.decode()
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Weeks", "Needs a conversation", "People", "Calendar"]
+        assert "Teams" in load_workbook(io.BytesIO(mail.render(s, items["MONTHLY:DIRECTOR"])[2][0].content)).sheetnames
+        done = mail.send_items(s, [i for i in items.values() if i.status == "PENDING"], "tester", settings.storage.area("sales_outbox"))
+        assert {i.status for i in done} == {"SAVED"}
+        log = reports.email_log(s)
+        assert {e["kind"] for e in log} == {"Month-end"} and len(log) == len(done)
+    g2 = monthly.generate(settings, staffed, "2026-11", trigger="TEST", actor="tester")           # again: no double send
+    with session_scope(staffed) as s:
+        assert {i.status for i in monthly.items(s, "2026-11") if i.recipient_key.startswith("MONTHLY:ravi")} >= {"SAVED", "DUPLICATE"}
+    assert g2["emails"].get("PENDING", 0) == 0
+    assert monthly.generate(settings, staffed, "2026-10", trigger="TEST", actor="tester")["status"] == "FAILED"
+
+
+def test_new_sales_api_routes(staffed, settings, tmp_path):
+    with TestClient(create_app(settings, staffed, frontend_dist=tmp_path / "x")) as api:
+        api.post("/api/v1/sales/upload", headers=H, files=[("files", ("Attendancereport.csv", attendance_csv(), "text/csv"))])
+        assert api.post("/api/v1/sales/staff", headers=H, json={"code": "SL04650", "name": "New Person"}).status_code == 200
+        assert api.post("/api/v1/sales/staff", headers=H, json={"code": "SL04650", "name": "X"}).status_code == 422
+        assert api.put("/api/v1/sales/staff/SL04650", headers=H, json={"zone": "GTR09"}).json()["zone"] == "GTR09"
+        assert api.put("/api/v1/sales/staff/SL99999", headers=H, json={"zone": "x"}).status_code == 404
+        rep = api.get("/api/v1/sales/reports/attendance").json()
+        assert rep["to"] == D and rep["days_uploaded"] == 1
+        assert api.get("/api/v1/sales/reports/attendance?start=2026-11-20&end=2026-11-01").status_code == 422
+        assert api.get("/api/v1/sales/reports/attendance/excel").status_code == 200
+        assert api.get("/api/v1/sales/reports/employee/SL00001").json()["summary"]["days"] == 1
+        assert api.get("/api/v1/sales/reports/employee/XX00000").status_code == 404
+        j = api.get("/api/v1/sales/jobs").json()
+        assert j["inbox"].endswith("sales_inbox") and j["auto_send"] is False
+        assert api.post("/api/v1/sales/jobs/daily", headers=H, json={"day": "2026-11-17"}).json()["status"] == "FAILED"
+        assert api.get("/api/v1/sales/monthly").json()["months"][0]["month"] == "2026-11"
+        assert api.post("/api/v1/sales/monthly/generate", headers=H, json={"month": "2026-10"}).status_code == 422
+        g = api.post("/api/v1/sales/monthly/generate", headers=H, json={"month": "2026-11"}).json()
+        assert len(g["items"]) == 6
+        mid = next(i["id"] for i in g["items"] if i["status"] == "PENDING")
+        assert "Monthly Field Sales" in api.get(f"/api/v1/sales/mail/{mid}/preview").text
+        assert api.post("/api/v1/sales/monthly/2026-11/approve", headers=H, json={}).json()["sent_now"] == 4
+        assert {e["kind"] for e in api.get("/api/v1/sales/emails").json()} == {"Month-end"}
+        assert api.get("/api/v1/sales/monthly/2026-13").status_code == 422

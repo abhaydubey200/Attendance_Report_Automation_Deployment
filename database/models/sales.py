@@ -125,3 +125,20 @@ class SalesMailItem(Base):
     sent_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     approved_by: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+
+
+class SalesJobRun(Base):
+    """History of Field Sales jobs (daily from the inbox, month-end), separate from Module 1's job history."""
+    __tablename__ = "sales_job_run"
+    __table_args__ = (Index("ix_sales_job_run_started", "started_at"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(String(20), nullable=False)              # DAILY | MONTHLY
+    target: Mapped[str | None] = mapped_column(String(20))
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)          # SCHEDULED | MANUAL | CLI
+    status: Mapped[str] = mapped_column(String(10), nullable=False)           # RUNNING | SUCCESS | PARTIAL | FAILED
+    summary: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(String(1000))
+    started_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

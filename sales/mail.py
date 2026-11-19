@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from core.timeutils import now_utc
 from daily.mailer import Attachment, MailError, build_message, send
 from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesMailItem
+from sales.util import utc_iso
 from sales import report, routing
 from sales.config import get_email
 
@@ -28,8 +29,8 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def items_for(session: Session, day: date) -> list[SalesMailItem]:
-    return list(session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status != SUPERSEDED)
-                                .order_by(SalesMailItem.id)))
+    return list(session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status != SUPERSEDED,
+                                                          SalesMailItem.recipient_key.not_like("MONTHLY:%")).order_by(SalesMailItem.id)))
 
 
 def plan(session: Session, up: SalesDayUpload) -> list[SalesMailItem]:
@@ -66,6 +67,10 @@ def plan(session: Session, up: SalesDayUpload) -> list[SalesMailItem]:
 
 
 def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attachment]]:
+    c = json.loads(item.content)
+    if c.get("kind") == "monthly":
+        from sales import monthly
+        return monthly.render(session, item)
     up = session.get(SalesDayUpload, item.upload_id)
     c = json.loads(item.content)
     codes = set(c["codes"])
@@ -131,4 +136,4 @@ def item_dict(i: SalesMailItem) -> dict:
     return {"id": i.id, "report_date": i.report_date.isoformat(), "key": i.recipient_key, "name": i.recipient_name, "role": i.role,
             "to": i.to_addrs or "", "subject": i.subject, "status": i.status, "note": i.note, "attempts": i.attempts,
             "counts": json.loads(i.counts or "{}"), "sendable": i.status in (PENDING, FAILED),
-            "sent_at": i.sent_at.isoformat() if i.sent_at else None, "approved_by": i.approved_by}
+            "sent_at": utc_iso(i.sent_at), "approved_by": i.approved_by}

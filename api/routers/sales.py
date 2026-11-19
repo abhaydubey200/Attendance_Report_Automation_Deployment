@@ -207,7 +207,7 @@ def put_rules(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
     try:
         rules = SalesRules.model_validate({**get_rules(db).model_dump(), **body})
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"].removeprefix("Value error, ")) from None
     return save_rules(db, rules, principal.username).model_dump()
 
 
@@ -216,5 +216,5 @@ def put_email(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
     try:
         email = SalesEmail.model_validate({**get_email(db).model_dump(), **body})
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"]) from None
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"].removeprefix("Value error, ")) from None
     return save_email(db, email, principal.username).model_dump()

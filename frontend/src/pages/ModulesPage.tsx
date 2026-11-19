@@ -45,7 +45,7 @@ export function ModulesPage({ headOfficeHome }: { headOfficeHome: string | undef
           <section className="module-card" aria-labelledby="m2-title">
             <span className="module-badge-icon m2" aria-hidden="true"><Icon name="field" /></span>
             <h2 id="m2-title">Field Sales Attendance</h2>
-            <p className="module-source">Bizom · Module 2 <span className="module-tag">Setting up</span></p>
+            <p className="module-source">Bizom · Module 2 <span className="module-tag">New</span></p>
             <p className="module-desc">Daily attendance of the field sales teams from Bizom, emailed to their managers and HODs.</p>
             <Link className="btn module-btn m2" to="/sales">
               Open Field Sales <Icon name="arrow" className="btn-icon" />

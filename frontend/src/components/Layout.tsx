@@ -57,6 +57,10 @@ export function Layout() {
             </div>
           ))}
         </nav>
+        <NavLink to="/modules" className="nav-link switch-module">
+          <Icon name="switch" />
+          <span>Switch module</span>
+        </NavLink>
         <div className="sidebar-footer">
           <span className="dot" aria-hidden="true" />
           {signInMode ? "Signed-in access" : "Local access · this PC only"}

@@ -15,6 +15,10 @@ const PATHS: Record<string, string> = {
   close: "M6 6l12 12M18 6L6 18",
   inbox: "M3 13h5l1.5 3h5L16 13h5M5 5h14l2 8v6H3v-6z",
   logout: "M15 3h4a1 1 0 011 1v16a1 1 0 01-1 1h-4M10 17l5-5-5-5M15 12H3",
+  office: "M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 9h4a1 1 0 011 1v11M3 21h18M8 8h3M8 12h3M8 16h3",
+  field: "M12 21s-6-5.3-6-10.5a6 6 0 0112 0C18 15.7 12 21 12 21zM12 12.5a2 2 0 100-4 2 2 0 000 4z",
+  switch: "M7 7h13l-3-3M17 17H4l3 3",
+  arrow: "M5 12h14M13 6l6 6-6 6",
 };
 
 export function Icon({ name, className }: { name: string; className?: string }) {

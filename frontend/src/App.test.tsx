@@ -87,10 +87,24 @@ const api = (me: Me, extra: Handler = () => json(404, { detail: "nope" })): Hand
   return extra(url, init);
 };
 
-test("no-login mode opens on Insights with KPIs, highlights and downloads", async () => {
+test("opens on the module chooser; Field Sales has its own page and a way back", async () => {
   mockFetch(api(OPERATOR));
   renderApp();
+  expect(await screen.findByRole("heading", { name: "Head Office Attendance" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Field Sales Attendance" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("link", { name: /Open Field Sales/ }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Field Sales Attendance" })).toBeInTheDocument();
+  expect(screen.getByText("Bizom daily attendance export")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("link", { name: /Switch module/ }));
+  expect(await screen.findByRole("link", { name: /Open Head Office/ })).toBeInTheDocument();
+});
+
+test("Head Office (module 1) opens on Insights with KPIs, highlights and downloads", async () => {
+  mockFetch(api(OPERATOR));
+  renderApp();
+  await userEvent.click(await screen.findByRole("link", { name: /Open Head Office/ }));
   expect(await screen.findByText("Attendance 68.8% of 8 tracked employees.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Switch module/ })).toHaveAttribute("href", "/modules");
   expect(screen.getAllByText("68.8%").length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: "Excel" })).toHaveAttribute("href", "/api/v1/days/2026-11-13/excel?scope=ALL");
   expect(screen.getByRole("link", { name: "HTML dashboard" })).toHaveAttribute("href", "/api/v1/days/2026-11-13/dashboard?scope=ALL");

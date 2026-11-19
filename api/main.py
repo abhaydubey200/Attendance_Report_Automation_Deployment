@@ -117,4 +117,6 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and candidate.is_relative_to(root):
             return FileResponse(candidate)
-        return FileResponse(index)   # client-side routing
+        # client-side routing. "no-cache" = the browser must check for a newer index.html every time (a quick 304 when
+        # unchanged), so screens update right after a new build; the hashed /assets files can stay cached.
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})

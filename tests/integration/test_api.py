@@ -125,6 +125,8 @@ def test_spa_served_with_fallback_and_no_traversal(settings, engine, tmp_path):
     (tmp_path / "secret.txt").write_text("TOP SECRET")
     with TestClient(create_app(settings, engine, frontend_dist=dist)) as c:
         assert "APP" in c.get("/").text and "APP" in c.get("/insights").text
+        # browsers must re-check index.html, or they keep showing the old screens after an update
+        assert c.get("/").headers["cache-control"] == "no-cache" and c.get("/modules").headers["cache-control"] == "no-cache"
         assert c.get("/assets/app.js").status_code == 200
         assert "TOP SECRET" not in c.get("/..%2Fsecret.txt").text
         assert c.get("/api/v1/nope").status_code == 404

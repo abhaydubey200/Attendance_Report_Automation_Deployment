@@ -6,6 +6,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { FeedbackProvider } from "./components/feedback";
 import "./styles.css";
 import "./interaction.css";
+import "./modules.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

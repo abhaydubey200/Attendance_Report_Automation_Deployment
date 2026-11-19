@@ -1,0 +1,70 @@
+/* Module chooser (after sign-in) and the Field Sales (Bizom, module 2) shell. Module 1 styles live in styles.css. */
+
+.modules {
+  min-height: 100vh; display: flex; flex-direction: column; color: var(--ink);
+  background:
+    radial-gradient(1100px 520px at 12% 8%, rgba(245, 184, 0, .16), transparent 60%),
+    radial-gradient(900px 600px at 92% 95%, rgba(58, 74, 112, .55), transparent 60%),
+    linear-gradient(135deg, var(--navy-950) 0%, var(--navy) 55%, var(--navy-700) 100%);
+}
+.modules-top {
+  display: flex; align-items: center; gap: .9rem; padding: .7rem clamp(16px, 4vw, 40px);
+  background: rgba(255, 255, 255, .96); border-bottom: 3px solid var(--gold);
+}
+.modules-top .brand-logo { width: 64px; }
+.modules-product { font-weight: 700; color: var(--navy); font-size: 1.02rem; }
+.modules-spacer { flex: 1; }
+.modules-user { color: var(--muted); font-size: .88rem; }
+.modules-main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: clamp(28px, 6vh, 64px) 16px 40px; text-align: center; }
+.modules-main h1 { color: #fff; font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 0; }
+.modules-lead { color: #c9d2e6; margin: .4rem 0 clamp(22px, 4vh, 40px); }
+.modules-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(18px, 3vw, 40px); }
+.module-card {
+  background: rgba(255, 255, 255, .93); border: 1px solid rgba(255, 255, 255, .6); border-radius: 22px;
+  padding: clamp(24px, 4vw, 40px) clamp(20px, 3vw, 36px); display: flex; flex-direction: column; align-items: center; gap: .55rem;
+  box-shadow: 0 18px 40px rgba(5, 12, 30, .35); backdrop-filter: blur(6px); transition: transform .15s ease, box-shadow .15s ease;
+}
+.module-card:hover { transform: translateY(-3px); box-shadow: 0 24px 48px rgba(5, 12, 30, .45); }
+.module-card h2 { margin: .35rem 0 0; font-size: clamp(1.35rem, 2.4vw, 1.8rem); color: var(--navy); }
+.module-badge-icon { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.module-badge-icon svg { width: 34px; height: 34px; }
+.module-badge-icon.m1 { background: var(--navy); color: var(--gold); }
+.module-badge-icon.m2 { background: var(--gold); color: var(--navy); }
+.module-source { margin: 0; font-weight: 600; color: var(--muted); font-size: .92rem; display: flex; gap: .5rem; align-items: center; }
+.module-tag { font-size: .72rem; font-weight: 700; color: #8a5a00; background: var(--gold-50); border: 1px solid #f1cf6b; border-radius: 999px; padding: .05rem .55rem; }
+.module-desc { margin: .2rem 0 .9rem; color: #33405c; max-width: 34ch; line-height: 1.55; }
+.module-btn { margin-top: auto; text-decoration: none; padding: .7rem 1.4rem; font-weight: 700; border-radius: 10px; }
+.module-btn.m1 { background: var(--navy); color: #fff; }
+.module-btn.m1:hover { background: var(--navy-700); }
+.module-btn.m2 { background: var(--gold); color: var(--navy); }
+.module-btn.m2:hover { background: var(--gold-600); }
+.module-note { margin-top: auto; color: var(--muted); font-size: .88rem; }
+.modules-foot { text-align: center; color: #8f9bb8; font-size: .8rem; padding: 0 16px 18px; }
+
+/* Field Sales shell (module 2) */
+.sales-shell { min-height: 100vh; background: var(--bg, #f5f6fa); }
+.sales-top { position: sticky; top: 0; z-index: 5; }
+.sales-src { font-weight: 600; color: var(--muted); font-size: .85rem; margin-left: .4rem; }
+.sales-main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 40px; }
+.sales-hero { display: flex; gap: 18px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; }
+.sales-hero h1 { margin: 0 0 .25rem; }
+.sales-hero p { margin: 0; color: #33405c; }
+.sales-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+.sales-steps { margin: .4rem 0 0; padding-left: 1.2rem; }
+.sales-steps li { margin-bottom: .75rem; }
+.sales-steps strong { display: block; color: var(--navy); }
+.sales-steps span { color: var(--muted); font-size: .9rem; }
+.sales-screens { list-style: none; margin: .4rem 0 0; padding: 0; }
+.sales-screens li { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--line); }
+.sales-note { font-size: .85rem; margin-top: .8rem; }
+.switch-module { margin: .2rem .7rem .4rem; }
+
+@media (max-width: 760px) {
+  .modules-grid, .sales-grid { grid-template-columns: minmax(0, 1fr); }
+  .modules-user { display: none; }
+  .sales-hero { flex-direction: column; align-items: flex-start; }
+  .sales-top .modules-product { font-size: .9rem; }
+  .sales-src { display: block; margin: 0; }
+  .sales-top .btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sales-top { gap: .5rem; }
+}

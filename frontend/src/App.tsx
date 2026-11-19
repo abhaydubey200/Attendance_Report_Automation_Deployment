@@ -12,6 +12,8 @@ import { EmployeeReportPage, ReportsPage } from "./pages/ReportsPage";
 import { HomePage } from "./pages/HomePage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage, UnavailablePage } from "./pages/LoginPage";
+import { ModulesPage } from "./pages/ModulesPage";
+import { SalesHomePage } from "./pages/SalesHomePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UploadPage } from "./pages/UploadPage";
 
@@ -56,10 +58,14 @@ export function App() {
 
   const home = ["home", "insights"].find((s) => me.navigation.some((p) => p.slug === s)) ?? me.navigation[0]?.slug;
 
+  // After sign-in: choose a module. Module 1 (Head Office, Pocket HRMS) = the screens below in <Layout>, unchanged;
+  // Module 2 (Field Sales, Bizom) lives under /sales.
   return (
     <Routes>
+      <Route index element={<Navigate to="/modules" replace />} />
+      <Route path="modules" element={<ModulesPage headOfficeHome={home} />} />
+      <Route path="sales/*" element={<SalesHomePage />} />
       <Route element={<Layout />}>
-        <Route index element={home ? <Navigate to={`/${home}`} replace /> : <NotFoundPage />} />
         {me.navigation.map((page) => {
           const Screen = SCREENS[page.slug];
           return Screen ? <Route key={page.slug} path={page.slug} element={<Screen />} /> : null;

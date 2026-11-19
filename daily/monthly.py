@@ -143,19 +143,6 @@ def team_table(people: list[dict], prev_people: dict[str, dict] | None) -> list[
     return rows
 
 
-def payroll_todo(p: dict) -> str:
-    """What HR / the manager must settle for this person before payroll (empty when nothing)."""
-    out = []
-    if p["missing_punch"]:
-        out.append(f"regularise {p['missing_punch']} missing punch{'es' if p['missing_punch'] != 1 else ''}")
-    if p["absent"]:
-        out.append(f"confirm {p['absent']} absent day{'s' if p['absent'] != 1 else ''} (leave or loss of pay)")
-    if p.get("pending"):
-        out.append(f"approve or reject {p['pending']} short-leave request{'s' if p['pending'] != 1 else ''}")
-    text = "; ".join(out)
-    return text[:1].upper() + text[1:]
-
-
 ACTION_GROUPS = [  # key, heading in the email, colour
     ("talk", "Speak to them about repeated absences", "#b91c1c"),
     ("payroll", "Regularise missing punches before payroll", "#6d28d9"),
@@ -381,7 +368,6 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
         p["change"] = (round(p["attendance_pct"] - b["attendance_pct"], 1)
                        if b and b["attendance_pct"] is not None and p["attendance_pct"] is not None else None)
         p["action"] = monthly_action(p)[0] if p["reason"] else ""
-        p["todo"] = payroll_todo(p)
     limit = 12 if view == "director" else 40
     groups_of = [{"key": k, "title": t, "color": col, "people": [p for p in attention[:limit] if action_group(p) == k]}
                  for k, t, col in ACTION_GROUPS]
@@ -436,8 +422,6 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
         lines += ["Teams (best first" + (", best 5 and weakest 5" if len(teams) > 10 else "") + "):"] + [
             f"{g['rank']}. {g['name']}: {'-' if g['attendance_pct'] is None else str(g['attendance_pct']) + '%'}, {g['absent']} absent" for g in shown]
     else:
-        if ins and ins["takeaways"]:
-            lines += ["Key takeaways:"] + [f"- {x['text']}" for x in ins["takeaways"][:3]] + [""]
         if len(blocks["weeks"]) > 1:
             lines += ["Week by week:"] + [f"- {w['week']} ({w['range']}): {'-' if w['attendance_pct'] is None else str(w['attendance_pct']) + '%'}, "
                                          f"{w['absent']} absent, {w['late']} late, {w['missing_punch']} missing punches" for w in blocks["weeks"]] + [""]
@@ -461,9 +445,9 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
 def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], people: list[dict], totals: dict, groups: list[dict],
           blocks: dict, ins: dict | None = None) -> bytes:
     """Month-end workbook. Sheet order by recipient:
-    HOD      Summary, Insights, Needs attention, Weeks, Payroll, Employees, Calendar
-    Director Summary, Teams, Insights, Needs attention, Weeks, Payroll, Employees, Calendar
-    HR       Summary, Payroll, Teams, Needs attention, Routing problems, Weeks, Insights, Employees, Calendar"""
+    HOD      Summary, Insights, Needs attention, Weeks, Employees, Calendar
+    Director Summary, Teams, Insights, Needs attention, Weeks, Employees, Calendar
+    HR       Summary, Teams, Needs attention, Routing problems, Weeks, Insights, Employees, Calendar"""
     view = blocks.get("view", "hod")
     company = view in ("director", "hr")
     buf = io.BytesIO()
@@ -474,8 +458,6 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
     num = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center"})
     zero = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center", "font_color": "#B6BCC8"})
     bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
-    tot = wb.add_format({"border": 1, "border_color": "#14213D", "bold": True, "bg_color": "#F1F3F8", "align": "center"})
-    totl = wb.add_format({"border": 1, "border_color": "#14213D", "bold": True, "bg_color": "#F1F3F8"})
     flag = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bg_color": "#FDECEC", "valign": "vcenter"})
     wrap = wb.add_format({"border": 1, "border_color": "#E6E8EF", "text_wrap": True, "valign": "vcenter"})
     act = wb.add_format({"border": 1, "border_color": "#F5E3A6", "bg_color": "#FFF8E1", "text_wrap": True, "valign": "vcenter"})
@@ -647,45 +629,6 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             c2.set_size({"width": 480, "height": 260})
             ws.insert_chart(last + 2, 4, c2)
 
-    def payroll():
-        ws = wb.add_worksheet("Payroll")
-        cols = [("Code", "code", 10), ("Name", "name", 26)] + team_col + [
-            ("Days on record", "days", 8), ("Present", "office", 8), ("On duty", "od", 7), ("WFH", "wfh", 6), ("Half day", "half_day", 7),
-            ("Leave", "leave", 7), ("Absent", "absent", 7), ("Week off", "week_off", 7), ("Holiday", "holiday", 7),
-            ("Missing punch", "missing_punch", 8), ("Late", "late", 6), ("Left early", "left_early", 7),
-            ("Short leave pending", "pending", 8), ("To settle before payroll", "todo", 58)]
-        excel_banner(wb, ws, [w for _, _, w in cols], f"Payroll check - {label(month)} - {item.recipient_name}",
-                     "Days as recorded in Pocket HRMS. Regularise missing punches first, then confirm absent days as leave or loss of pay.")
-        hr = 3
-        ws.set_row(hr, 42)
-        for j, (h, _, w) in enumerate(cols):
-            ws.write(hr, j, h, head)
-            ws.set_column(j, j, w)
-        ordered = sorted(people, key=lambda p: (not p.get("todo"), -(p["missing_punch"] + p["absent"]), p["name"]))
-        keys = [k for _, k, _ in cols]
-        for i, p in enumerate(ordered, start=hr + 1):
-            row = {**p, "office": p["present"] - p["od"] - p["wfh"], "todo": p.get("todo") or ""}
-            for j, k in enumerate(keys):
-                v = row.get(k)
-                if k in ("code", "name", "hod"):
-                    f = bold if k == "name" else cell
-                elif k == "todo":
-                    f = act if v else cell
-                else:
-                    f = num if v else zero
-                ws.write(i, j, "" if v is None else v, f)
-        r = hr + 1 + len(ordered)
-        ws.write(r, 1, "Total", totl)
-        if company:
-            ws.write(r, 2, "", totl)
-        for j, k in enumerate(keys):
-            if k in ("code", "name", "hod", "todo"):
-                continue
-            ws.write(r, j, sum((p["present"] - p["od"] - p["wfh"]) if k == "office" else (p.get(k) or 0) for p in ordered), tot)
-        ws.write(r, len(keys) - 1, f"{sum(1 for p in ordered if p.get('todo'))} people to settle", totl)
-        ws.autofilter(hr, 0, r - 1, len(cols) - 1)
-        ws.freeze_panes(hr + 1, 2)
-
     def routing_problems():
         held = blocks.get("held") or []
         if not held:
@@ -752,9 +695,9 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
         if ins:
             _insights_sheet(wb, ins, month, head, cell, bold, wrap, note, pct_fmt, band)
 
-    order = {"hod": [summary, insights, needs_attention, weeks_sheet, payroll, employees_sheet, calendar_sheet],
-             "director": [summary, teams, insights, needs_attention, weeks_sheet, payroll, employees_sheet, calendar_sheet],
-             "hr": [summary, payroll, teams, needs_attention, routing_problems, weeks_sheet, insights, employees_sheet, calendar_sheet]}[view]
+    order = {"hod": [summary, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
+             "director": [summary, teams, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
+             "hr": [summary, teams, needs_attention, routing_problems, weeks_sheet, insights, employees_sheet, calendar_sheet]}[view]
     for sheet in order:
         sheet()
     wb.close()

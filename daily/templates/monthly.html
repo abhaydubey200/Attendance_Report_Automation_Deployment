@@ -129,21 +129,8 @@
   {% endif %}
   {% endif %}
 
-  {# ---------------------------------------------------------------- HOD: top 3 takeaways + compact action list #}
+  {# ---------------------------------------------------------------- HOD (key takeaways are in the attachments only) #}
   {% if view == "hod" %}
-  {% if ins and ins.takeaways %}
-  {{ heading("Key takeaways") }}
-  <tr><td class="pad" style="padding:4px 24px 4px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 5px;">
-      {% for x in ins.takeaways[:3] %}
-      {% set col = {"good": "#15803d", "warn": "#b45309", "bad": "#b91c1c", "info": "#0369a1"}[x.kind] %}
-      {% set bg = {"good": "#f0faf3", "warn": "#fff8eb", "bad": "#fef3f2", "info": "#eff8ff"}[x.kind] %}
-      <tr><td style="background:{{ bg }};border-left:4px solid {{ col }};border-radius:6px;padding:7px 12px;font-size:13.5px;line-height:1.45;">
-        <b style="color:{{ col }};">{{ {"good": "Good", "warn": "Watch", "bad": "Act", "info": "Note"}[x.kind] }}:</b> {{ x.text }}</td></tr>
-      {% endfor %}
-    </table>
-  </td></tr>
-  {% endif %}
   {# ---------------------------------------------------------------- daily bars + week by week #}
   {% if t.trend and view != "hr" %}
   {{ heading("Daily attendance") }}

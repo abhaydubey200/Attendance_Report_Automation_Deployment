@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ v.title }} – {{ v.date_long }} – {{ v.recipient }}</title>
+<style>{% include "_dash_style.css" %}
+  .kp { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:16px; }
+  .kc { border-radius:14px; padding:12px 14px; border:1.5px solid; background:#fff; cursor:pointer; text-align:left; font:inherit; color:inherit; }
+  .kc:hover { box-shadow:0 8px 18px rgba(20,33,61,.12); }
+  .kc .l { font-weight:700; color:var(--navy); font-size:13.5px; } .kc .v { font-size:28px; font-weight:800; line-height:1.15; margin-top:4px; }
+  .kc .s { font-size:12px; color:var(--muted); }
+  .two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:16px; margin-top:16px; }
+  .wl { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+  .wl button { width:100%; display:grid; grid-template-columns:12px 1fr auto; gap:10px; align-items:center; text-align:left; font:inherit; background:#fff;
+               border:1px solid var(--line); border-radius:10px; padding:8px 10px; cursor:pointer; }
+  .wl button:hover, .wl button.on { background:#fff8e1; border-color:#f1cf6b; }
+  .wl i { width:10px; height:10px; border-radius:50%; } .wl b { font-variant-numeric:tabular-nums; }
+  .lv-high { background:#dc2626; } .lv-medium { background:#d97706; } .lv-low { background:#94a3b8; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 10px; }
+  .bar input[type=search] { font:inherit; font-size:13px; padding:7px 10px; border:1px solid #d5d9e3; border-radius:9px; min-width:200px; }
+  .chip { border:1px solid #d5d9e3; background:#fff; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer; font-weight:600; }
+  .chip.on { background:var(--navy); color:#fff; border-color:var(--navy); }
+  table.grid tr.p { cursor:pointer; } table.grid tr.ev td { background:#fafbfd; font-size:12.5px; color:#33405c; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; }
+  .t-high { background:#fdecec; color:#b42318; } .t-medium { background:#fff3e0; color:#b45309; } .t-low { background:#f1f5f9; color:#475569; }
+  .st { font-weight:700; } .note { font-size:12.5px; color:var(--muted); margin:8px 0 0; }
+  @media (max-width: 900px) { .two { grid-template-columns:minmax(0,1fr); } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <img class="logo" src="{{ logo }}" alt="apis">
+    <div class="vr"></div>
+    <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.weekday }}, {{ v.date_long }} · {{ v.recipient }}</div></div>
+  </div>
+</header>
+<main class="page">
+  <section class="greet"><div><h2>Dear {{ v.recipient }},</h2>
+    <p>{{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance on <b>{{ v.date_long }}</b>: {{ v.n }} people.
+    Click a number or a warning sign to see the people behind it; click a person for the evidence.</p></div></section>
+  <section class="kp" id="kp"></section>
+  <section class="two">
+    <div class="card"><div class="card-h"><h3>Needs checking <span class="muted">– warning signs, not proof</span></h3></div>
+      <ul class="wl" id="wl"></ul>
+      <p class="note">High = check first. Supervisors (ASE / ASM / TSM / RSM…) are not checked for market activity.</p></div>
+    <div class="card" id="teamsCard" {% if not v.teams %}style="display:none"{% endif %}><div class="card-h"><h3>Teams <span class="muted">– lowest attendance first</span></h3></div>
+      <div class="tablewrap"><table class="grid" style="font-size:13px"><thead><tr><th>Zonal head</th><th>HOD</th><th>People</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="teams"></tbody></table></div></div>
+    {% if not v.teams %}<div class="card"><div class="card-h"><h3>Status</h3></div><ul class="wl" id="stl"></ul></div>{% endif %}
+  </section>
+  <section class="card" style="margin-top:16px">
+    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3></div>
+    <div class="bar" id="chips"></div>
+    <div class="bar"><input type="search" id="q" placeholder="Find a person or code…" aria-label="Find a person"></div>
+    <div class="tablewrap" style="max-height:640px"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Employee</th><th>Manager</th><th>Status</th><th>Marked</th><th>First – last activity</th><th>In market</th><th>KM</th><th>Day end</th><th>Warning signs</th></tr></thead>
+      <tbody id="rows"></tbody></table></div>
+  </section>
+  <footer><span>Source: <i>Bizom</i> · {{ v.date_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
+</main>
+<script id="data" type="application/json">{{ data_json | safe }}</script>
+<script>
+(function () {
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent), P = D.people;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const S = {status: "all", warn: "", q: "", open: null};
+const n = (st) => P.filter((p) => p.status === st).length;
+const due = P.length - n("WEEK_OFF"), pct = due ? Math.round(1000 * (n("PRESENT") + n("LATE") + 0.5 * n("HALF_DAY")) / due) / 10 : null;
+const col = (v) => v === null ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
+const flagged = P.filter((p) => p.flags.length);
+const cards = [
+  ["all", "Attendance", pct === null ? "–" : pct + "%", col(pct), `${n("PRESENT")} present · ${n("HALF_DAY")} half day`],
+  ["ABSENT", "Absent", n("ABSENT"), "#dc2626", "did not mark"],
+  ["LATE", "Late", n("LATE"), "#d97706", "after 10:30 AM"],
+  ["LEAVE", "On leave", n("LEAVE"), "#64748b", `${n("WEEK_OFF")} week off`],
+  ["flagged", "Needs checking", flagged.length, "#7c3aed", `${flagged.filter((p) => p.flags.some((f) => f.level === "high")).length} serious`],
+];
+$("kp").innerHTML = cards.map(([k, l, v, c, s]) => `<button class="kc" data-st="${k}" style="border-color:${c}38;background:${c}0b"><div class="l">${l}</div><div class="v" style="color:${c}">${v}</div><div class="s">${s}</div></button>`).join("");
+$("wl").innerHTML = D.warnings.length ? D.warnings.map((w) => `<li><button data-w="${w.code}" title="${esc(w.why)}"><i class="lv-${w.level}"></i><span>${esc(w.label)}</span><b>${w.n}</b></button></li>`).join("") : '<li class="muted">Nothing to check on this day.</li>';
+if ($("teams")) $("teams").innerHTML = D.teams.map((t) => `<tr><td><b>${esc(t.zonal)}</b></td><td>${esc(t.hod)}</td><td class="num">${t.people}</td><td class="num"><b style="color:${col(t.pct)}">${t.pct === null ? "–" : t.pct + "%"}</b></td><td class="num">${t.absent}</td><td class="num">${t.late}</td><td class="num">${t.flagged}</td></tr>`).join("");
+if ($("stl")) $("stl").innerHTML = Object.entries(D.labels).map(([k, l]) => `<li><button data-st="${k}"><i style="background:${D.colors[k]}"></i><span>${l}</span><b>${n(k)}</b></button></li>`).join("");
+const CH = [["all", "Everyone"], ["flagged", "Needs checking"], ["ABSENT", "Absent"], ["LATE", "Late"], ["HALF_DAY", "Half day"], ["LEAVE", "Leave"], ["WEEK_OFF", "Week off"], ["PRESENT", "Present"]];
+function render() {
+  $("chips").innerHTML = CH.map(([k, l]) => `<button class="chip ${S.status === k && !S.warn ? "on" : ""}" data-st="${k}">${l}</button>`).join("") +
+    (S.warn ? `<button class="chip on" data-w="">${esc((D.warnings.find((w) => w.code === S.warn) || {}).label)} ✕</button>` : "");
+  document.querySelectorAll("#wl button").forEach((b) => b.classList.toggle("on", b.dataset.w === S.warn));
+  const q = S.q.toLowerCase();
+  const list = P.filter((p) => (S.warn ? p.flags.some((f) => f.code === S.warn) : S.status === "all" ? true : S.status === "flagged" ? p.flags.length : p.status === S.status)
+    && (!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)))
+    .sort((a, b) => (b.flags.filter((f) => f.level === "high").length - a.flags.filter((f) => f.level === "high").length) || (b.flags.length - a.flags.length) || a.name.localeCompare(b.name));
+  $("cnt").textContent = `– ${list.length} of ${P.length}`;
+  $("rows").innerHTML = list.map((p) => `<tr class="p" data-p="${esc(p.code)}"><td class="who"><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
+      <td>${esc(p.manager)}</td><td><span class="st" style="color:${D.colors[p.status]}">${esc(p.status_label)}</span>${p.leave ? `<br><span class="muted" style="font-size:12px">${esc(p.leave)}</span>` : p.not_marked ? '<br><span class="muted" style="font-size:12px">did not mark</span>' : ""}</td>
+      <td class="num">${esc(p.att)}</td><td class="num">${p.first ? esc(p.first) + " – " + esc(p.last) : ""}</td><td class="num">${esc(p.market)}</td><td class="num">${p.km ?? ""}</td><td class="num">${esc(p.eod)}</td>
+      <td>${p.flags.map((f) => `<span class="tag t-${f.level}">${esc(f.label)}</span>`).join("")}</td></tr>` +
+      (S.open === p.code && p.flags.length ? `<tr class="ev"><td colspan="9"><b>Evidence:</b> ${esc(p.evidence)}<br>${p.flags.map((f) => `• ${esc(f.label)} – ${esc(f.why)}`).join("<br>")}${p.calls ? `<br>Visits: ${p.calls} (${p.productive} productive)${p.order_value ? ", order value ₹" + Math.round(p.order_value).toLocaleString("en-IN") : ""}` : ""}</td></tr>` : "")).join("")
+    || '<tr><td colspan="9" class="empty">Nobody matches.</td></tr>';
+}
+document.addEventListener("click", (e) => {
+  const st = e.target.closest("[data-st]"), w = e.target.closest("[data-w]"), p = e.target.closest("[data-p]");
+  if (st) { S.status = st.dataset.st; S.warn = ""; render(); }
+  else if (w) { S.warn = w.dataset.w; render(); }
+  else if (p) { S.open = S.open === p.dataset.p ? null : p.dataset.p; render(); }
+});
+$("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
+render();
+})();
+</script>
+</body>
+</html>

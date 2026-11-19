@@ -7,7 +7,8 @@ import { useConfirm } from "../components/feedback";
 import { Icon } from "../components/icons";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
-import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesPerson, SalesRules, SalesStaff, SalesStatus } from "./types";
+import { StaffEditor } from "./more";
+import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffRow, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v}%`);
@@ -30,7 +31,11 @@ function Flags({ p }: { p: SalesPerson }) {
 export function SalesOverview() {
   const days = useApi<SalesDayRow[]>("/v1/sales/days");
   const staff = useApi<SalesStaff>("/v1/sales/staff");
+  const month = useApi<SalesReport>("/v1/sales/reports/attendance");
+  const jobs = useApi<SalesJobs>("/v1/sales/jobs");
   const latest = days.data?.[0];
+  const lastRun = jobs.data?.runs[0];
+  const repeaters = (month.data?.people ?? []).filter((p) => p.repeat.length).slice(0, 8);
   return (
     <>
       <PageHeader title="Field Sales attendance" subtitle="Daily attendance of the field sales teams from Bizom, with the warning signs managers should check."
@@ -53,6 +58,35 @@ export function SalesOverview() {
             <KpiCard label="Absent (did not mark)" value={latest.absent} tone="fail" />
             <KpiCard label="Late" value={latest.late} tone="warn" />
             <KpiCard label="Needs checking" value={latest.flagged} tone="brand" hint={<Link to={`/sales/day?date=${latest.report_date}`}>See who and why</Link>} />
+          </div>
+          <div className="grid-2">
+            <Card title={month.data ? `Last 30 days · ${formatDate(month.data.from)} – ${formatDate(month.data.to)}` : "Last 30 days"}
+              actions={<Link className="btn btn-ghost btn-small" to="/sales/report">Full report</Link>}>
+              {!month.data ? <Loading lines={2} /> : (
+                <>
+                  <p>Attendance <strong>{pctText(month.data.totals.attendance_pct)}</strong> over {month.data.days_uploaded} uploaded day{month.data.days_uploaded === 1 ? "" : "s"} ·
+                    {" "}{month.data.totals.absent} absent days · {month.data.totals.late} late days.</p>
+                  {repeaters.length === 0 ? <p className="muted">Nobody has the same warning sign on {month.data.repeat_days}+ days.</p> : (
+                    <>
+                      <p className="muted small">Same warning sign on {month.data.repeat_days}+ days — worth a conversation:</p>
+                      <ul className="plain-list">{repeaters.map((p) => (
+                        <li key={p.code}><Link to={`/sales/employee?code=${p.code}&start=${month.data!.from}&end=${month.data!.to}`}><strong>{p.name}</strong></Link>
+                          {" "}<span className="muted small">{p.team_head}</span> — <span className="small">{p.repeat.join(", ")}</span></li>))}</ul>
+                    </>
+                  )}
+                </>
+              )}
+            </Card>
+            <Card title="Automation" actions={<Link className="btn btn-ghost btn-small" to="/sales/automation">Open</Link>}>
+              {!jobs.data ? <Loading lines={2} /> : (
+                <>
+                  <p>{lastRun ? <>Last run: <strong>{lastRun.job === "DAILY" ? "Daily" : "Month-end"} {lastRun.target}</strong> — {" "}
+                    <span className={`badge badge-${lastRun.status === "SUCCESS" ? "ok" : lastRun.status === "FAILED" ? "fail" : "warn"}`}>{lastRun.status}</span>
+                    {" "}<span className="muted small">{formatDateTime(lastRun.started_at)}</span></> : <span className="muted">No automatic run yet.</span>}</p>
+                  <p className="muted small">{jobs.data.waiting.length ? `${jobs.data.waiting.length} file(s) waiting in the inbox.` : "Inbox empty."} Emails are in {jobs.data.mode === "test" ? "test mode (saved, not sent)" : "live mode"}{jobs.data.auto_send ? ", sent automatically." : ", sent after Approve."}</p>
+                </>
+              )}
+            </Card>
           </div>
           <Card title="Uploaded days">
             <DataTable rows={days.data ?? []} rowKey={(d) => d.report_date} exportName="field_sales_days" columns={[
@@ -290,6 +324,17 @@ export function SalesStaffPage() {
   const { busy, error, message, run } = useAction();
   const { hasPermission } = useAuth();
   const canEdit = hasPermission("MANAGE_EMPLOYEES");
+  const [editing, setEditing] = useState<SalesStaffRow | "new" | null>(null);
+  const ask = useConfirm();
+  async function setLeft(e: SalesStaffRow) {
+    if (!(await ask({ title: "Mark as left?", message: `${e.name} (${e.code}) will no longer be expected to mark attendance. History is kept.`, confirmLabel: "Mark left" }))) return;
+    await run(() => api.post(`/v1/sales/staff/${e.code}/left`, {}), `${e.name} marked as left.`);
+    data.reload();
+  }
+  async function restore(e: SalesStaffRow) {
+    await run(() => api.post(`/v1/sales/staff/${e.code}/restore`), `${e.name} is active again.`);
+    data.reload();
+  }
   async function importFile(f: File | undefined) {
     if (!f) return;
     const form = new FormData();
@@ -303,6 +348,7 @@ export function SalesStaffPage() {
     <>
       <PageHeader title="Field sales staff list" subtitle="Who should mark attendance in Bizom, and their managers' emails. Import adds and updates; it never deletes."
         actions={<Toolbar>
+          {canEdit && <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditing("new")}>Add a person</button>}
           {canEdit && <label className="btn btn-primary btn-auto">{busy ? "Importing…" : "Import staff list"}<input type="file" accept=".xlsx,.csv" hidden onChange={(e) => void importFile(e.target.files?.[0])} /></label>}
           <a className="btn btn-ghost btn-small" href={apiUrl("/v1/sales/staff/export")}>Export</a>
         </Toolbar>} />
@@ -317,6 +363,7 @@ export function SalesStaffPage() {
             <KpiCard label="With HOD email" value={s.with_email.hod ?? 0} />
             <KpiCard label="No email route" value={s.no_route} tone={s.no_route ? "warn" : "ok"} hint="only in the Director / HR emails" />
           </div>
+          {editing && <StaffEditor key={editing === "new" ? "new" : editing.code} row={editing} onDone={() => { setEditing(null); data.reload(); }} />}
           <Card title="Staff">
             <DataTable rows={data.data?.staff ?? []} rowKey={(e) => e.code} search exportName="field_sales_staff" columns={[
               { header: "Code", render: (e) => e.code }, { header: "Name", render: (e) => <strong>{e.name}</strong>, value: (e) => e.name },
@@ -325,6 +372,11 @@ export function SalesStaffPage() {
               { header: "Zonal head", render: (e) => <>{e.zonal_name}{e.zonal_email && <div className="muted small wrap-any">{e.zonal_email}</div>}</>, value: (e) => e.zonal_name },
               { header: "HOD", render: (e) => <>{e.hod_name}{e.hod_email && <div className="muted small wrap-any">{e.hod_email}</div>}</>, value: (e) => e.hod_name },
               { header: "Status", render: (e) => <span className={`badge badge-${e.status === "ACTIVE" ? "ok" : "warn"}`}>{e.status}</span>, value: (e) => e.status },
+              ...(canEdit ? [{ header: "", sortable: false, render: (e: SalesStaffRow) => <span className="row-actions">
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditing(e)}>Edit</button>
+                {e.status === "ACTIVE" ? <button type="button" className="btn btn-ghost btn-small" onClick={() => void setLeft(e)}>Left</button>
+                  : <button type="button" className="btn btn-ghost btn-small" onClick={() => void restore(e)}>Restore</button>}
+              </span> }] : []),
             ]} />
           </Card>
         </>
@@ -362,6 +414,7 @@ export function SalesSettingsPage() {
           <Field label="Mode" hint="Test saves every email to the outbox; nothing is sent.">
             <select value={email.mode} onChange={(e) => setEmail({ ...email, mode: e.target.value as "test" | "live" })}>
               <option value="test">Test (saved, not sent)</option><option value="live">Live (sent)</option></select></Field>
+          <label className="check"><input type="checkbox" checked={email.auto_send} onChange={(e) => setEmail({ ...email, auto_send: e.target.checked })} /> Daily job sends the emails automatically (otherwise they wait for Approve)</label>
           <Field label="Test recipient" hint="Optional: in testing, every email goes to this address instead.">
             <input value={email.test_recipient ?? ""} onChange={(e) => setEmail({ ...email, test_recipient: e.target.value || null })} /></Field>
           <Field label="Director name"><input value={email.director_name} onChange={(e) => setEmail({ ...email, director_name: e.target.value })} /></Field>

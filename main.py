@@ -488,6 +488,40 @@ def cmd_monthly(args: argparse.Namespace) -> int:
     return {"SUCCESS": 0, "PARTIAL": 1}.get(r["status"], 3)
 
 
+def cmd_sales_run_daily(args: argparse.Namespace) -> int:
+    """Module 2 (Field Sales, Bizom) daily job: yesterday's Bizom files from the Field Sales inbox -> count -> emails.
+    Exit 0 = success, 1 = some emails failed, 3 = failed (alert sent), 4 = already running."""
+    from sales import jobs
+
+    try:
+        r = jobs.run_daily(get_settings(), _engine(), _date_arg(args.date), True if args.send else None,
+                           trigger="CLI" if args.manual else "SCHEDULED", actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    except Exception as exc:
+        print(f"Field Sales daily job failed: {type(exc).__name__}: {exc}")
+        return 3
+    print(f"Field Sales daily {r['date']}: {r['status']} | processed {r.get('processed', [])} | emails {r.get('emails', {})}"
+          + (f" | {r['problem']}" if r.get("problem") else ""))
+    return {"SUCCESS": 0, "PARTIAL": 1}.get(r["status"], 3)
+
+
+def cmd_sales_monthly(args: argparse.Namespace) -> int:
+    """Module 2 month-end: prepare the Field Sales month-end emails (sent from the app after approval)."""
+    from sales import jobs, monthly
+
+    try:
+        r = monthly.generate(get_settings(), _engine(), args.month, trigger="CLI" if args.manual else "SCHEDULED",
+                             actor=f"cli:{getpass.getuser()}")
+    except jobs.JobLocked as exc:
+        print(exc)
+        return 4
+    print(f"Field Sales monthly {r['month']}: {r['status']} | days {r.get('days')} | people {r.get('people')} | emails {r.get('emails')}"
+          + (f" | {r['problem']}" if r.get("problem") else ""))
+    return 0 if r["status"] == "SUCCESS" else 3
+
+
 def cmd_cleanup(args: argparse.Namespace) -> int:
     from daily import jobs, monthly
 
@@ -589,6 +623,16 @@ def build_parser() -> argparse.ArgumentParser:
     mo.add_argument("--send", choices=["auto", "manual"])
     mo.add_argument("--manual", action="store_true")
     mo.set_defaults(func=cmd_monthly)
+
+    srd = sub.add_parser("sales-run-daily", help="Field Sales (Bizom): yesterday's files from the Field Sales inbox -> emails")
+    srd.add_argument("--date", help="report date YYYY-MM-DD (default: yesterday, IST)")
+    srd.add_argument("--send", action="store_true", help="send now (default: Settings > auto send)")
+    srd.add_argument("--manual", action="store_true")
+    srd.set_defaults(func=cmd_sales_run_daily)
+    smo = sub.add_parser("sales-monthly", help="Field Sales (Bizom) month-end emails (default: previous month)")
+    smo.add_argument("--month", help="YYYY-MM (default: previous month)")
+    smo.add_argument("--manual", action="store_true")
+    smo.set_defaults(func=cmd_sales_monthly)
 
     cl = sub.add_parser("cleanup", help="remove a month's daily rows after its archive and a later backup are verified")
     cl.add_argument("--month", required=True, help="YYYY-MM")

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ v.title }} – {{ v.month_long }}</title>
+<style>
+  @media only screen and (max-width: 620px) {
+    .wrap { width: 100% !important; } .pad { padding-left: 14px !important; padding-right: 14px !important; }
+    .tile { display: inline-block !important; width: 47% !important; box-sizing: border-box; margin: 0 1% 8px 0 !important; }
+    .hide-sm { display: none !important; }
+  }
+</style>
+</head>
+{% macro tile(label, value, color, bg, sub="") -%}
+  <td class="tile" width="25%" valign="top" style="background:{{ bg }};border:1px solid {{ color }}40;border-radius:10px;padding:10px 12px;">
+    <div style="font-size:12px;font-weight:bold;color:#14213d;">{{ label }}</div>
+    <div style="font-size:24px;font-weight:800;color:{{ color }};line-height:1.25;">{{ value }}</div>
+    <div style="font-size:11px;color:#5d6577;min-height:15px;">{{ sub }}</div>
+  </td>
+{%- endmacro %}
+{% macro heading(text, note=none) -%}
+  <tr><td class="pad" style="padding:16px 24px 2px;"><div style="font-size:16px;font-weight:800;color:#14213d;">{{ text }}</div>
+    {% if note %}<div style="font-size:12px;color:#5d6577;padding-top:2px;">{{ note }}</div>{% endif %}</td></tr>
+{%- endmacro %}
+{% macro pcol(p) -%}{{ "#94a3b8" if p is none else ("#15803d" if p >= 90 else ("#b45309" if p >= 75 else "#b91c1c")) }}{%- endmacro %}
+{% set pc = v.pct %}
+<body style="margin:0;padding:0;background:#f5f6fa;font-family:Segoe UI,Arial,sans-serif;color:#1e2433;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6fa;"><tr><td align="center" style="padding:18px 8px;">
+<table role="presentation" class="wrap" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;">
+  <tr><td align="center" style="padding:22px 24px 12px;"><img src="cid:apis-logo" width="150" height="81" alt="apis" style="display:block;margin:0 auto;border:0;width:150px;height:auto;"></td></tr>
+  <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td height="4" style="height:4px;line-height:4px;font-size:0;background:#f5b800;border-radius:2px;">&nbsp;</td></tr></table></td></tr>
+  <tr><td align="center" class="pad" style="padding:16px 24px 4px;">
+    <div style="font-size:23px;font-weight:800;color:#14213d;">{{ v.title }}</div>
+    <div style="display:inline-block;margin-top:8px;padding:6px 16px;border-radius:999px;background:#fff7dc;border:1px solid #f1cf6b;font-weight:bold;color:#14213d;font-size:14px;">{{ v.month_long }}</div>
+  </td></tr>
+  <tr><td class="pad" style="padding:16px 24px 4px;">
+    <p style="font-size:15px;margin:0 0 4px;font-weight:bold;color:#14213d;">Dear {{ v.recipient }},</p>
+    <p style="font-size:14px;margin:0;color:#33405c;line-height:1.55;">{{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance for <b>{{ v.month_long }}</b> (Bizom): {{ v.work_days }} day{{ "s" if v.work_days != 1 }}, {{ v.n }} people.
+      {% if v.attention %}<b style="color:#b42318;">{{ v.attention | length }} need{{ "s" if v.attention | length == 1 }} a conversation.</b>{% else %}<b style="color:#15803d;">Nobody has a repeated pattern.</b>{% endif %}</p>
+  </td></tr>
+  <tr><td class="pad" style="padding:10px 18px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;"><tr>
+    {{ tile("Attendance", ("–" if pc is none else "%g" | format(pc) ~ "%"), pcol(pc), ("#f0faf3" if (pc or 0) >= 90 else ("#fff8eb" if (pc or 0) >= 75 else "#fef3f2"))) }}
+    {{ tile("Absent days", v.absent, "#dc2626", "#fef3f2") }}
+    {{ tile("Late days", v.late, "#d97706", "#fff8eb") }}
+    {{ tile("Days needing checking", v.flag_days, "#7c3aed", "#f6f2ff") }}
+  </tr></table></td></tr>
+
+  {% if v.teams | length > 1 %}
+  {{ heading("Teams", "Lowest attendance first. All teams in the attachments.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;"><table role="presentation" width="100%" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+    <tr style="background:#14213d;color:#ffffff;"><th align="left">Team head</th><th align="left" class="hide-sm">HOD</th><th align="center">People</th><th align="right">Attendance</th><th align="center">Absent days</th></tr>
+    {% for t in v.teams[:10] %}<tr style="border-top:1px solid #eef0f5;"><td><b>{{ t.team_head }}</b></td><td class="hide-sm" style="color:#5d6577;">{{ t.hod }}</td><td align="center">{{ t.people }}</td>
+      <td align="right"><b style="color:{{ pcol(t.pct) }};">{{ "–" if t.pct is none else "%g" | format(t.pct) ~ "%" }}</b></td><td align="center">{{ t.absent }}</td></tr>{% endfor %}
+  </table></td></tr>
+  {% endif %}
+
+  {% if v.weeks | length > 1 %}
+  {{ heading("Week by week") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;"><table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+    <tr style="background:#f6f7fb;color:#14213d;"><th align="left">Week</th><th align="right">Attendance</th><th align="center">Absent</th><th align="center">Late</th><th align="center">To check</th></tr>
+    {% for w in v.weeks %}<tr style="border-top:1px solid #eef0f5;"><td><b>{{ w.week }}</b> <span style="color:#5d6577;font-size:11.5px;">{{ w.range }}</span></td>
+      <td align="right"><b style="color:{{ pcol(w.pct) }};">{{ "–" if w.pct is none else "%g" | format(w.pct) ~ "%" }}</b></td><td align="center">{{ w.absent }}</td><td align="center">{{ w.late }}</td><td align="center">{{ w.flagged }}</td></tr>{% endfor %}
+  </table></td></tr>
+  {% endif %}
+
+  {% if v.attention %}
+  {{ heading("Needs a conversation", v.thresholds.absent ~ "+ absent days, " ~ v.thresholds.late ~ "+ late days, or the same warning sign on " ~ v.thresholds.repeat ~ "+ days.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;"><table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+    {% for p in v.attention[:(15 if v.view == "team" else 10)] %}
+    <tr style="border-top:1px solid #eef0f5;"><td style="border-left:4px solid #b91c1c;"><b style="color:#14213d;">{{ p.name }}</b> <span style="font-size:11px;color:#5d6577;">{{ p.code }}{% if v.view != "team" and p.team_head %} · {{ p.team_head }}{% endif %}</span>
+      <div style="color:#b91c1c;">{{ p.reasons | join(" · ") }}</div></td>
+      <td align="right" style="white-space:nowrap;"><b style="color:{{ pcol(p.pct) }};">{{ "–" if p.pct is none else "%g" | format(p.pct) ~ "%" }}</b></td></tr>
+    {% endfor %}
+  </table>
+  {% set more = v.attention | length - (15 if v.view == "team" else 10) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
+  </td></tr>
+  {% endif %}
+
+  {% if v.perfect %}
+  {{ heading("Full attendance – worth a word of thanks", "Present every working day, never late, no warning signs.") }}
+  <tr><td class="pad" style="padding:6px 24px 8px;"><div style="background:#f0faf3;border:1px solid #bfe3cb;border-radius:10px;padding:10px 12px;line-height:2;">
+    {% for p in v.perfect[:40] %}<span style="display:inline-block;background:#fff;border:1px solid #bfe3cb;border-radius:999px;padding:0 10px;margin:0 4px 0 0;font-size:12.5px;color:#14532d;white-space:nowrap;">★ {{ p.name }}</span>{% endfor %}
+    {% if v.perfect | length > 40 %}<span style="font-size:12px;color:#15803d;"> + {{ v.perfect | length - 40 }} more</span>{% endif %}</div></td></tr>
+  {% endif %}
+
+  <tr><td style="padding:8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+  <tr><td style="padding:10px 24px;border-top:1px solid #e6e8ef;font-size:11px;color:#94a3b8;">Automated email from the APIS Attendance tool (source: Bizom). Please do not forward or reply.</td></tr>
+</table></td></tr></table>
+</body>
+</html>

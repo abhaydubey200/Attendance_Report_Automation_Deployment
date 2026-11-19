@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesMailItem
 from ingestion.checksum import sha256_bytes
+from sales.util import utc_iso
 from sales import analysis, bizom, mail
 from sales.config import get_rules
 
@@ -105,5 +106,5 @@ def days(session: Session) -> list[dict]:
         s = json.loads(u.summary)
         out.append({"report_date": u.report_date.isoformat(), "people": u.people, "attendance_pct": s.get("attendance_pct"),
                     "absent": s["counts"].get("ABSENT", 0), "late": s["counts"].get("LATE", 0), "flagged": s.get("people_flagged", 0),
-                    "files": s.get("files"), "uploaded_by": u.uploaded_by, "uploaded_at": u.uploaded_at.isoformat()})
+                    "files": s.get("files"), "uploaded_by": u.uploaded_by, "uploaded_at": utc_iso(u.uploaded_at)})
     return out

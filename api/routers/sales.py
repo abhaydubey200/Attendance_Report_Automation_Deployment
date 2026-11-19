@@ -10,11 +10,12 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from api.deps import get_db, get_settings, require
+from api.deps import get_db, get_engine, get_settings, require
 from core.config import Settings
 from daily.branding import inline_logo_for_browser
 from database.models.sales import SalesMailItem
-from sales import bizom, mail, report, service, staff
+from sales.util import utc_iso
+from sales import bizom, jobs, mail, monthly, report, reports, service, staff
 from sales.config import SalesEmail, SalesRules, get_email, get_rules, save_email, save_rules
 from security.permissions import Perm, Principal
 
@@ -37,7 +38,7 @@ def _day(db: Session, up) -> dict:
     view = report.build_view(rows, s, "hr", "HR", up.report_date)
     return {"report_date": up.report_date.isoformat(), "people": up.people, "summary": s,
             "files": {"attendance": up.attendance_file, "eod": up.eod_file, "calls": up.calls_file},
-            "uploaded_by": up.uploaded_by, "uploaded_at": up.uploaded_at.isoformat(),
+            "uploaded_by": up.uploaded_by, "uploaded_at": utc_iso(up.uploaded_at),
             "rows": view["people"], "warnings": view["warnings"], "teams": view["teams"],
             "mail": [mail.item_dict(i) for i in mail.items_for(db, up.report_date)]}
 
@@ -181,6 +182,42 @@ class LeftIn(BaseModel):
     exit_date: date | None = None
 
 
+class StaffIn(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    designation: str | None = None
+    zone: str | None = None
+    hq: str | None = None
+    channel: str | None = None
+    manager_name: str | None = None
+    manager_email: str | None = None
+    asm_name: str | None = None
+    asm_email: str | None = None
+    zonal_name: str | None = None
+    zonal_email: str | None = None
+    hod_name: str | None = None
+    hod_email: str | None = None
+    date_of_joining: str | None = None
+
+
+@router.post("/staff")
+def staff_add(body: StaffIn, principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)), db: Session = Depends(get_db)) -> dict:
+    try:
+        return staff.to_dict(staff.add(db, body.model_dump(), principal.username))
+    except staff.StaffError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
+@router.put("/staff/{code}")
+def staff_edit(code: str, body: StaffIn, principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)), db: Session = Depends(get_db)) -> dict:
+    try:
+        return staff.to_dict(staff.update(db, code, body.model_dump(exclude_unset=True, exclude={"code"}), principal.username))
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not on the staff list.") from None
+    except staff.StaffError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
 @router.post("/staff/{code}/left")
 def staff_left(code: str, body: LeftIn, principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)), db: Session = Depends(get_db)) -> dict:
     try:
@@ -219,3 +256,124 @@ def put_email(body: dict, principal: Principal = Depends(require(Perm.MANAGE_SET
     except ValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.errors()[0]["msg"].removeprefix("Value error, ")) from None
     return save_email(db, email, principal.username).model_dump()
+
+
+# ---------------------------------------------------------------- reports and email log
+def _range(db: Session, start: date | None, end: date | None) -> tuple[date, date]:
+    d0, d1 = reports.default_range(db)
+    return start or d0, end or d1
+
+
+def _attendance(db: Session, start, end, q, hod, team) -> dict:
+    try:
+        return reports.attendance_report(db, *_range(db, start, end), q, hod, team)
+    except reports.ReportError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
+@router.get("/reports/attendance")
+def report_attendance(start: date | None = None, end: date | None = None, q: str = "", hod: str = "", team: str = "",
+                      _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    return _attendance(db, start, end, q, hod, team)
+
+
+@router.get("/reports/attendance/excel")
+def report_attendance_excel(start: date | None = None, end: date | None = None, q: str = "", hod: str = "", team: str = "",
+                            _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
+    rep = _attendance(db, start, end, q, hod, team)
+    name = f"Field_Sales_Attendance_{rep['from']}_to_{rep['to']}.xlsx"
+    return Response(reports.report_excel(rep), media_type=XLSX, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/reports/employee/{code}")
+def report_employee(code: str, start: date | None = None, end: date | None = None,
+                    _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    try:
+        return reports.employee_report(db, code, *_range(db, start, end))
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such employee code.") from None
+    except reports.ReportError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
+@router.get("/emails")
+def email_log(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> list[dict]:
+    return reports.email_log(db)
+
+
+# ---------------------------------------------------------------- automation
+class RunDailyIn(BaseModel):
+    day: date | None = None
+    send: bool = False
+
+
+@router.get("/jobs")
+def job_list(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Settings = Depends(get_settings),
+             db: Session = Depends(get_db)) -> dict:
+    inbox = jobs.inbox_dir(settings)
+    waiting = sorted(p.name for p in inbox.iterdir() if p.is_file() and p.suffix.lower() in jobs.FILE_TYPES) if inbox.is_dir() else []
+    cfg = get_email(db)
+    return {"inbox": str(inbox), "waiting": waiting, "auto_send": cfg.auto_send, "mode": cfg.mode, "runs": jobs.history(db)}
+
+
+@router.post("/jobs/daily")
+def job_daily(body: RunDailyIn, principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), settings: Settings = Depends(get_settings),
+              engine=Depends(get_engine)) -> dict:
+    try:
+        return jobs.run_daily(settings, engine, body.day, True if body.send else None, trigger="MANUAL", actor=principal.username)
+    except jobs.JobLocked as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    except Exception as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Daily run failed: {exc}") from None
+
+
+# ---------------------------------------------------------------- month-end
+class MonthIn(BaseModel):
+    month: str | None = None
+
+
+def _month(m: str) -> str:
+    try:
+        monthly.bounds(m)
+    except (ValueError, AttributeError):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Use YYYY-MM.") from None
+    return m
+
+
+def _month_items(db: Session, month: str) -> dict:
+    cfg = get_email(db)
+    return {"month": month, "label": monthly.label(month), "mode": cfg.mode, "testing": cfg.test_recipient,
+            "items": [mail.item_dict(i) for i in monthly.items(db, month)]}
+
+
+@router.get("/monthly")
+def month_list(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    return {"months": monthly.months(db), "default": monthly.previous_month()}
+
+
+@router.get("/monthly/{month}")
+def month_items(month: str, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    return _month_items(db, _month(month))
+
+
+@router.post("/monthly/generate")
+def month_generate(body: MonthIn, principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), settings: Settings = Depends(get_settings),
+                   engine=Depends(get_engine)) -> dict:
+    from database.connection import session_scope
+    month = _month(body.month or monthly.previous_month())
+    try:
+        r = monthly.generate(settings, engine, month, trigger="MANUAL", actor=principal.username)
+    except jobs.JobLocked as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    if r["status"] == jobs.FAILED:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, r.get("problem") or "Month-end failed.")
+    with session_scope(engine) as s:
+        return {**_month_items(s, month), "run": r}
+
+
+@router.post("/monthly/{month}/approve")
+def month_approve(month: str, body: ApproveIn, principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)),
+                  settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
+    todo = [i for i in monthly.items(db, _month(month)) if i.status in (mail.PENDING, mail.FAILED) and (body.ids is None or i.id in body.ids)]
+    done = mail.send_items(db, todo, principal.username, _outbox(settings))
+    return {**_month_items(db, month), "sent_now": len(done)}

@@ -92,3 +92,9 @@
 .sales-module .sales-upload { display: grid; gap: .8rem; max-width: 640px; }
 .sales-module .sales-upload .sales-steps li span:last-child { display: block; }
 @media (max-width: 760px) { .sales-module .hide-sm { display: none; } }
+.sales-module .sales-trend { display: flex; align-items: flex-end; gap: 3px; height: 140px; padding-top: .4rem; overflow-x: auto; }
+.sales-module .sales-trend span { flex: 0 0 22px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.sales-module .sales-trend i { display: block; width: 100%; border-radius: 3px 3px 0 0; }
+.sales-module .sales-trend small { font-size: .65rem; color: var(--muted); }
+.sales-module .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.sales-module form.toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }

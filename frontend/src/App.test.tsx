@@ -99,10 +99,10 @@ test("opens on the module chooser; Field Sales has its own menu and a way back",
   await userEvent.click(screen.getByRole("link", { name: /Open Field Sales/ }));
   expect(await screen.findByRole("heading", { level: 1, name: "Field Sales attendance" })).toBeInTheDocument();
   expect(await screen.findByText(/staff list is empty/)).toBeInTheDocument();
-  for (const page of ["Upload", "Day insights", "Approve emails", "Staff list", "Settings"]) {
+  for (const page of ["Upload", "Day insights", "Approve emails", "Attendance report", "Employee report", "Email log", "Staff list", "Automation", "Settings"]) {
     expect(screen.getByRole("link", { name: page })).toHaveAttribute("href", expect.stringContaining("/sales"));
   }
-  expect(screen.queryByRole("link", { name: "Attendance report" })).not.toBeInTheDocument();     // Module 1's menu is not shown
+  expect(screen.getAllByRole("link").every((a) => /\/(sales|modules)/.test(a.getAttribute("href") ?? ""))).toBe(true);  // Module 1's menu is not shown
   await userEvent.click(screen.getByRole("link", { name: /Switch module/ }));
   expect(await screen.findByRole("link", { name: /Open Head Office/ })).toBeInTheDocument();
 });

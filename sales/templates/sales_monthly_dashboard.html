@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ v.title }} – {{ v.month_long }} – {{ v.recipient }}</title>
+<style>{% include "_dash_style.css" %}
+  .kp { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:16px; }
+  .kc { border-radius:14px; padding:12px 14px; border:1.5px solid; background:#fff; text-align:left; font:inherit; color:inherit; cursor:pointer; }
+  .kc .l { font-weight:700; color:var(--navy); font-size:13.5px; } .kc .v { font-size:28px; font-weight:800; line-height:1.15; margin-top:4px; } .kc .s { font-size:12px; color:var(--muted); }
+  .two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 10px; }
+  .bar input[type=search] { font:inherit; font-size:13px; padding:7px 10px; border:1px solid #d5d9e3; border-radius:9px; min-width:200px; }
+  .chip { border:1px solid #d5d9e3; background:#fff; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer; font-weight:600; }
+  .chip.on { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .strip { display:inline-flex; gap:1px; } .strip i { width:7px; height:16px; border-radius:2px; display:block; } .strip i.f { box-shadow:inset 0 -3px 0 #7c3aed; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; background:#fdecec; color:#b42318; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:#3a4560; margin-top:8px; } .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  @media (max-width: 900px) { .two { grid-template-columns:minmax(0,1fr); } }
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in"><img class="logo" src="{{ logo }}" alt="apis"><div class="vr"></div>
+  <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.month_long }} · {{ v.recipient }}</div></div></div></header>
+<main class="page">
+  <section class="greet"><div><h2>Dear {{ v.recipient }},</h2>
+    <p>{{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance for <b>{{ v.month_long }}</b>: {{ v.work_days }} day{{ "s" if v.work_days != 1 }}, {{ v.n }} people. Click a person's row for their warning signs.</p></div></section>
+  <section class="kp">
+    {% set pc = v.pct %}{% set c = "#94a3b8" if pc is none else ("#15803d" if pc >= 90 else ("#b45309" if pc >= 75 else "#b91c1c")) %}
+    <button class="kc" data-f="all" style="border-color:{{ c }}38;background:{{ c }}0b"><div class="l">Attendance</div><div class="v" style="color:{{ c }}">{{ "–" if pc is none else pc ~ "%" }}</div><div class="s">{{ v.work_days }} day{{ "s" if v.work_days != 1 }}</div></button>
+    <button class="kc" data-f="absent" style="border-color:#dc262638;background:#dc26260b"><div class="l">Absent days</div><div class="v" style="color:#dc2626">{{ v.absent }}</div><div class="s">people with 3+: {{ v.people | selectattr("absent", "ge", 3) | list | length }}</div></button>
+    <button class="kc" data-f="late" style="border-color:#d9770638;background:#d977060b"><div class="l">Late days</div><div class="v" style="color:#d97706">{{ v.late }}</div><div class="s">after 10:30 AM</div></button>
+    <button class="kc" data-f="attention" style="border-color:#b4231838;background:#b423180b"><div class="l">Needs a conversation</div><div class="v" style="color:#b42318">{{ v.attention | length }}</div><div class="s">repeated patterns</div></button>
+    <button class="kc" data-f="perfect" style="border-color:#16a34a38;background:#16a34a0b"><div class="l">Full attendance</div><div class="v" style="color:#16a34a">{{ v.perfect | length }}</div><div class="s">worth a thank-you</div></button>
+  </section>
+  <section class="two">
+    <div class="card"><div class="card-h"><h3>Week by week</h3></div><div class="tablewrap"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Week</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="weeks"></tbody></table></div></div>
+    <div class="card" {% if v.teams | length < 2 %}style="display:none"{% endif %}><div class="card-h"><h3>Teams <span class="muted">– lowest first</span></h3></div><div class="tablewrap"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Team head</th><th>HOD</th><th>People</th><th>Attendance</th><th>Absent</th></tr></thead><tbody id="teams"></tbody></table></div></div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3></div>
+    <div class="bar" id="chips"></div>
+    <div class="bar"><input type="search" id="q" placeholder="Find a person or code…" aria-label="Find a person"></div>
+    <div class="tablewrap" style="max-height:640px"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Employee</th><th>Team head</th><th>Attendance</th><th>Absent</th><th>Late</th><th>Leave</th><th>Days to check</th><th>Month</th><th>Why</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div class="legend"><span><i style="background:#16a34a"></i>Present</span><span><i style="background:#d97706"></i>Late</span><span><i style="background:#f59e0b"></i>Half day</span><span><i style="background:#64748b"></i>Leave</span><span><i style="background:#cbd5e1"></i>Week off</span><span><i style="background:#dc2626"></i>Absent</span><span><i style="background:#fff;box-shadow:inset 0 -3px 0 #7c3aed;border:1px solid #e6e8ef"></i>warning sign that day</span></div>
+  </section>
+  <footer><span>Source: <i>Bizom</i> · {{ v.month_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
+</main>
+<script id="data" type="application/json">{{ data_json | safe }}</script>
+<script>
+(function () {
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent), P = D.people, $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const col = (v) => v === null ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
+const CC = {P: "#16a34a", LT: "#d97706", HD: "#f59e0b", L: "#64748b", WO: "#cbd5e1", A: "#dc2626"};
+$("weeks").innerHTML = D.weeks.map((w) => `<tr><td><b>${esc(w.week)}</b> <span class="muted" style="font-size:12px">${esc(w.range)}</span></td><td class="num"><b style="color:${col(w.pct)}">${w.pct ?? "–"}%</b></td><td class="num">${w.absent}</td><td class="num">${w.late}</td><td class="num">${w.flagged}</td></tr>`).join("");
+$("teams").innerHTML = D.teams.map((t) => `<tr><td><b>${esc(t.team_head)}</b></td><td>${esc(t.hod)}</td><td class="num">${t.people}</td><td class="num"><b style="color:${col(t.pct)}">${t.pct ?? "–"}%</b></td><td class="num">${t.absent}</td></tr>`).join("");
+const F = {all: ["Everyone", () => true], attention: ["Needs a conversation", (p) => p.reasons.length], absent: ["3+ absent days", (p) => p.absent >= 3],
+  late: ["Late", (p) => p.late > 0], checks: ["Had warning signs", (p) => p.flag_days > 0], perfect: ["Full attendance", (p) => p.perfect]};
+const S = {f: "attention", q: "", open: null};
+if (!P.some(F.attention[1])) S.f = "all";
+function render() {
+  $("chips").innerHTML = Object.entries(F).map(([k, [l, fn]]) => `<button class="chip ${S.f === k ? "on" : ""}" data-f="${k}">${l} (${P.filter(fn).length})</button>`).join("");
+  const q = S.q.toLowerCase(), list = P.filter((p) => F[S.f][1](p) && (!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)));
+  $("cnt").textContent = `– ${list.length} of ${P.length}`;
+  $("rows").innerHTML = list.map((p) => `<tr data-p="${esc(p.code)}" style="cursor:pointer"><td><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
+    <td>${esc(p.team_head)}</td><td class="num"><b style="color:${col(p.pct)}">${p.pct ?? "–"}%</b></td><td class="num">${p.absent || ""}</td><td class="num">${p.late || ""}</td><td class="num">${p.leave || ""}</td><td class="num">${p.flag_days || ""}</td>
+    <td><span class="strip">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<i class="${c.endsWith("!") ? "f" : ""}" style="background:${CC[k] || "#f1f5f9"}" title="${d.slice(8)}: ${k || "no record"}"></i>`; }).join("")}</span></td>
+    <td>${p.reasons.map((r) => `<span class="tag">${esc(r)}</span>`).join("")}</td></tr>` +
+    (S.open === p.code && p.warnings.length ? `<tr><td colspan="9" style="background:#fafbfd;font-size:12.5px">${p.warnings.map((w) => `• ${esc(w.label)} – ${w.days} day${w.days === 1 ? "" : "s"}`).join("<br>")}</td></tr>` : "")).join("")
+    || '<tr><td colspan="9" class="empty">Nobody matches.</td></tr>';
+}
+document.addEventListener("click", (e) => { const f = e.target.closest("[data-f]"), p = e.target.closest("[data-p]");
+  if (f) { S.f = f.dataset.f === "absent" ? "absent" : f.dataset.f in F ? f.dataset.f : "all"; render(); } else if (p) { S.open = S.open === p.dataset.p ? null : p.dataset.p; render(); } });
+$("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
+render();
+})();
+</script>
+</body>
+</html>

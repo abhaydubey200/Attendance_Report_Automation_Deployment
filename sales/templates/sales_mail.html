@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ v.title }} – {{ v.date_long }}</title>
+<style>
+  @media only screen and (max-width: 620px) {
+    .wrap { width: 100% !important; }
+    .pad { padding-left: 14px !important; padding-right: 14px !important; }
+    .tile { display: inline-block !important; width: 47% !important; box-sizing: border-box; margin: 0 1% 8px 0 !important; }
+    .hide-sm { display: none !important; }
+  }
+</style>
+</head>
+{% set c = v.counts %}
+{% macro tile(label, value, color, bg, sub="") -%}
+  <td class="tile" width="25%" valign="top" style="background:{{ bg }};border:1px solid {{ color }}40;border-radius:10px;padding:10px 12px;">
+    <div style="font-size:12px;font-weight:bold;color:#14213d;">{{ label }}</div>
+    <div style="font-size:24px;font-weight:800;color:{{ color }};line-height:1.25;">{{ value }}</div>
+    <div style="font-size:11px;color:#5d6577;min-height:15px;">{{ sub }}</div>
+  </td>
+{%- endmacro %}
+{% macro heading(text, note=none) -%}
+  <tr><td class="pad" style="padding:16px 24px 2px;"><div style="font-size:16px;font-weight:800;color:#14213d;">{{ text }}</div>
+    {% if note %}<div style="font-size:12px;color:#5d6577;padding-top:2px;">{{ note }}</div>{% endif %}</td></tr>
+{%- endmacro %}
+{% set pc = v.pct %}
+{% set pcol = "#94a3b8" if pc is none else ("#15803d" if pc >= 90 else ("#b45309" if pc >= 75 else "#b91c1c")) %}
+{% set pbg = "#f0faf3" if (pc or 0) >= 90 else ("#fff8eb" if (pc or 0) >= 75 else "#fef3f2") %}
+<body style="margin:0;padding:0;background:#f5f6fa;font-family:Segoe UI,Arial,sans-serif;color:#1e2433;-webkit-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6fa;"><tr><td align="center" style="padding:18px 8px;">
+<table role="presentation" class="wrap" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;">
+  <tr><td align="center" style="padding:22px 24px 12px;">
+    <img src="cid:apis-logo" width="150" height="81" alt="apis" style="display:block;margin:0 auto;border:0;outline:none;width:150px;height:auto;">
+  </td></tr>
+  <tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td height="4" style="height:4px;line-height:4px;font-size:0;background:#f5b800;border-radius:2px;">&nbsp;</td></tr></table></td></tr>
+  <tr><td align="center" class="pad" style="padding:16px 24px 4px;">
+    <div style="font-size:23px;font-weight:800;color:#14213d;">{{ v.title }}</div>
+    <div style="display:inline-block;margin-top:8px;padding:6px 16px;border-radius:999px;background:#fff7dc;border:1px solid #f1cf6b;font-weight:bold;color:#14213d;font-size:14px;">{{ v.weekday }}, {{ v.date_long }}</div>
+  </td></tr>
+  <tr><td class="pad" style="padding:16px 24px 4px;">
+    <p style="font-size:15px;margin:0 0 4px;font-weight:bold;color:#14213d;">Dear {{ v.recipient }},</p>
+    <p style="font-size:14px;margin:0;color:#33405c;line-height:1.55;">
+      {{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance on <b>{{ v.date_long }}</b> (Bizom): {{ v.n }} people.
+      {% if v.flagged %}<b style="color:#b42318;">{{ v.flagged | length }} need{{ "s" if v.flagged | length == 1 }} checking.</b>{% else %}<b style="color:#15803d;">Nothing needs checking.</b>{% endif %}
+    </p>
+  </td></tr>
+
+  <tr><td class="pad" style="padding:10px 18px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;"><tr>
+      {{ tile("Attendance", ("–" if pc is none else "%g" | format(pc) ~ "%"), pcol, pbg, c.PRESENT ~ " present · " ~ c.HALF_DAY ~ " half day") }}
+      {{ tile("Absent", c.ABSENT, "#dc2626", "#fef3f2", "did not mark") }}
+      {{ tile("Late", c.LATE, "#d97706", "#fff8eb", "after 10:30 AM") }}
+      {{ tile("Needs checking", v.flagged | length, "#7c3aed", "#f6f2ff", v.flagged_high ~ " serious") }}
+    </tr></table>
+    <div style="font-size:12.5px;color:#5d6577;padding:2px 8px 6px;">{{ c.LEAVE }} on leave · {{ c.WEEK_OFF }} week off</div>
+  </td></tr>
+
+  {% if v.view != "team" and v.teams %}
+  {{ heading("Teams", "Lowest attendance first. All teams in the attachments.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      <tr style="background:#14213d;color:#ffffff;"><th align="left">Zonal head</th><th align="left" class="hide-sm">HOD</th><th align="center">People</th><th align="right">Attendance</th><th align="center">Absent</th><th align="center">To check</th></tr>
+      {% for t in v.teams[:10] %}
+      {% set tc = "#94a3b8" if t.pct is none else ("#15803d" if t.pct >= 90 else ("#b45309" if t.pct >= 75 else "#b91c1c")) %}
+      <tr style="border-top:1px solid #eef0f5;"><td><b style="color:#14213d;">{{ t.zonal }}</b></td><td class="hide-sm" style="color:#5d6577;">{{ t.hod }}</td><td align="center">{{ t.people }}</td>
+        <td align="right"><b style="color:{{ tc }};">{{ "–" if t.pct is none else "%g" | format(t.pct) ~ "%" }}</b></td><td align="center">{{ t.absent }}</td><td align="center">{{ t.flagged }}</td></tr>
+      {% endfor %}
+    </table>
+  </td></tr>
+  {% endif %}
+
+  {% if v.view == "hr" and v.data %}
+  {{ heading("Data to fix") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;font-size:13px;color:#33405c;">
+    <ul style="margin:4px 0;padding-left:18px;">
+      <li style="margin-bottom:4px;"><b>{{ v.data.not_in_staff_list | length }}</b> people marked attendance in Bizom but are not on the field sales staff list.</li>
+      {% if v.data.left_but_marked %}<li style="margin-bottom:4px;"><b>{{ v.data.left_but_marked | length }}</b> people marked attendance though they are Left on the staff list.</li>{% endif %}
+      <li>{{ v.data.eod_not_marked or 0 }} users are "Not Marked" in the EOD report (Bizom gives names only).</li>
+    </ul>
+  </td></tr>
+  {% endif %}
+
+  {% if v.view == "team" and v.not_marked %}
+  {{ heading("Absent", "Did not mark attendance in Bizom on " ~ v.date_long ~ ".") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;font-size:13px;line-height:1.9;">
+    {% for p in v.not_marked[:20] %}<span style="display:inline-block;background:#fef3f2;border:1px solid #f5c2c0;border-radius:999px;padding:0 10px;margin:0 4px 0 0;white-space:nowrap;color:#7f1d1d;">{{ p.name }} <span style="color:#9b6b6b;font-size:11.5px;">{{ p.code }}</span></span>{% endfor %}
+    {% if v.not_marked | length > 20 %}<span style="font-size:12px;color:#5d6577;"> + {{ v.not_marked | length - 20 }} more</span>{% endif %}
+  </td></tr>
+  {% endif %}
+
+  {% if v.flagged %}
+  {{ heading("Needs checking", "Warning signs from Bizom – please check with the person. They are not proof of anything.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      {% for p in v.flagged[:(15 if v.view == "team" else 10)] %}
+      {% set high = p.flags | selectattr("level", "equalto", "high") | list %}
+      <tr style="border-top:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td style="border-left:4px solid {{ '#b91c1c' if high else '#d97706' }};"><b style="color:#14213d;">{{ p.name }}</b> <span style="font-size:11px;color:#5d6577;">{{ p.code }}{% if p.designation %} · {{ p.designation }}{% endif %}</span>
+          <div style="color:{{ '#b91c1c' if high else '#b45309' }};font-weight:bold;">{{ p.flags | map(attribute="label") | join(" · ") }}</div>
+          <div style="color:#5d6577;font-size:11.5px;">{{ p.evidence }}</div></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% set more = v.flagged | length - (15 if v.view == "team" else 10) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
+  </td></tr>
+  {% endif %}
+
+  <tr><td style="padding:8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+  <tr><td style="padding:10px 24px;border-top:1px solid #e6e8ef;font-size:11px;color:#94a3b8;">
+    Automated email from the APIS Attendance tool (source: Bizom). Please do not forward or reply.
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

@@ -1,0 +1,109 @@
+"""Upload a Bizom day: read the files, count the day, store the results and plan the emails.
+
+The raw Bizom files are NOT kept (they hold phone numbers, photos and GPS); only each file's name and fingerprint.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesMailItem
+from ingestion.checksum import sha256_bytes
+from sales import analysis, bizom, mail
+from sales.config import get_rules
+
+MAX_MB = 25
+
+
+class UploadError(ValueError):
+    """Shown to the user as-is."""
+
+
+class AlreadyUploaded(UploadError):
+    def __init__(self, day: date):
+        super().__init__(f"{day:%d-%b-%Y} is already uploaded. Upload again with 'replace' to recount it.")
+        self.day = day
+
+
+def current_upload(session: Session, day: date) -> SalesDayUpload | None:
+    return session.scalar(select(SalesDayUpload).where(SalesDayUpload.report_date == day, SalesDayUpload.is_current.is_(True)))
+
+
+def read_files(files: list[tuple[str, bytes]], session: Session) -> dict[str, tuple[str, bytes, bizom.BizomFile]]:
+    rules = get_rules(session)
+    found: dict[str, tuple[str, bytes, bizom.BizomFile]] = {}
+    for name, data in files:
+        if len(data) > MAX_MB * 1024 * 1024:
+            raise UploadError(f"{name}: larger than {MAX_MB} MB.")
+        try:
+            rows = bizom.read_rows(data, name)
+            kind = bizom.kind_of(rows)
+            if kind is None:
+                raise UploadError(f"{name}: not a Bizom Attendance, Attendance & EOD or Call Variance report.")
+            if kind in found:
+                raise UploadError(f"Two {bizom.LABEL[kind]}s were chosen ({found[kind][0]} and {name}); upload one of each.")
+            parsed = bizom.parse(rows, short_call_seconds=rules.short_call_seconds, far_call_m=rules.far_call_m,
+                                 max_speed_kmh=rules.max_speed_kmh, day_end=rules.calls_after)
+        except bizom.BizomError as exc:
+            raise UploadError(f"{name}: {exc}") from exc
+        found[kind] = (name, data, parsed)
+    if bizom.ATTENDANCE not in found:
+        raise UploadError("The Bizom Attendance report is required (the EOD and Call Variance reports are optional).")
+    dates = {k: v[2].report_date for k, v in found.items()}
+    if len(set(dates.values())) > 1:
+        raise UploadError("The files are for different dates: " + ", ".join(f"{bizom.LABEL[k]} = {d:%d-%b-%Y}" for k, d in dates.items()))
+    return found
+
+
+def process(session: Session, files: list[tuple[str, bytes]], actor: str, replace: bool = False) -> SalesDayUpload:
+    found = read_files(files, session)
+    att = found[bizom.ATTENDANCE][2]
+    day = att.report_date
+    existing = current_upload(session, day)
+    if existing and not replace:
+        raise AlreadyUploaded(day)
+    staff = list(session.scalars(select(SalesEmployee)))
+    result = analysis.analyse(att, found.get(bizom.EOD, (None, None, None))[2], found.get(bizom.CALLS, (None, None, None))[2],
+                              staff, get_rules(session))
+    if existing:
+        existing.is_current = False
+        for old in session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status.in_(mail.REPLACEABLE))):
+            old.status, old.note = mail.SUPERSEDED, "Replaced by a newer upload of this day."
+    up = SalesDayUpload(report_date=day, is_current=True, people=len(result.people), summary=json.dumps(result.summary),
+                        attendance_file=found[bizom.ATTENDANCE][0][:255],
+                        eod_file=found.get(bizom.EOD, ("",))[0][:255] or None, calls_file=found.get(bizom.CALLS, ("",))[0][:255] or None,
+                        sha256=",".join(sha256_bytes(v[1])[:40] for v in found.values())[:200], uploaded_by=actor)
+    session.add(up)
+    session.flush()
+    for p in result.people:
+        c = p.calls
+        session.add(SalesEmployeeDay(
+            upload_id=up.upload_id, code=p.code, name=p.name[:200], designation=p.designation, zone=p.zone, manager_name=p.manager_name,
+            zonal_name=p.zonal_name, hod_name=p.hod_name, in_master=p.in_master, status=p.status, bizom_status=p.bizom_status,
+            leave_type=p.leave_type, attendance_time=p.attendance_time, first_activity=p.first_activity, last_activity=p.last_activity,
+            market_minutes=p.market_minutes, km=p.km, eod_time=p.eod_time, attendance_variance_m=p.attendance_variance_m, photo=p.photo,
+            calls=c.calls if c else None, productive_calls=c.productive if c else None, short_calls=c.short if c else None,
+            telephonic_calls=c.telephonic if c else None, beat_jump_calls=c.beat_jump if c else None, far_calls=c.far if c else None,
+            max_call_distance_m=c.max_distance_m if c else None, fast_moves=c.fast_moves if c else None,
+            order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None))
+    session.flush()
+    mail.plan(session, up)
+    return up
+
+
+def rows_for(session: Session, upload_id: int) -> list[SalesEmployeeDay]:
+    return list(session.scalars(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == upload_id).order_by(SalesEmployeeDay.name)))
+
+
+def days(session: Session) -> list[dict]:
+    out = []
+    for u in session.scalars(select(SalesDayUpload).where(SalesDayUpload.is_current.is_(True)).order_by(SalesDayUpload.report_date.desc())):
+        s = json.loads(u.summary)
+        out.append({"report_date": u.report_date.isoformat(), "people": u.people, "attendance_pct": s.get("attendance_pct"),
+                    "absent": s["counts"].get("ABSENT", 0), "late": s["counts"].get("LATE", 0), "flagged": s.get("people_flagged", 0),
+                    "files": s.get("files"), "uploaded_by": u.uploaded_by, "uploaded_at": u.uploaded_at.isoformat()})
+    return out

@@ -13,7 +13,8 @@ import { HomePage } from "./pages/HomePage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage, UnavailablePage } from "./pages/LoginPage";
 import { ModulesPage } from "./pages/ModulesPage";
-import { SalesHomePage } from "./pages/SalesHomePage";
+import { SalesLayout } from "./sales/SalesLayout";
+import { SalesDayPage, SalesMailPage, SalesOverview, SalesSettingsPage, SalesStaffPage, SalesUpload } from "./sales/pages";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UploadPage } from "./pages/UploadPage";
 
@@ -64,7 +65,15 @@ export function App() {
     <Routes>
       <Route index element={<Navigate to="/modules" replace />} />
       <Route path="modules" element={<ModulesPage headOfficeHome={home} />} />
-      <Route path="sales/*" element={<SalesHomePage />} />
+      <Route path="sales" element={<SalesLayout />}>
+        <Route index element={<SalesOverview />} />
+        <Route path="upload" element={<SalesUpload />} />
+        <Route path="day" element={<SalesDayPage />} />
+        <Route path="mail" element={<SalesMailPage />} />
+        <Route path="staff" element={<SalesStaffPage />} />
+        <Route path="settings" element={<SalesSettingsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
       <Route element={<Layout />}>
         {me.navigation.map((page) => {
           const Screen = SCREENS[page.slug];

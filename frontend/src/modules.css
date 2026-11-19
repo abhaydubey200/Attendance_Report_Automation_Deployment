@@ -68,3 +68,27 @@
   .sales-top .btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .sales-top { gap: .5rem; }
 }
+
+/* Field Sales pages (module 2) - only what styles.css does not already have */
+.sales-module .btn-auto { width: auto; }
+.sales-module .chips-row { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .7rem; }
+.sales-module .chip-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: .3rem .8rem; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; color: var(--navy); }
+.sales-module .chip-btn.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.sales-module .link-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.sales-module .link-btn:hover strong { text-decoration: underline; }
+.sales-module .sales-evidence { display: block; margin-top: .3rem; font-size: .8rem; color: #33405c; background: var(--gold-50); border-radius: 6px; padding: .3rem .5rem; max-width: 340px; white-space: normal; }
+.sales-module .sales-flags { display: flex; flex-wrap: wrap; gap: .25rem; }
+.sales-module .sales-flags .badge { white-space: nowrap; }
+.sales-module .sales-warn { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.sales-module .sales-warn button { width: 100%; display: grid; grid-template-columns: 12px 1fr auto; gap: .6rem; align-items: center; text-align: left; font: inherit;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: .45rem .7rem; cursor: pointer; color: var(--ink); }
+.sales-module .sales-warn button:hover, .sales-module .sales-warn button.on { background: var(--gold-50); border-color: #f1cf6b; }
+.sales-module .sales-warn i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+.sales-module .lv-high { background: #dc2626; } .sales-module .lv-medium { background: #d97706; } .sales-module .lv-low { background: #94a3b8; }
+.sales-module .check-row { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+.sales-module .row-actions { display: inline-flex; gap: .3rem; white-space: nowrap; }
+.sales-module .mail-split { align-items: start; }
+.sales-module .field.inline { flex-direction: row; align-items: center; gap: .5rem; margin: 0; }
+.sales-module .sales-upload { display: grid; gap: .8rem; max-width: 640px; }
+.sales-module .sales-upload .sales-steps li span:last-child { display: block; }
+@media (max-width: 760px) { .sales-module .hide-sm { display: none; } }

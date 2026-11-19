@@ -87,14 +87,22 @@ const api = (me: Me, extra: Handler = () => json(404, { detail: "nope" })): Hand
   return extra(url, init);
 };
 
-test("opens on the module chooser; Field Sales has its own page and a way back", async () => {
-  mockFetch(api(OPERATOR));
+test("opens on the module chooser; Field Sales has its own menu and a way back", async () => {
+  mockFetch(api(OPERATOR, (url) => {
+    if (url.endsWith("/v1/sales/days")) return json(200, []);
+    if (url.endsWith("/v1/sales/staff")) return json(200, { summary: { total: 0, active: 0, left: 0, with_email: {}, no_route: 0, hods: [], zonal: [] }, staff: [] });
+    return json(404, { detail: "nope" });
+  }));
   renderApp();
   expect(await screen.findByRole("heading", { name: "Head Office Attendance" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Field Sales Attendance" })).toBeInTheDocument();
   await userEvent.click(screen.getByRole("link", { name: /Open Field Sales/ }));
-  expect(await screen.findByRole("heading", { level: 1, name: "Field Sales Attendance" })).toBeInTheDocument();
-  expect(screen.getByText("Bizom daily attendance export")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 1, name: "Field Sales attendance" })).toBeInTheDocument();
+  expect(await screen.findByText(/staff list is empty/)).toBeInTheDocument();
+  for (const page of ["Upload", "Day insights", "Approve emails", "Staff list", "Settings"]) {
+    expect(screen.getByRole("link", { name: page })).toHaveAttribute("href", expect.stringContaining("/sales"));
+  }
+  expect(screen.queryByRole("link", { name: "Attendance report" })).not.toBeInTheDocument();     // Module 1's menu is not shown
   await userEvent.click(screen.getByRole("link", { name: /Switch module/ }));
   expect(await screen.findByRole("link", { name: /Open Head Office/ })).toBeInTheDocument();
 });

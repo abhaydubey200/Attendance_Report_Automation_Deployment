@@ -415,44 +415,38 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
 
 
 def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, attached: list[str]) -> str:
-    """Plain-text version of the month-end email (mail clients that do not show HTML)."""
+    """Plain-text version of the (short) month-end email, for mail clients that do not show HTML. Details are attached."""
     view = blocks["view"]
     pct = "-" if totals["attendance_pct"] is None else f"{totals['attendance_pct']:g}%"
-    lines = [f"{greeting},", "",
-             f"Monthly attendance for {label(month)} ({totals['work_days']} working days of {totals['working_days']} days uploaded, "
-             f"{totals['employees']} employees).", "",
-             f"Average attendance {pct} | Absences {totals['absent']} | Leave {totals['leave'] + totals['half_day']} | "
-             f"OD {totals['od']} | WFH {totals['wfh']} | Late {totals['late']} | Missing punches {totals['missing_punch']}", ""]
-    if blocks["weeks"]:
-        lines += ["Week by week:"] + [f"- {w['week']} ({w['range']}): {'-' if w['attendance_pct'] is None else str(w['attendance_pct']) + '%'}, "
-                                     f"{w['absent']} absent, {w['late']} late, {w['missing_punch']} missing punches" for w in blocks["weeks"]] + [""]
-    if view == "director":
-        if blocks["concerns"]:
-            lines += ["Needs your attention:"] + [f"- {x}" for x in blocks["concerns"]] + [""]
-        lines += ["Teams (best attendance first):"] + [
-            f"{g['rank']}. {g['name']}: {'-' if g['attendance_pct'] is None else str(g['attendance_pct']) + '%'}, {g['employees']} people, "
-            f"{g['absent']} absent, {g['missing_punch']} missing punches" for g in blocks["groups"]] + [""]
-    elif view == "hr":
-        lines.append("Payroll checklist (settle before payroll, most urgent first):")
-        if not any(g["rows"] for g in blocks["checklist"]):
+    lines = [f"{greeting},", "", f"Attendance for {label(month)}: {totals['work_days']} working days, {totals['employees']} employees.",
+             f"Average attendance {pct} | Absences {totals['absent']} | Late {totals['late']} | Missing punches {totals['missing_punch']}", ""]
+    if view == "hr":
+        lines.append("Before payroll:")
+        open_checks = [g for g in blocks["checklist"] if g["rows"]]
+        if not open_checks:
             lines.append("- Nothing to settle.")
-        for n, g in enumerate([g for g in blocks["checklist"] if g["rows"]], start=1):
-            lines += [f"{n}. {g['title']} ({len(g['rows'])} people): {g['how']}"]
-            lines += [f"   - {r['name']} ({r['code']}), {r['team']}: {r['detail']}" for r in g["rows"][:15]]
-            if len(g["rows"]) > 15:
-                lines.append(f"   ... and {len(g['rows']) - 15} more in the Payroll sheet")
-        lines.append("")
-    if view != "hr" and blocks["attention"]:
-        lines.append("Action required:")
-        for g in blocks["action_groups"]:
-            lines += [f"{g['title']}:"] + [f"- {p['name']} ({p['code']}): {p['absent']} absent, {p['late']} late, "
-                                           f"{p['missing_punch']} missing punches" for p in g["people"]]
-        lines.append("")
-    if blocks["perfect"]:
-        lines += [f"Full attendance ({len(blocks['perfect'])}): " + ", ".join(p["name"] for p in blocks["perfect"][:30]), ""]
-    lines += ["Next month planning:"] + [f"- {n}" for n in blocks["planning"]]
-    lines += ["", "Attendance is a workforce-availability indicator, not a measure of productivity.",
-              f"Attached: {', '.join(attached) or 'nothing'}", "This is an automated email from the APIS Daily Attendance tool."]
+        for n, g in enumerate(open_checks, start=1):
+            more = f" + {len(g['rows']) - 5} more" if len(g["rows"]) > 5 else ""
+            lines.append(f"{n}. {g['title']} ({len(g['rows'])}): " + ", ".join(f"{r['name']} ({r['detail']})" for r in g["rows"][:5]) + more)
+    elif view == "director":
+        if blocks["concerns"]:
+            lines += ["Needs your attention:"] + [f"- {x}" for x in blocks["concerns"][:4]] + [""]
+        teams = blocks["groups"]
+        shown = teams if len(teams) <= 10 else teams[:5] + teams[-5:]
+        lines += ["Teams (best first" + (", best 5 and weakest 5" if len(teams) > 10 else "") + "):"] + [
+            f"{g['rank']}. {g['name']}: {'-' if g['attendance_pct'] is None else str(g['attendance_pct']) + '%'}, {g['absent']} absent" for g in shown]
+    else:
+        if ins and ins["takeaways"]:
+            lines += ["Key takeaways:"] + [f"- {x['text']}" for x in ins["takeaways"][:3]] + [""]
+        if blocks["attention"]:
+            lines += ["Action required:"] + [f"- {p['name']} ({p['code']}): {p['reason']} - {p['action']}" for p in blocks["attention"][:10]]
+            if len(blocks["attention"]) + blocks["attention_more"] > 10:
+                lines.append(f"+ {len(blocks['attention']) + blocks['attention_more'] - 10} more in the attachments.")
+        else:
+            lines.append("Nobody has a recurring absence, late-arrival or missing-punch pattern.")
+    lines += ["", f"Details: {', '.join(attached) or 'nothing'} attached.",
+              "Attendance is a workforce-availability indicator, not a measure of productivity.",
+              "Automated email from the APIS Daily Attendance tool."]
     return "\n".join(lines)
 
 

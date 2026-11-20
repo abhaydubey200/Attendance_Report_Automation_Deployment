@@ -436,7 +436,7 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
                 lines += ["", f"{title}: " + ", ".join(f"{x['name']} ({x['before']:g}% -> {x['now']:g}%)" for x in rows)]
         if blocks["perfect"]:
             lines += ["", "Full attendance: " + ", ".join(p["name"] for p in blocks["perfect"][:40])]
-    lines += ["", "Automated email from the APIS Daily Attendance tool."]
+    lines += ["", "Automated email from the APIS HR Portal."]
     return "\n".join(lines)
 
 

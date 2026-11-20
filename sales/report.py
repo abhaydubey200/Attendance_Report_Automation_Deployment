@@ -130,7 +130,7 @@ def email_text(v: dict) -> str:
         lines += [f"Needs checking ({len(v['flagged'])}):"] + [f"- {p['name']} ({p['code']}): {', '.join(f['label'] for f in p['flags'])}"
                                                                for p in v["flagged"][:20]]
         lines += [f"+ {len(v['flagged']) - 20} more in the attachments."] * (len(v["flagged"]) > 20) + [""]
-    lines += ["Warning signs are for checking, not proof. Automated email from the APIS Attendance tool (source: Bizom)."]
+    lines += ["Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
     return "\n".join(lines)
 
 

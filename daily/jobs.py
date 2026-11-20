@@ -110,7 +110,7 @@ def alert(session: Session, settings: Settings, subject: str, body: str) -> str 
         to = [cfg.test_recipient]
     if not to:
         return "no alert address configured"
-    msg = build_message(cfg.sender or "attendance@localhost", to, f"[APIS Attendance] {subject}",
+    msg = build_message(cfg.sender or "attendance@localhost", to, f"[HR Portal] {subject}",
                         f"<p>{body}</p><p>See Automation in the attendance app for details.</p>", body, [])
     try:
         return send(cfg, msg, settings.storage.area("outbox") / "alerts").status

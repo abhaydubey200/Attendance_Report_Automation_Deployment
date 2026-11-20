@@ -260,7 +260,7 @@
   {% endif %}
   {% if app_url %}<tr><td class="pad" style="padding:0 24px 10px;font-size:13px;color:#5d6577;">Attendance app: <a href="{{ app_url }}" style="color:#14213d;">{{ app_url }}</a></td></tr>{% endif %}
   <tr><td class="pad" style="padding:12px 24px;border-top:1px solid #e6e8ef;font-size:11.5px;color:#6b7280;line-height:1.6;">
-    Automated email from the APIS Daily Attendance tool (source: Pocket HRMS). Meant only for {{ greeting[5:] if greeting.startswith("Dear ") else "you" }} &ndash; please do not forward.
+    Automated email from the APIS HR Portal (source: Pocket HRMS). Meant only for {{ greeting[5:] if greeting.startswith("Dear ") else "you" }} &ndash; please do not forward.
     {% if hr_contact and kind != "hr" %}Questions or corrections: <a href="mailto:{{ hr_contact }}" style="color:#14213d;">{{ hr_contact }}</a>.{% else %}Please do not reply to this email.{% endif %}
   </td></tr>
 </table>

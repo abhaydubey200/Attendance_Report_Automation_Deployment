@@ -645,7 +645,7 @@ def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
         lines += ["Watch this week (fine on the day, but a pattern is forming):"]
         lines += [f"- {r['code']} {r['name']}: {r['reason']}" for r in b["watch"]] + [""]
     lines += ["The details are in the attached Excel workbook and dashboard.",
-              "This is an automated email from the APIS Daily Attendance tool. Please do not reply."]
+              "This is an automated email from the APIS HR Portal. Please do not reply."]
     return "\n".join(lines)
 
 

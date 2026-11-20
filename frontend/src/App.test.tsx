@@ -30,7 +30,7 @@ const NAV = [
 const OPERATOR: Me = {
   user_id: 0, username: "local.operator", display_name: "APIS HR Operator", roles: ["ADMIN"],
   permissions: ["VIEW_INSIGHTS", "UPLOAD_AND_SEND", "MANAGE_SETTINGS", "MANAGE_EMPLOYEES", "ADMIN_USERS"], departments: [], navigation: NAV,
-  environment: "testing", app_name: "APIS Daily Attendance", idle_timeout_minutes: 30, auth_mode: "none",
+  environment: "testing", app_name: "HR Portal", idle_timeout_minutes: 30, auth_mode: "none",
 };
 const VIEWER: Me = { ...OPERATOR, username: "viewer", display_name: "Viewer", roles: ["VIEWER"], permissions: ["VIEW_INSIGHTS"],
   navigation: NAV.slice(1, 3), auth_mode: "local" };

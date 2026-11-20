@@ -35,7 +35,7 @@ export function SalesLayout() {
           <BrandMark />
           <div className="sidebar-brand-text">
             <span className="sidebar-product">Field Sales</span>
-            <span className="sidebar-company">Bizom · Module 2</span>
+            <span className="sidebar-company">HR Portal · Bizom</span>
           </div>
         </div>
         <nav>

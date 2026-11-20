@@ -13,7 +13,7 @@ export function ModulesPage({ headOfficeHome }: { headOfficeHome: string | undef
     <div className="modules">
       <header className="modules-top">
         <BrandMark />
-        <span className="modules-product">Attendance Automation</span>
+        <span className="modules-product">HR Portal</span>
         <span className="modules-spacer" />
         <span className="modules-user">{me.display_name}</span>
         {me.auth_mode === "local" && (

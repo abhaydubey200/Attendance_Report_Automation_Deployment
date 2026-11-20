@@ -39,7 +39,7 @@ export function Layout() {
         <div className="sidebar-brand">
           <BrandMark />
           <div className="sidebar-brand-text">
-            <span className="sidebar-product">Daily Attendance</span>
+            <span className="sidebar-product">HR Portal</span>
             <span className="sidebar-company">APIS India Limited</span>
           </div>
         </div>
@@ -77,7 +77,7 @@ export function Layout() {
           <div className="crumbs">
             {current && <span className="section">{current.section}</span>}
             {current && <span className="sep" aria-hidden="true">/</span>}
-            <strong>{current?.title ?? "Daily Attendance"}</strong>
+            <strong>{current?.title ?? "HR Portal"}</strong>
           </div>
           <div className="topbar-right">
             {me.environment !== "production" && <span className="env-chip">{me.environment}</span>}

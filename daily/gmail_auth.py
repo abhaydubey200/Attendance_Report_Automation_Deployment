@@ -131,7 +131,7 @@ def wait_for_code(port: int, state: str, timeout: int = 300) -> str:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(("<h2>APIS Daily Attendance</h2><p>" + ("Gmail is connected. You can close this tab."
+            self.wfile.write(("<h2>APIS HR Portal</h2><p>" + ("Gmail is connected. You can close this tab."
                               if ok else "Sign-in did not complete. Check the terminal.") + "</p>").encode())
 
         def log_message(self, *_):  # keep the code out of logs

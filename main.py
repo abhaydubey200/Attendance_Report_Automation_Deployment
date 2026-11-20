@@ -553,7 +553,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="main.py", description="APIS Attendance MIS administration")
+    parser = argparse.ArgumentParser(prog="main.py", description="APIS HR Portal administration")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("check", help="validate configuration, storage and database").set_defaults(func=cmd_check)

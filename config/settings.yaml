@@ -1,10 +1,10 @@
-# APIS Daily Attendance -- defaults. Counting rules, recipients and email options
+# APIS HR Portal -- defaults. Counting rules, recipients and email options
 # are edited in the app (Settings screen) and saved in the database; these values
 # are only the starting point. Secrets come from environment variables (.env).
 
 app:
-  name: "APIS Daily Attendance"
-  short_name: "APIS ATTENDANCE"
+  name: "HR Portal"
+  short_name: "HR PORTAL"
   company: "APIS India Limited"
   timezone: "Asia/Kolkata"
   date_format: "%d-%b-%Y"           # 13-Nov-2026

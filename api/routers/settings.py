@@ -93,8 +93,8 @@ def test_email(body: TestEmailIn, principal: Principal = Depends(require(Perm.MA
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Not a valid email address.")
     cfg = get_email_settings(db, settings)
     msg = build_message(cfg.sender or "apis-attendance@localhost", [body.to], f"{cfg.subject_prefix} - test email",
-                        "<p>This is a test email from the APIS Daily Attendance tool. Email delivery works.</p>",
-                        "This is a test email from the APIS Daily Attendance tool. Email delivery works.", [])
+                        "<p>This is a test email from the APIS HR Portal. Email delivery works.</p>",
+                        "This is a test email from the APIS HR Portal. Email delivery works.", [])
     try:
         result = send(cfg, msg, settings.storage.area("outbox") / "tests")
     except MailError as exc:

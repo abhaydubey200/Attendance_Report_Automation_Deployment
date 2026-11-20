@@ -1,6 +1,6 @@
 @echo off
 rem ===================================================================
-rem  APIS Attendance - START (one click)
+rem  HR Portal - START (one click)
 rem  Starts the app in the background and opens it in the browser.
 rem  Both modules: Head Office (Pocket HRMS) and Field Sales (Bizom).
 rem  To stop it: double-click stop.bat
@@ -13,7 +13,7 @@ set "PY=%~dp0.venv\Scripts\python.exe"
 set "LOG=%~dp0logs\server_console.log"
 set "PIDFILE=%~dp0storage\app.pid"
 
-title APIS Attendance - start
+title HR Portal - start
 
 if not exist "%PY%" (
   echo [X] Python environment not found: %PY%
@@ -52,7 +52,7 @@ if errorlevel 1 (
 
 rem --- start the server in the background ----------------------------
 if not exist "logs" mkdir "logs"
-echo Starting APIS Attendance on %URL% ...
+echo Starting HR Portal on %URL% ...
 powershell -NoProfile -Command ^
   "$p = Start-Process -FilePath '%PY%' -ArgumentList 'main.py','serve','--port','%PORT%' -WorkingDirectory '%~dp0.' -WindowStyle Hidden -RedirectStandardOutput '%LOG%' -RedirectStandardError '%LOG%.err' -PassThru; Set-Content -Path '%PIDFILE%' -Value $p.Id"
 
@@ -65,7 +65,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [OK] APIS Attendance is running: %URL%
+echo [OK] HR Portal is running: %URL%
 echo      Close this window any time - the app keeps running. Use stop.bat to stop it.
 start "" "%URL%"
 "%SystemRoot%\System32\timeout.exe" /t 5 >nul

@@ -68,5 +68,5 @@ if errorlevel 1 (
 echo [OK] APIS Attendance is running: %URL%
 echo      Close this window any time - the app keeps running. Use stop.bat to stop it.
 start "" "%URL%"
-"%SystemRoot%\System32	imeout.exe" /t 5 >nul
+"%SystemRoot%\System32\timeout.exe" /t 5 >nul
 exit /b 0

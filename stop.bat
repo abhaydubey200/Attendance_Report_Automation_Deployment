@@ -21,5 +21,5 @@ powershell -NoProfile -Command ^
   "if (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue) { Write-Host '[X] Something is still using port %PORT%.'; exit 1 }" ^
   "elseif ($stopped) { Write-Host '[OK] APIS Attendance stopped.' } else { Write-Host 'APIS Attendance was not running.' }"
 set "RC=%errorlevel%"
-"%SystemRoot%\System32	imeout.exe" /t 3 >nul
+"%SystemRoot%\System32\timeout.exe" /t 3 >nul
 exit /b %RC%

@@ -58,7 +58,7 @@ powershell -NoProfile -Command ^
 
 rem --- wait until it answers (up to 60 s) ----------------------------
 powershell -NoProfile -Command ^
-  "for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 '%URL%/' | Out-Null; exit 0 } catch { Start-Sleep -Seconds 1 } }; exit 1"
+  "for ($i = 0; $i -lt 60; $i++) { $c = New-Object Net.Sockets.TcpClient; try { $c.Connect('127.0.0.1', %PORT%); $c.Close(); exit 0 } catch { $c.Close(); Start-Sleep -Seconds 1 } }; exit 1"
 if errorlevel 1 (
   echo [X] The app did not start. See logs\server_console.log.err
   pause

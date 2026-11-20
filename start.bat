@@ -23,7 +23,7 @@ if not exist "%PY%" (
 )
 
 rem --- already running? just open it ---------------------------------
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "$c = New-Object Net.Sockets.TcpClient; try { $c.Connect('127.0.0.1', %PORT%); $c.Close(); exit 0 } catch { $c.Close(); exit 1 }"
 if %errorlevel%==0 (
   echo The app is already running on %URL%
   start "" "%URL%"

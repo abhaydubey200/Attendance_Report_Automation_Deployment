@@ -104,3 +104,71 @@ def month_patterns(session: Session, start: date, end: date, codes: set[str] | N
         res[code] = {**{k: v[k] for k in ("location_days", "selfie_days", "unusual_days", "max_risk")},
                      "top": [lab for lab, _ in v["labels"].most_common(2)], "reasons": reasons}
     return res
+
+
+# ---------------------------------------------------------------- proof (dashboard + Excel of HODs, Director, HR)
+PROOF_ROLES = ("HOD", "Director", "HR")      # who gets selfies and map links (decided 2026-11-21: team heads get text only)
+
+
+def _thumb(client, url: str) -> bytes | None:
+    """A small JPEG of a Bizom selfie, made in memory for the attachment (the HR Portal stores no photos)."""
+    import io
+
+    from PIL import Image, ImageOps
+
+    from sales import photos
+    try:
+        im = ImageOps.exif_transpose(Image.open(io.BytesIO(photos._download(client, url)))).convert("RGB")
+        im.thumbnail((180, 240))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=72)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def proof(session: Session, day: date, items: list[dict], limit: int = 40, client=None) -> list[dict]:
+    """For the highest-risk people: their attendance selfie, the confirmed matching selfie(s), and map links."""
+    import base64
+
+    import httpx
+
+    from database.models.sales import SalesLocation
+    from sales import ml
+    if not items:
+        return []
+    top = items[:limit]
+    codes = {x["code"] for x in top}
+    locs = {(l.code, l.kind): l for l in session.scalars(select(SalesLocation).where(SalesLocation.day == day, SalesLocation.code.in_(codes)))}
+    places = ml.usual_places(session, day, get_rules(session), codes)
+    selfies = {p.code: p for p in session.scalars(select(SalesPhoto).where(SalesPhoto.day == day, SalesPhoto.code.in_(codes)))}
+    match_ids = {m for p in selfies.values() for m in json.loads(p.evidence or "{}").get("_matches", []) if p.flags and
+                 any(k in p.flags for k in ("PHOTO_REUSED", "PHOTO_OTHER_PERSON"))}
+    matched = {m.id: m for m in session.scalars(select(SalesPhoto).where(SalesPhoto.id.in_(match_ids)))} if match_ids else {}
+    names = {e.code: e.name for e in session.scalars(select(SalesEmployee))}
+    own = client is None
+    client = client or httpx.Client(timeout=20, follow_redirects=False, headers={"User-Agent": "HR-Portal-photo-check/1.0"})
+    uri = lambda b: ("data:image/jpeg;base64," + base64.b64encode(b).decode()) if b else None  # noqa: E731
+    gmap = lambda l: f"https://www.google.com/maps?q={l.lat:.6f},{l.lng:.6f}" if l else None  # noqa: E731
+    out = []
+    try:
+        for x in top:
+            p = selfies.get(x["code"])
+            att, eod = locs.get((x["code"], "ATT")), locs.get((x["code"], "EOD"))
+            near = ml.nearest(places.get(x["code"], []), (att.lat, att.lng)) if att else None
+            selfie = _thumb(client, p.url) if p else None
+            ms = []
+            if p and p.flags and any(k in p.flags for k in ("PHOTO_REUSED", "PHOTO_OTHER_PERSON")):
+                for mid in json.loads(p.evidence or "{}").get("_matches", [])[:2]:
+                    m = matched.get(mid)
+                    if m:
+                        ms.append({"name": names.get(m.code, m.code), "code": m.code, "date": m.day.isoformat(), "url": m.url,
+                                   "jpg": _thumb(client, m.url)})
+            out.append({**x, "selfie_url": p.url if p else None, "selfie_jpg": selfie, "selfie_uri": uri(selfie),
+                        "matches": [{**m, "uri": uri(m["jpg"])} for m in ms],
+                        "att_map": gmap(att), "att_time": att.time if att else None, "eod_map": gmap(eod),
+                        "from_usual": (f"{near[0]:.1f} km from the nearest usual place" if near else None)})
+    finally:
+        if own:
+            client.close()
+    return out

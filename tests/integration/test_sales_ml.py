@@ -66,10 +66,17 @@ def test_unusual_day_risk_and_emails(day):
         assert {c["code"] for c in checks.day_checks(s, end, {"SL00005"})} == {"SL00005"}
         item = next(i for i in mail.items_for(s, end) if i.recipient_key == "hod2@example.com")
         html, text, files = mail.render(s, item)
-        assert "Location &amp; selfie checks" in html and "Unusual day for this person" in html and "Asha" not in html
-        assert "Location & selfie checks" in text and "fraud" not in (html + text).lower()
+        # short email: highlights only (at most 6 lines); everything else in the attachments
+        assert "Highlights" in html and "Highest risk: Esha Fine (risk" in html and "Asha" not in html and html.count("border-bottom:1px solid #f1f3f8") <= 6
+        assert "Highlights:" in text and "fraud" not in (html + text).lower() and "Absent / did not mark" not in text
         wb = load_workbook(io.BytesIO(next(f for f in files if f.filename.endswith(".xlsx")).content))
-        assert "Location & selfie checks" in wb.sheetnames
+        assert "Location & selfie checks" in wb.sheetnames and "Proof" in wb.sheetnames          # HOD: proof sheet with map links
+        proof_ws = wb["Proof"]
+        assert proof_ws.cell(2, 2).value.startswith("Esha Fine") and proof_ws.cell(2, 6).hyperlink.target.startswith("https://www.google.com/maps?q=")
+        # a team head gets the checks but no photos / map links
+        th = next(i for i in mail.items_for(s, end) if i.role == "Team head")
+        _, _, tfiles = mail.render(s, th)
+        assert "Proof" not in load_workbook(io.BytesIO(next(f for f in tfiles if f.filename.endswith(".xlsx")).content)).sheetnames
         assert '"checks"' in next(f for f in files if f.filename.endswith(".html")).content.decode()
         # month-end: repeated patterns become reasons in 'Needs a conversation'
         v = monthly.build_view(s, "2026-11", None, "company", "HR")

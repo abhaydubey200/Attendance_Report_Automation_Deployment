@@ -72,6 +72,9 @@ class SalesRules(BaseModel):
     # people, chance alone gives ~265 matches at 6 bits and ~0 at 4; for one person on different days, real reuse shows at 0-2 bits.
     photo_same_bits: int = 4                      # another person's selfie
     photo_reuse_bits: int = 2                     # the same person's selfie from another day
+    # look-alike pairs are confirmed by comparing image details (ORB + RANSAC). Measured 2026-11-22: real reuse 73-126
+    # matching details, different photos 0-12 (a same-wall background up to ~68 in one control pair).
+    photo_confirm_points: int = 70
     photo_dark: float = 40.0                      # average brightness (0-255) below this = too dark
     photo_blurry: float = 15.0                    # sharpness below this = too blurry to judge
     photo_time_hours: float = 2.0                 # time written in the photo this far from the attendance time

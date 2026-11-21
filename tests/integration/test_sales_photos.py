@@ -142,3 +142,9 @@ def test_retry_cases_day_page_purge_and_api(checked, settings, tmp_path):
         assert ov["photos"] == 22 and any(i["matches"] for i in ov["items"])
     with session_scope(engine) as s:
         assert photos.purge(s, date(2026, 11, 12)) == 2
+
+
+def test_image_detail_confirmation():
+    same_a, same_b = photos._grey(picture(21)), photos._grey(picture(21, shift=8))          # re-saved copy
+    other = photos._grey(picture(22))                                                         # a different photo
+    assert photos.match_points(same_a, same_b) >= 70 > photos.match_points(same_a, other)

@@ -58,73 +58,26 @@
     <div style="font-size:12.5px;color:#5d6577;padding:2px 8px 6px;">{{ c.LEAVE }} on leave · {{ c.WEEK_OFF }} week off</div>
   </td></tr>
 
-  {% if v.view != "team" and v.teams %}
-  {{ heading("Teams", "Lowest attendance first. All teams in the attachments.") }}
+  {% if v.highlights %}
+  {{ heading("Highlights") }}
   <tr><td class="pad" style="padding:4px 24px 6px;">
-    <table role="presentation" width="100%" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
-      <tr style="background:#14213d;color:#ffffff;"><th align="left">Zonal head</th><th align="left" class="hide-sm">HOD</th><th align="center">People</th><th align="right">Attendance</th><th align="center">Absent</th><th align="center">To check</th></tr>
-      {% for t in v.teams[:10] %}
-      {% set tc = "#94a3b8" if t.pct is none else ("#15803d" if t.pct >= 90 else ("#b45309" if t.pct >= 75 else "#b91c1c")) %}
-      <tr style="border-top:1px solid #eef0f5;"><td><b style="color:#14213d;">{{ t.zonal }}</b></td><td class="hide-sm" style="color:#5d6577;">{{ t.hod }}</td><td align="center">{{ t.people }}</td>
-        <td align="right"><b style="color:{{ tc }};">{{ "–" if t.pct is none else "%g" | format(t.pct) ~ "%" }}</b></td><td align="center">{{ t.absent }}</td><td align="center">{{ t.flagged }}</td></tr>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px;color:#33405c;line-height:1.5;">
+      {% for x in v.highlights %}
+      {% set col = '#b91c1c' if x.level == 'high' else ('#d97706' if x.level == 'medium' else '#64748b') %}
+      <tr><td width="14" valign="top" style="padding:6px 0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ col }};margin-top:6px;"></span></td>
+        <td style="padding:5px 0 5px 6px;border-bottom:1px solid #f1f3f8;">{{ x.text }}</td></tr>
       {% endfor %}
     </table>
   </td></tr>
+  {% else %}
+  <tr><td class="pad" style="padding:10px 24px;font-size:14px;color:#15803d;font-weight:bold;">Nothing to flag on {{ v.date_long }}.</td></tr>
   {% endif %}
-
-  {% if v.view == "hr" and v.data %}
-  {{ heading("Data to fix") }}
-  <tr><td class="pad" style="padding:4px 24px 6px;font-size:13px;color:#33405c;">
-    <ul style="margin:4px 0;padding-left:18px;">
-      <li style="margin-bottom:4px;"><b>{{ v.data.not_in_staff_list | length }}</b> people marked attendance in Bizom but are not on the field sales staff list.</li>
-      {% if v.data.left_but_marked %}<li style="margin-bottom:4px;"><b>{{ v.data.left_but_marked | length }}</b> people marked attendance though they are Left on the staff list.</li>{% endif %}
-      <li>{{ v.data.eod_not_marked or 0 }} users are "Not Marked" in the EOD report (Bizom gives names only).</li>
-    </ul>
+  <tr><td class="pad" style="padding:10px 24px 6px;">
+    <div style="background:#f6f7fb;border:1px solid #e6e8ef;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#33405c;">
+      <b>Full details in the attachments:</b> the dashboard (open in Chrome or Edge) and the Excel workbook have every list, the reasons,
+      {% if v.proof %}the attendance selfies side by side and the map links.{% else %}and the evidence for each person.{% endif %}
+      Warning signs are for checking, not proof.</div>
   </td></tr>
-  {% endif %}
-
-  {% if v.view == "team" and v.not_marked %}
-  {{ heading("Absent", "Did not mark attendance in Bizom on " ~ v.date_long ~ ".") }}
-  <tr><td class="pad" style="padding:4px 24px 6px;font-size:13px;line-height:1.9;">
-    {% for p in v.not_marked[:20] %}<span style="display:inline-block;background:#fef3f2;border:1px solid #f5c2c0;border-radius:999px;padding:0 10px;margin:0 4px 0 0;white-space:nowrap;color:#7f1d1d;">{{ p.name }} <span style="color:#9b6b6b;font-size:11.5px;">{{ p.code }}</span></span>{% endfor %}
-    {% if v.not_marked | length > 20 %}<span style="font-size:12px;color:#5d6577;"> + {{ v.not_marked | length - 20 }} more</span>{% endif %}
-  </td></tr>
-  {% endif %}
-
-  {% if v.flagged %}
-  {{ heading("Needs checking", "Warning signs from Bizom – please check with the person. They are not proof of anything.") }}
-  <tr><td class="pad" style="padding:4px 24px 6px;">
-    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
-      {% for p in v.flagged[:(15 if v.view == "team" else 10)] %}
-      {% set high = p.flags | selectattr("level", "equalto", "high") | list %}
-      <tr style="border-top:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
-        <td style="border-left:4px solid {{ '#b91c1c' if high else '#d97706' }};"><b style="color:#14213d;">{{ p.name }}</b> <span style="font-size:11px;color:#5d6577;">{{ p.code }}{% if p.designation %} · {{ p.designation }}{% endif %}</span>
-          <div style="color:{{ '#b91c1c' if high else '#b45309' }};font-weight:bold;">{{ p.flags | map(attribute="label") | join(" · ") }}</div>
-          <div style="color:#5d6577;font-size:11.5px;">{{ p.evidence }}</div></td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% set more = v.flagged | length - (15 if v.view == "team" else 10) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
-  </td></tr>
-  {% endif %}
-
-  {% if v.checks %}
-  {{ heading("Location & selfie checks", "Highest risk first. Risk 0–100 combines the day's warning signs and how unusual the day is for the person. Map and selfies: HR Portal > Field Sales > Needs checking.") }}
-  <tr><td class="pad" style="padding:4px 24px 6px;">
-    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
-      {% for c in v.checks[:(15 if v.view == "team" else 10)] %}
-      {% set col = '#b91c1c' if c.level == 'high' else ('#d97706' if c.level == 'medium' else '#64748b') %}
-      <tr style="border-top:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
-        <td style="border-left:4px solid {{ col }};"><b style="color:#14213d;">{{ c.name }}</b> <span style="font-size:11px;color:#5d6577;">{{ c.code }}{% if v.view != "team" and c.manager %} · {{ c.manager }}{% endif %}</span>
-          <div style="color:{{ col }};font-weight:bold;">{{ c.signs | map(attribute="label") | join(" · ") }}</div>
-          <div style="color:#5d6577;font-size:11.5px;">{{ c.why }}</div></td>
-        <td align="right" valign="top" style="white-space:nowrap;"><span style="display:inline-block;min-width:34px;text-align:center;padding:2px 6px;border-radius:999px;font-weight:bold;font-size:12px;color:#ffffff;background:{{ '#b91c1c' if c.risk >= 60 else ('#d97706' if c.risk >= 30 else '#64748b') }};">{{ c.risk }}</span></td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% set more = v.checks | length - (15 if v.view == "team" else 10) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
-  </td></tr>
-  {% endif %}
 
   <tr><td style="padding:8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
   <tr><td style="padding:10px 24px;border-top:1px solid #e6e8ef;font-size:11px;color:#94a3b8;">

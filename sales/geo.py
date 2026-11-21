@@ -17,7 +17,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from core.timeutils import now_utc
@@ -36,6 +36,8 @@ GEO: dict[str, tuple[str, str, str]] = {
     "GEO_ONE_SPOT_MANY_OUTLETS": ("Several outlets from one spot", "high",
                                   "Calls to different outlets were made from one spot, away from those outlets."),
     "GEO_KM_VS_ROUTE": ("KM much higher than the route", "medium", "Bizom KM is far more than the distance between the day's points."),
+    "GEO_AWAY_AT_HQ": ("Away from base on an HQ day", "high",
+                       "Bizom shows the day as work at HQ, but attendance was marked far from all of the person's usual places."),
     "GEO_START_AWAY": ("Attendance away from the usual start", "medium", "Attendance was marked far from where this person usually starts."),
     "GEO_END_AWAY": ("Day ended away from the market", "low", "The day was ended far from the last call."),
     "GEO_OFF_BEAT": ("Calls outside the day's beat", "low", "Several calls were on a different beat from the rest of the day."),
@@ -112,11 +114,11 @@ def import_history(session: Session, hist: bizom.BizomFile) -> dict:
         if h.status:
             row = statuses.get((h.code, h.day))
             if row is None:
-                row = SalesHistoryDay(code=h.code, day=h.day, status=h.status, leave=h.leave)
+                row = SalesHistoryDay(code=h.code, day=h.day, status=h.status, leave=h.leave, present_type=h.present_type)
                 session.add(row)
                 statuses[(h.code, h.day)] = row
             else:
-                row.status, row.leave = h.status, h.leave
+                row.status, row.leave, row.present_type = h.status, h.leave, h.present_type
         if h.location and (h.code, h.day, "ATT") not in have:
             session.add(SalesLocation(code=h.code, day=h.day, kind="ATT", lat=h.location[0], lng=h.location[1], time=h.attendance_time,
                                       source="HISTORY"))
@@ -209,12 +211,17 @@ def check_day(session: Session, day: date, rules: SalesRules | None = None) -> d
             if r.code in together:
                 other, share = together[r.code]
                 flags["GEO_TOGETHER"] = f"{share:.0%} of calls at the same place and time as {names.get(other, other)}."
-        order = sorted(flags, key=lambda k: (LEVEL[GEO[k][1]], k))
+        order = sorted((k for k in flags if k not in rules.disabled_signs), key=lambda k: (LEVEL[GEO[k][1]], k))
         r.geo_flags = ",".join(order) or None
         r.geo_evidence = json.dumps({k: flags[k] for k in order}) if order else None
         stats.update(order)
     session.flush()
     return dict(stats)
+
+
+def _work_of(r) -> str | None:
+    from sales.bizom import work_place
+    return work_place(getattr(r, "present_type", None))
 
 
 def _person_checks(r: SalesEmployeeDay, calls: list[SalesCall], locs: dict, outlets: dict, usual, rules: SalesRules) -> dict[str, str]:
@@ -248,13 +255,17 @@ def _person_checks(r: SalesEmployeeDay, calls: list[SalesCall], locs: dict, outl
             f["GEO_KM_VS_ROUTE"] = f"Bizom KM {r.km:.0f} km; route between the day's {len(path)} points {route:.1f} km."
     # 5. attendance away from the usual start
     att = locs.get((r.code, "ATT"))
-    if att and usual:
+    work = _work_of(r)
+    if att and usual and work != "EXHQ":                    # outstation work: being far from base is expected
         from sales import ml
         d, place = ml.nearest(usual[4], (att.lat, att.lng))
         if d > ml.away_limit(place, rules):
             n = len(usual[4])
-            f["GEO_START_AWAY"] = (f"Attendance {d:.1f} km from the nearest usual place ({n} usual place{'s' if n > 1 else ''} "
-                                   f"learned from {usual[2]} earlier days).")
+            where = f"{d:.1f} km from the nearest usual place ({n} usual place{'s' if n > 1 else ''} learned from {usual[2]} earlier days)"
+            if work == "HQ":
+                f["GEO_AWAY_AT_HQ"] = f"Bizom shows \"{r.present_type}\" but attendance was {where}."
+            else:
+                f["GEO_START_AWAY"] = f"Attendance {where}. Bizom gives no HQ / outstation information for this day."
     # 6. day ended away from the market
     eod = locs.get((r.code, "EOD"))
     if eod and pts:
@@ -369,7 +380,7 @@ def day_map(session: Session, day: date, code: str) -> dict | None:
             "usual_places": [{"lat": p.lat, "lng": p.lng, "days": p.days, "radius_km": round(p.radius_km, 2),
                               "limit_km": round(ml_away(p, rules), 1)} for p in (usual[4] if usual else [])],
             "score": _score(session, code, day), "calls": out_calls,
-            "signs": unusual_sign(_score(session, code, day)) + _labels(r), "case": case_dict(case, code, day)}
+            "signs": _with_records(session, unusual_sign(_score(session, code, day)) + _labels(r)), "case": case_dict(case, code, day)}
 
 
 def _history_row(session: Session, code: str, day: date) -> SalesEmployeeDay | None:
@@ -383,9 +394,35 @@ def _history_row(session: Session, code: str, day: date) -> SalesEmployeeDay | N
     st = {"present": "PRESENT", "late": "LATE", "halfday": "HALF_DAY", "absent": "ABSENT", "leave": "LEAVE", "week_off": "WEEK_OFF",
           "not_marked": "ABSENT"}.get(h.status if h else "", "ABSENT")
     att = session.scalar(select(SalesLocation).where(SalesLocation.code == code, SalesLocation.day == day, SalesLocation.kind == "ATT"))
-    return SalesEmployeeDay(code=code, name=(e.name if e else code), photo_url=p.url if p else None, designation=e.designation if e else None,
+    return SalesEmployeeDay(code=code, name=(e.name if e else code), photo_url=p.url if p else None,
+                            present_type=h.present_type if h else None, designation=e.designation if e else None,
                             manager_name=e.manager_name if e else None, hod_name=e.hod_name if e else None, status=st,
                             attendance_time=att.time if att else None, km=None, market_minutes=None)
+
+
+def _with_records(session: Session, signs: list[dict]) -> list[dict]:
+    from sales import learning
+    return learning.add_records(learning.state(session), signs)
+
+
+def calibration(session: Session, start: date, end: date, visible: set[str] | None, n: int = 50) -> dict:
+    """A review sample covering every kind of sign: open cases grouped by their main sign, taken in turns (highest risk first),
+    so each sign gets enough reviews to measure how often it is right."""
+    from collections import OrderedDict
+    open_cases = [c for c in cases(session, start, end, visible, status=OPEN)]
+    groups: "OrderedDict[str, list[dict]]" = OrderedDict()
+    for c in sorted(open_cases, key=lambda c: -c["risk"]):
+        signs = c["signs"] + c["photo_signs"]
+        if signs:
+            groups.setdefault(signs[0]["code"], []).append(c)
+    sample: list[dict] = []
+    while len(sample) < n and any(groups.values()):
+        for code in list(groups):
+            if groups[code] and len(sample) < n:
+                sample.append(groups[code].pop(0))
+    reviewed = session.scalar(select(func.count()).select_from(SalesCase).where(SalesCase.status != OPEN, SalesCase.reason.is_not(None))) or 0
+    return {"from": start.isoformat(), "to": end.isoformat(), "cases": sample, "reviewed_with_reason": reviewed, "target": n,
+            "sign_kinds": len({(c["signs"] + c["photo_signs"])[0]["code"] for c in sample})}
 
 
 def ml_away(place, rules) -> float:
@@ -410,6 +447,7 @@ def unusual_sign(score: dict) -> list[dict]:
 
 def case_dict(c: SalesCase | None, code: str, day: date) -> dict:
     return {"code": code, "date": day.isoformat(), "status": c.status if c else OPEN, "status_label": CASE_LABEL[c.status if c else OPEN],
+            "reason": c.reason if c else None,
             "note": c.note if c else "", "reviewed_by": c.reviewed_by if c else None, "reviewed_at": utc_iso(c.reviewed_at) if c else None}
 
 
@@ -464,6 +502,8 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
     st = learning.state(session)
     lvl = ml._signs(session, start, end)
     for x in out:
+        learning.add_records(st, x["signs"])
+        learning.add_records(st, x["photo_signs"])
         sl = lvl.get((x["code"], date.fromisoformat(x["date"])), [])
         x["explore"] = learning.risk(st, sl, x.pop("_anomaly"), x["_unusual"], explore=True)
         x["learning"] = learning.needs_reviews(st, sl, x.pop("_unusual"))
@@ -472,11 +512,15 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
     return out
 
 
-def review(session: Session, code: str, day: date, status: str, note: str | None, actor: str) -> dict:
+def review(session: Session, code: str, day: date, status: str, note: str | None, actor: str, reason: str | None = None) -> dict:
+    from sales.learning import REASONS
     if status not in CASE_LABEL:
         raise ValueError("Status must be OPEN, OK or ACTION.")
+    if reason and reason not in REASONS:
+        raise ValueError("Unknown reason.")
     c = session.scalar(select(SalesCase).where(SalesCase.code == code, SalesCase.day == day)) or SalesCase(code=code, day=day)
     c.status, c.note, c.reviewed_by, c.reviewed_at = status, (note or "").strip()[:1000] or None, actor, now_utc()
+    c.reason = reason if status != OPEN else None
     session.add(c)
     session.flush()
     from sales import learning, ml

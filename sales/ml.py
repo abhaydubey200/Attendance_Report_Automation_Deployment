@@ -67,13 +67,32 @@ def places_of(points: list[tuple[float, float]], min_days: int = 3, eps_km: floa
     return out
 
 
+def work_places(session: Session, start: date, end: date) -> dict[tuple[str, date], str]:
+    """(code, day) -> 'HQ' / 'EXHQ' from Bizom's Present_Type (history file and daily uploads)."""
+    from database.models.sales import SalesHistoryDay
+    from sales.bizom import work_place
+    out = {}
+    for code, d, pt in session.execute(select(SalesHistoryDay.code, SalesHistoryDay.day, SalesHistoryDay.present_type)
+                                       .where(SalesHistoryDay.day >= start, SalesHistoryDay.day <= end, SalesHistoryDay.present_type.is_not(None))):
+        if (w := work_place(pt)):
+            out[(code, d)] = w
+    for d, code, pt in session.execute(select(SalesDayUpload.report_date, SalesEmployeeDay.code, SalesEmployeeDay.present_type)
+                                       .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
+                                       .where(SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date >= start,
+                                              SalesDayUpload.report_date <= end, SalesEmployeeDay.present_type.is_not(None))):
+        if (w := work_place(pt)):
+            out[(code, d)] = w
+    return out
+
+
 def usual_places(session: Session, day: date, rules: SalesRules, codes: set[str] | None = None) -> dict[str, list[Place]]:
     since = day - timedelta(days=2 * rules.geo_start_history_days)
+    wp = work_places(session, since, day)
     pts: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    q = select(SalesLocation.code, SalesLocation.lat, SalesLocation.lng).where(
+    q = select(SalesLocation.code, SalesLocation.day, SalesLocation.lat, SalesLocation.lng).where(
         SalesLocation.kind == "ATT", SalesLocation.day >= since, SalesLocation.day < day)
-    for code, la, lo in session.execute(q):
-        if codes is None or code in codes:
+    for code, d, la, lo in session.execute(q):
+        if (codes is None or code in codes) and wp.get((code, d)) != "EXHQ":     # outstation starts are not usual places
             pts[code].append((la, lo))
     return {c: pl for c, v in pts.items() if len(v) >= rules.geo_start_min_days and (pl := places_of(v, min(3, rules.geo_start_min_days)))}
 
@@ -97,6 +116,7 @@ def _rows(session: Session, start: date, end: date, rules: SalesRules) -> dict[t
     """One feature dict per person-day (history file days have fewer features than full daily uploads)."""
     rows: dict[tuple[str, date], dict] = defaultdict(dict)
     att = {}
+    wp = work_places(session, start, end)
     for code, d, la, lo, t, kind in session.execute(select(SalesLocation.code, SalesLocation.day, SalesLocation.lat, SalesLocation.lng,
                                                            SalesLocation.time, SalesLocation.kind)
                                                     .where(SalesLocation.day >= start, SalesLocation.day <= end)):
@@ -105,14 +125,15 @@ def _rows(session: Session, start: date, end: date, rules: SalesRules) -> dict[t
             rows[(code, d)]["att_min"] = _minutes(t)
     # distance from the usual places (places learned once per person from the whole window: one odd day cannot form a place)
     by_code: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    for (code, _d), p in att.items():
-        by_code[code].append(p)
+    for (code, d), p in att.items():
+        if wp.get((code, d)) != "EXHQ":
+            by_code[code].append(p)
     for code, pts in by_code.items():
         pl = places_of(pts, min(3, rules.geo_start_min_days)) if len(pts) >= rules.geo_start_min_days else []
         if not pl:
             continue
         for (c, d), p in att.items():
-            if c == code:
+            if c == code and wp.get((c, d)) != "EXHQ":      # far from base on an outstation day is expected
                 rows[(c, d)]["place_km"] = nearest(pl, p)[0]
     for d, r in session.execute(select(SalesDayUpload.report_date, SalesEmployeeDay)
                                 .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
@@ -200,7 +221,7 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
             feat = FEATURES[j]
             if abs(z[i, j]) >= 3 and feat in nc and rows[(code, d)].get(feat) is not None:
                 reasons.append(_reason(feat, float(rows[(code, d)][feat]), nc[feat][0]))
-        unusual = bool(pct[i] >= 0.98 and reasons)
+        unusual = bool(pct[i] >= 0.98 and reasons) and "UNUSUAL_DAY" not in rules.disabled_signs
         unusual_n += unusual
         s = signs.get((code, d), [])
         risk = learning.risk(st, s, float(pct[i]), unusual)

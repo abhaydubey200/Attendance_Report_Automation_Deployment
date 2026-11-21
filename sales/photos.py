@@ -363,11 +363,12 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
         elif common and (p.width, p.height) not in common and p.size_kb and p.size_kb > 400 and (p.code not in known or camera_share[p.code] <= 0.5):
             f["PHOTO_NOT_LIVE"] = f"{p.width}x{p.height}, {p.size_kb} KB - not the app's usual live-selfie format."
         poor = (p.brightness is not None and p.brightness < rules.photo_dark) or (p.sharpness is not None and p.sharpness < rules.photo_blurry)
-        if poor:
-            f["PHOTO_POOR"] = ("Too dark" if p.brightness is not None and p.brightness < rules.photo_dark else "Too blurry") + " to check."
+        if poor and not p.faces:                          # a soft photo whose face is still found is usable
+            f["PHOTO_POOR"] = ("Too dark" if p.brightness is not None and p.brightness < rules.photo_dark else "Too blurry") + \
+                              " to check, and no face could be found."
         elif p.faces == 0 and (p.code not in known or face_share[p.code] >= 0.8):
             f["PHOTO_NO_FACE"] = "No face found in the selfie" +                                  (f"; a face is found in {round(100 * face_share[p.code])}% of this person's selfies." if p.code in known else ".")
-        order = sorted(f, key=lambda x: (LEVEL[PHOTO[x][1]], x))
+        order = sorted((x for x in f if x not in rules.disabled_signs), key=lambda x: (LEVEL[PHOTO[x][1]], x))
         p.flags = ",".join(order) or None
         p.evidence = json.dumps({**{x: f[x] for x in order}, "_matches": [m.id for m in matches]}) if order else None
         stats.update(order)

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from core.timeutils import now_utc
 from database.models.sales import (SalesCall, SalesCase, SalesDayUpload, SalesDevice, SalesEmployee, SalesEmployeeDay,
-                                   SalesLocation, SalesOutlet)
+                                   SalesHistoryDay, SalesLocation, SalesOutlet)
 from sales import bizom
 from sales.analysis import WARNINGS, WORKING, PersonDay
 from sales.config import SalesRules, get_rules
@@ -105,8 +105,18 @@ def import_history(session: Session, hist: bizom.BizomFile) -> dict:
                                                      .where(SalesLocation.day >= days[0], SalesLocation.day <= days[-1]))}
     devs = {(c, d) for c, d in session.execute(select(SalesDevice.code, SalesDevice.day).where(SalesDevice.day >= days[0],
                                                                                                 SalesDevice.day <= days[-1]))}
+    statuses = {(c, d): x for c, d, x in session.execute(select(SalesHistoryDay.code, SalesHistoryDay.day, SalesHistoryDay)
+                                                         .where(SalesHistoryDay.day >= days[0], SalesHistoryDay.day <= days[-1]))}
     added_loc = added_dev = 0
     for h in hist.history:
+        if h.status:
+            row = statuses.get((h.code, h.day))
+            if row is None:
+                row = SalesHistoryDay(code=h.code, day=h.day, status=h.status, leave=h.leave)
+                session.add(row)
+                statuses[(h.code, h.day)] = row
+            else:
+                row.status, row.leave = h.status, h.leave
         if h.location and (h.code, h.day, "ATT") not in have:
             session.add(SalesLocation(code=h.code, day=h.day, kind="ATT", lat=h.location[0], lng=h.location[1], time=h.attendance_time,
                                       source="HISTORY"))
@@ -122,7 +132,9 @@ def import_history(session: Session, hist: bizom.BizomFile) -> dict:
         SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date >= days[0], SalesDayUpload.report_date <= days[-1]))]
     for d in rechecked:
         check_day(session, d)
-    return {"from": days[0].isoformat(), "to": days[-1].isoformat(), "days": len(days), "rows": len(hist.history),
+    from sales import claims
+    claim_stats = claims.check(session, days[0], days[-1])          # claims of those days against the attendance now known
+    return {"claims_rechecked": claim_stats["checked"], "from": days[0].isoformat(), "to": days[-1].isoformat(), "days": len(days), "rows": len(hist.history),
             "locations_added": added_loc, "phones_added": added_dev, "days_rechecked": len(rechecked)}
 
 
@@ -135,7 +147,9 @@ def purge(session: Session, rules: SalesRules | None = None, today: date | None 
     old = select(SalesDayUpload.upload_id).where(SalesDayUpload.report_date < cutoff)
     n_photo = session.execute(update(SalesEmployeeDay).where(SalesEmployeeDay.upload_id.in_(old), SalesEmployeeDay.photo_url.is_not(None))
                               .values(photo_url=None)).rowcount
-    return {"before": cutoff.isoformat(), "locations": n_loc, "phones": n_dev, "calls": n_call, "photos": n_photo}
+    from sales import claims
+    n_claim = claims.purge_images(session, cutoff)
+    return {"before": cutoff.isoformat(), "locations": n_loc, "phones": n_dev, "calls": n_call, "photos": n_photo, "claim_photos": n_claim}
 
 
 # ---------------------------------------------------------------- checks
@@ -323,11 +337,11 @@ def _labels(r: SalesEmployeeDay) -> list[dict]:
 
 def day_map(session: Session, day: date, code: str) -> dict | None:
     up = session.scalar(select(SalesDayUpload).where(SalesDayUpload.report_date == day, SalesDayUpload.is_current.is_(True)))
-    if up is None:
-        return None
-    r = session.scalar(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == up.upload_id, SalesEmployeeDay.code == code))
+    r = session.scalar(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == up.upload_id, SalesEmployeeDay.code == code)) if up else None
     if r is None:
-        return None
+        r = _history_row(session, code, day)
+        if r is None:
+            return None
     rules = get_rules(session)
     locs = _locs(session, day)
     calls = _calls_by_code(session, day).get(code, [])
@@ -349,11 +363,28 @@ def day_map(session: Session, day: date, code: str) -> dict | None:
                           "fast": bool(leg and leg["km"] > 1 and leg["kmh"] > rules.max_speed_kmh)})
         prev = c
     case = session.scalar(select(SalesCase).where(SalesCase.code == code, SalesCase.day == day))
-    return {"date": day.isoformat(), "code": code, "name": r.name, "designation": r.designation or "", "manager": r.manager_name or "",
+    from sales import claims
+    return {"claims": claims.for_day(session, code, day), "date": day.isoformat(), "code": code, "name": r.name, "designation": r.designation or "", "manager": r.manager_name or "",
             "hod": r.hod_name or "", "status": r.status, "attendance_time": r.attendance_time, "eod_time": r.eod_time, "km": r.km,
             "market_minutes": r.market_minutes, "photo_url": r.photo_url, "attendance": pts("ATT"), "day_end": pts("EOD"),
             "usual_start": {"lat": usual[0], "lng": usual[1], "days": usual[2], "limit_km": round(usual[3], 1)} if usual else None, "calls": out_calls,
             "signs": _labels(r), "case": case_dict(case, code, day)}
+
+
+def _history_row(session: Session, code: str, day: date) -> SalesEmployeeDay | None:
+    """A stand-in day row for a day known only from the history file / claim report (no full daily upload)."""
+    from database.models.sales import SalesClaim
+    h = session.scalar(select(SalesHistoryDay).where(SalesHistoryDay.code == code, SalesHistoryDay.day == day))
+    c = session.scalar(select(SalesClaim).where(SalesClaim.code == code, SalesClaim.day == day).limit(1))
+    e = session.scalar(select(SalesEmployee).where(SalesEmployee.code == code))
+    if h is None and c is None:
+        return None
+    st = {"present": "PRESENT", "late": "LATE", "halfday": "HALF_DAY", "absent": "ABSENT", "leave": "LEAVE", "week_off": "WEEK_OFF",
+          "not_marked": "ABSENT"}.get(h.status if h else "", "ABSENT")
+    att = session.scalar(select(SalesLocation).where(SalesLocation.code == code, SalesLocation.day == day, SalesLocation.kind == "ATT"))
+    return SalesEmployeeDay(code=code, name=(e.name if e else c.name if c else code), designation=(e.designation if e else c.designation if c else None),
+                            manager_name=e.manager_name if e else None, hod_name=e.hod_name if e else None, status=st,
+                            attendance_time=att.time if att else None, km=None, market_minutes=c.market_minutes if c else None)
 
 
 def case_dict(c: SalesCase | None, code: str, day: date) -> dict:
@@ -361,26 +392,46 @@ def case_dict(c: SalesCase | None, code: str, day: date) -> dict:
             "note": c.note if c else "", "reviewed_by": c.reviewed_by if c else None, "reviewed_at": utc_iso(c.reviewed_at) if c else None}
 
 
-def cases(session: Session, start: date, end: date, visible: set[str] | None, status: str = "", hod: str = "") -> list[dict]:
+def cases(session: Session, start: date, end: date, visible: set[str] | None, status: str = "", hod: str = "",
+          kind: str = "") -> list[dict]:
+    """People-days to check: location signs (kind 'location'), flagged claims (kind 'claims') or both (kind '')."""
     q = (select(SalesDayUpload.report_date, SalesEmployeeDay).join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
          .where(SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date >= start, SalesDayUpload.report_date <= end,
                 SalesEmployeeDay.geo_flags.is_not(None)))
     reviews = {(c.code, c.day): c for c in session.scalars(select(SalesCase).where(SalesCase.day >= start, SalesCase.day <= end))}
+    from sales import claims as claims_mod
+    claim_days = claims_mod.flagged_days(session, start, end)
+    staff = {e.code: e for e in session.scalars(select(SalesEmployee))}
+    rows: dict[tuple[str, date], SalesEmployeeDay | None] = {(r.code, d): r for d, r in session.execute(q)}
+    for key in claim_days:
+        rows.setdefault(key, None)
     out = []
-    for d, r in session.execute(q):
-        if visible is not None and r.code not in visible:
+    for (code, d), r in rows.items():
+        if visible is not None and code not in visible:
             continue
-        if hod and (r.hod_name or "") != hod:
+        e = staff.get(code)
+        cl = claim_days.get((code, d), [])
+        name = r.name if r else (e.name if e else cl[0].name)
+        hod_name = (r.hod_name if r else (e.hod_name if e else "")) or ""
+        if hod and hod_name != hod:
             continue
-        c = case_dict(reviews.get((r.code, d)), r.code, d)
+        c = case_dict(reviews.get((code, d)), code, d)
         if status and c["status"] != status:
             continue
-        signs = _labels(r)
-        out.append({"date": d.isoformat(), "code": r.code, "name": r.name, "designation": r.designation or "", "manager": r.manager_name or "",
-                    "hod": r.hod_name or "", "signs": [s for s in signs if s["kind"] == "location"],
+        if kind == "location" and not (r and r.geo_flags) or kind == "claims" and not cl:
+            continue
+        signs = _labels(r) if r else []
+        csigns = {}
+        for x in cl:
+            for s in claims_mod.labels(x):
+                csigns.setdefault(s["code"], s)
+        out.append({"date": d.isoformat(), "code": code, "name": name, "designation": (r.designation if r else (e.designation if e else "")) or "",
+                    "manager": (r.manager_name if r else (e.manager_name if e else "")) or "", "hod": hod_name,
+                    "signs": [s for s in signs if s["kind"] == "location"], "claim_signs": list(csigns.values()),
+                    "claim_amount": round(sum(x.amount for x in cl)),
                     "other_signs": [s["label"] for s in signs if s["kind"] == "day"],
-                    "high": sum(1 for s in signs if s["level"] == "high"), "case": c})
-    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -x["high"], -len(x["signs"]), x["date"], x["name"]))
+                    "high": sum(1 for s in signs + list(csigns.values()) if s["level"] == "high"), "case": c})
+    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -x["high"], -len(x["signs"]) - len(x["claim_signs"]), x["date"], x["name"]))
     return out
 
 

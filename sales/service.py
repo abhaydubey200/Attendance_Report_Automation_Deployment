@@ -47,6 +47,8 @@ def read_files(files: list[tuple[str, bytes]], session: Session) -> dict[str, tu
                 raise UploadError(f"{name}: not a Bizom Attendance, Attendance & EOD or Call Variance report.")
             if kind == bizom.HISTORY:
                 raise UploadError(f"{name}: this is Bizom's multi-day attendance history - import it under 'Location history' instead.")
+            if kind == bizom.CLAIMS:
+                raise UploadError(f"{name}: this is Bizom's Claim report - import it under 'Expense claims' instead.")
             if kind in found:
                 raise UploadError(f"Two {bizom.LABEL[kind]}s were chosen ({found[kind][0]} and {name}); upload one of each.")
             parsed = bizom.parse(rows, short_call_seconds=rules.short_call_seconds, far_call_m=rules.far_call_m,
@@ -112,6 +114,20 @@ def import_history(session: Session, name: str, data: bytes) -> dict:
     except bizom.BizomError as exc:
         raise UploadError(f"{name}: {exc}") from exc
     return geo.import_history(session, hist)
+
+
+def import_claims(session: Session, name: str, data: bytes, actor: str) -> dict:
+    from sales import claims
+    if len(data) > 60 * 1024 * 1024:
+        raise UploadError(f"{name}: larger than 60 MB.")
+    try:
+        rows = bizom.read_rows(data, name)
+        if bizom.kind_of(rows) != bizom.CLAIMS:
+            raise UploadError(f"{name}: not Bizom's Claim report (needs Claimdetail_Id, Claim_Date, Claim_Type, Claim_Amount, Employee_code).")
+        f = bizom.parse(rows)
+    except bizom.BizomError as exc:
+        raise UploadError(f"{name}: {exc}") from exc
+    return claims.import_claims(session, f, actor)
 
 
 def rows_for(session: Session, upload_id: int) -> list[SalesEmployeeDay]:

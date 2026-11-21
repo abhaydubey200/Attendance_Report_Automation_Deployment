@@ -18,9 +18,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-ATTENDANCE, EOD, CALLS, HISTORY = "ATTENDANCE", "EOD", "CALLS", "HISTORY"
+ATTENDANCE, EOD, CALLS, HISTORY, CLAIMS = "ATTENDANCE", "EOD", "CALLS", "HISTORY", "CLAIMS"
 LABEL = {ATTENDANCE: "Bizom Attendance report", EOD: "Bizom Attendance & EOD report", CALLS: "Bizom Call Variance report",
-         HISTORY: "Bizom Attendance history (AttendanceReport, many days)"}
+         HISTORY: "Bizom Attendance history (AttendanceReport, many days)", CLAIMS: "Bizom Claim report"}
 
 
 class BizomError(ValueError):
@@ -116,6 +116,7 @@ _SIGNATURE = {
     EOD: {"user_name", "for_date", "eod_time", "status"},
     CALLS: {"call_id", "call_start_time", "distance_variance(mtrs)"},
     HISTORY: {"emp id", "for date", "attendance time", "imei"},
+    CLAIMS: {"claimdetail_id", "claim_date", "claim_type", "claim_amount", "employee_code"},
 }
 
 
@@ -200,6 +201,37 @@ class HistoryRow:
     attendance_time: str | None
     location: tuple[float, float] | None
     imei: str | None                      # raw only in memory; stored scrambled
+    status: str | None = None             # present / late / halfday / absent / leave / week_off / not_marked
+    leave: str | None = None
+
+
+@dataclass
+class ClaimRow:
+    detail_id: str
+    claim_id: str | None
+    code: str
+    name: str
+    designation: str | None
+    day: date
+    submit_date: date | None
+    claim_type: str                       # as in Bizom, cleaned
+    present_type: str | None              # Retailing HQ / Retailing EX-HQ / Joint Working ...
+    mode: str | None
+    from_place: str | None
+    to_place: str | None
+    amount: float
+    approved_amount: float | None
+    approval_status: str | None
+    approver: str | None
+    document: str | None
+    bill_1: str | None
+    bill_2: str | None
+    odometer_start: str | None
+    odometer_end: str | None
+    calls: int | None                     # TC that day
+    orders: int | None                    # PC
+    sales_value: float | None
+    market_minutes: int | None
 
 
 @dataclass
@@ -228,6 +260,7 @@ class BizomFile:
     call_points: dict[str, list[CallPoint]] = field(default_factory=dict)
     outlets: dict[str, Outlet] = field(default_factory=dict)
     history: list[HistoryRow] = field(default_factory=list)
+    claims: list[ClaimRow] = field(default_factory=list)
     skipped: int = 0                     # rows without a usable code / name
 
 
@@ -250,6 +283,33 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
     g = lambda r, name: _clean(r[col[name]]) if name in col and col[name] < len(r) else ""  # noqa: E731
     raw = lambda r, name: r[col[name]] if name in col and col[name] < len(r) else ""  # noqa: E731
 
+    if kind == CLAIMS:                    # many days: one row per claim line
+        out, skipped = [], 0
+        for r in body:
+            code, d = norm_code(g(r, "employee_code")), _date(g(r, "claim_date"))
+            did = g(r, "claimdetail_id")
+            if not re.match(r"^[A-Z]{2}\d{3,}$", code) or d is None or not did:
+                skipped += 1
+                continue
+            num = lambda name: _num(g(r, name))  # noqa: E731
+            appr = num("level_2_approved_amount") if g(r, "l2_approval_status").lower() == "approved" else num("level_1_approved_amount")
+            out.append(ClaimRow(
+                detail_id=did[:40], claim_id=g(r, "claim_id")[:40] or None, code=code, name=g(r, "user_name")[:200],
+                designation=g(r, "designation")[:60] or None, day=d, submit_date=_date(g(r, "claim submit date")),
+                claim_type=re.sub(r"\s+", " ", re.sub(r"[^\w&+()/ -]", "-", g(r, "claim_type"))).strip()[:100],
+                present_type=g(r, "present_type")[:60] or None, mode=g(r, "mode of travel").strip(".")[:40] or None,
+                from_place=g(r, "from_place")[:120] or None, to_place=g(r, "to_place")[:120] or None, amount=num("claim_amount") or 0.0,
+                approved_amount=appr, approval_status=g(r, "claim_approval_status")[:60] or None,
+                approver=g(r, "first_level_approver")[:120] or None, document=photo_link(raw(r, "document")),
+                bill_1=photo_link(raw(r, "bill_image 1")), bill_2=photo_link(raw(r, "bill_image 2")),
+                odometer_start=photo_link(raw(r, "odometer image of start")), odometer_end=photo_link(raw(r, "odometer image of end")),
+                calls=int(num("tc")) if num("tc") is not None else None, orders=int(num("pc")) if num("pc") is not None else None,
+                sales_value=num("total secondary value"),
+                market_minutes=(s // 60 if (s := seconds(g(r, "time_spent_in_market"))) is not None else None)))
+        if not out:
+            raise BizomError(f"{LABEL[kind]}: no claim rows with an employee code and claim date.")
+        return BizomFile(kind, max(c.day for c in out), claims=out, skipped=skipped)
+
     if kind == HISTORY:                   # many days: attendance location + phone per person per day
         out, skipped, dates = [], 0, set()
         for r in body:
@@ -258,7 +318,11 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
                 skipped += 1
                 continue
             dates.add(d)
-            out.append(HistoryRow(code, d, hhmm(g(r, "attendance time")), latlng(g(r, "location")), g(r, "imei") or None))
+            att, leave, marked = g(r, "attendance").lower(), g(r, "leave details"), g(r, "status").lower()
+            st = ("week_off" if leave.lower().startswith("weekly off") else "leave" if leave else
+                  att if att in ("present", "late", "halfday", "absent") else "not_marked" if marked == "not marked" else None)
+            out.append(HistoryRow(code, d, hhmm(g(r, "attendance time")), latlng(g(r, "location")), g(r, "imei") or None, st,
+                                  leave.replace("Causal", "Casual") or None))
         if not out:
             raise BizomError(f"{LABEL[kind]}: no rows with an employee code and date.")
         return BizomFile(kind, max(dates), history=out, skipped=skipped)

@@ -253,6 +253,14 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
     placeholder = {pid for pid, others in near.items() if len({by_id[o].code for o in others} | {by_id[pid].code}) >= 6}
     dims = Counter((p.width, p.height) for p in photos)
     common = {d for d, n in dims.items() if n >= max(5, 0.05 * len(photos))}
+    # What is normal for each person: some phones always send full camera photos, and for some people's angle / light the face
+    # finder always fails - those are not signs. Flag only what is unusual for the person (needs 5+ selfies to know).
+    mine: dict[str, list[SalesPhoto]] = defaultdict(list)
+    for p in photos:
+        mine[p.code].append(p)
+    camera_share = {c: sum(1 for x in v if x.exif_time or (x.width, x.height) not in common) / len(v) for c, v in mine.items()}
+    face_share = {c: sum(1 for x in v if x.faces) / len(v) for c, v in mine.items()}
+    known = {c for c, v in mine.items() if len(v) >= 5}
     stats: Counter = Counter()
     for p in photos:
         f: dict[str, str] = {}
@@ -281,15 +289,16 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
             if off_day or off_time:
                 f["PHOTO_TIME_MISMATCH"] = f"Photo taken {taken:%d-%b %I:%M %p}; attendance {p.day:%d-%b}" + \
                                            (f" {p.att_time}" if p.att_time else "") + "."
-            if (p.width, p.height) not in common:
-                f["PHOTO_NOT_LIVE"] = f"Full camera photo ({p.width}x{p.height}, dated {taken:%d-%b %I:%M %p}) instead of the app's live selfie."
-        elif common and (p.width, p.height) not in common and p.size_kb and p.size_kb > 400:
+            if (p.width, p.height) not in common and (p.code not in known or camera_share[p.code] <= 0.5):
+                f["PHOTO_NOT_LIVE"] = (f"Full camera photo ({p.width}x{p.height}, dated {taken:%d-%b %I:%M %p}) instead of the app's live selfie"
+                                       + (f"; usually {100 - round(100 * camera_share[p.code])}% of this person's selfies are live." if p.code in known else "."))
+        elif common and (p.width, p.height) not in common and p.size_kb and p.size_kb > 400 and (p.code not in known or camera_share[p.code] <= 0.5):
             f["PHOTO_NOT_LIVE"] = f"{p.width}x{p.height}, {p.size_kb} KB - not the app's usual live-selfie format."
         poor = (p.brightness is not None and p.brightness < rules.photo_dark) or (p.sharpness is not None and p.sharpness < rules.photo_blurry)
         if poor:
             f["PHOTO_POOR"] = ("Too dark" if p.brightness is not None and p.brightness < rules.photo_dark else "Too blurry") + " to check."
-        elif p.faces == 0:
-            f["PHOTO_NO_FACE"] = "No face found in the selfie."
+        elif p.faces == 0 and (p.code not in known or face_share[p.code] >= 0.8):
+            f["PHOTO_NO_FACE"] = "No face found in the selfie" +                                  (f"; a face is found in {round(100 * face_share[p.code])}% of this person's selfies." if p.code in known else ".")
         order = sorted(f, key=lambda x: (LEVEL[PHOTO[x][1]], x))
         p.flags = ",".join(order) or None
         p.evidence = json.dumps({**{x: f[x] for x in order}, "_matches": [m.id for m in matches]}) if order else None

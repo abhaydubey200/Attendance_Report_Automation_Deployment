@@ -44,6 +44,27 @@ class SalesRules(BaseModel):
     max_speed_kmh: float = 60.0
     calls_after: str = "20:00"
     beat_jump_min: int = 3
+    # location checks (sales.geo) - shown in the app; in emails only once geo_in_emails is switched on
+    geo_in_emails: bool = False
+    keep_months: int = 6                          # locations, photo links and phone codes are deleted after this
+    geo_away_outlet_m: float = 300.0              # call made this far from the outlet's own location
+    geo_away_outlet_min: int = 2                  # ... on at least this many calls
+    geo_same_spot_m: float = 100.0                # all calls within this distance of their middle point
+    geo_same_spot_min_calls: int = 5
+    geo_cluster_m: float = 50.0                   # several outlets "visited" from one spot
+    geo_cluster_outlets: int = 3
+    geo_cluster_outlet_far_m: float = 200.0       # ... while those outlets are this far from that spot
+    geo_km_ratio: float = 2.0                     # Bizom KM more than this many times the route between the day's points
+    geo_km_extra: float = 30.0                    # ... and at least this many km more
+    geo_start_away_km: float = 10.0               # attendance this far from the person's usual start point
+    geo_start_history_days: int = 30
+    geo_start_min_days: int = 5                   # need this many earlier days to know the usual start point
+    geo_end_away_km: float = 25.0                 # day ended this far from the last call
+    geo_offbeat_min: int = 3                      # calls outside the day's main beat
+    geo_together_m: float = 200.0                 # two people's calls this close ...
+    geo_together_minutes: int = 15                # ... within this many minutes ...
+    geo_together_share: float = 0.6               # ... for this share of the person's calls
+    geo_together_min_calls: int = 4
 
     @field_validator("late_after", "half_day_from", "calls_after")
     @classmethod

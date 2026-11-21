@@ -2,10 +2,12 @@
 
 * Attendance report      - one row per user who MARKED attendance: status, times, time in market, KM, manager names.
 * Attendance & EOD report - every active user, "Marked" / "Not Marked", end-of-day time. Names only (no code).
-* Call Variance report   - one row per outlet visit: times, distance from the outlet, productive or not, order value.
+* Call Variance report   - one row per outlet visit: times, call + outlet location, beat, productive or not, order value.
+* Attendance history     - Bizom's multi-day "AttendanceReport" export: attendance location and phone (IMEI) per day.
 
-Never kept: phone numbers, photo links, GPS coordinates, addresses, outlet mobiles, IMEI. GPS of the call report is used
-in memory only, to work out the distance between consecutive calls (impossible travel); just the count is kept.
+Kept for the location checks (decided 2026-11-21, deleted after 6 months): attendance / day-end / call / outlet coordinates,
+attendance photo links, and the phone's IMEI only as a scrambled code (see sales.geo.device_code). Never kept: phone
+numbers, outlet mobiles, addresses.
 """
 
 from __future__ import annotations
@@ -16,8 +18,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-ATTENDANCE, EOD, CALLS = "ATTENDANCE", "EOD", "CALLS"
-LABEL = {ATTENDANCE: "Bizom Attendance report", EOD: "Bizom Attendance & EOD report", CALLS: "Bizom Call Variance report"}
+ATTENDANCE, EOD, CALLS, HISTORY = "ATTENDANCE", "EOD", "CALLS", "HISTORY"
+LABEL = {ATTENDANCE: "Bizom Attendance report", EOD: "Bizom Attendance & EOD report", CALLS: "Bizom Call Variance report",
+         HISTORY: "Bizom Attendance history (AttendanceReport, many days)"}
 
 
 class BizomError(ValueError):
@@ -82,11 +85,37 @@ def _date(v: str) -> date | None:
     return None
 
 
+_HREF = re.compile(r"""(https?://[^\s'"<>]+)""")
+
+
+def photo_link(v: str) -> str | None:
+    """'<a href='https://...jpg'>..' or a bare URL -> the URL; 'No Image' / blank -> None."""
+    m = _HREF.search(v or "")
+    return m.group(1)[:500] if m else None
+
+
+def latlng(v: str) -> tuple[float, float] | None:
+    """'28.6139,77.2090' -> (28.6139, 77.209). Rejects 0,0 and values outside India's rough box."""
+    parts = [p for p in re.split(r"[,\s]+", _clean(v)) if p]
+    if len(parts) != 2:
+        return None
+    try:
+        la, lo = float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+    return (la, lo) if 5 <= la <= 38 and 66 <= lo <= 99 else None
+
+
+def coord(la: float | None, lo: float | None) -> tuple[float, float] | None:
+    return (la, lo) if la is not None and lo is not None and 5 <= la <= 38 and 66 <= lo <= 99 else None
+
+
 # ---------------------------------------------------------------- recognising a file
 _SIGNATURE = {
     ATTENDANCE: {"emp id", "status", "attendance time", "time spent in market"},
     EOD: {"user_name", "for_date", "eod_time", "status"},
     CALLS: {"call_id", "call_start_time", "distance_variance(mtrs)"},
+    HISTORY: {"emp id", "for date", "attendance time", "imei"},
 }
 
 
@@ -124,6 +153,8 @@ class AttendanceRow:
     variance_m: float | None
     photo: bool | None
     active: bool
+    photo_url: str | None = None
+    location: tuple[float, float] | None = None
 
 
 @dataclass
@@ -132,6 +163,43 @@ class EodRow:
     marked: bool
     attendance_time: str | None
     eod_time: str | None
+    location: tuple[float, float] | None = None       # where attendance was marked
+    eod_location: tuple[float, float] | None = None   # where the day was ended
+    photo_url: str | None = None
+
+
+@dataclass
+class CallPoint:
+    call_id: str
+    start: str | None
+    end: str | None
+    duration_s: int | None
+    location: tuple[float, float] | None
+    outlet_id: str | None
+    beat_id: str | None
+    beat_name: str | None
+    distance_m: float | None              # Bizom's own figure
+    productive: bool
+
+
+@dataclass
+class Outlet:
+    outlet_id: str
+    name: str
+    beat_id: str | None
+    beat_name: str | None
+    category: str | None
+    pincode: str | None
+    location: tuple[float, float] | None
+
+
+@dataclass
+class HistoryRow:
+    code: str
+    day: date
+    attendance_time: str | None
+    location: tuple[float, float] | None
+    imei: str | None                      # raw only in memory; stored scrambled
 
 
 @dataclass
@@ -157,6 +225,9 @@ class BizomFile:
     attendance: list[AttendanceRow] = field(default_factory=list)
     eod: list[EodRow] = field(default_factory=list)
     calls: dict[str, CallSummary] = field(default_factory=dict)
+    call_points: dict[str, list[CallPoint]] = field(default_factory=dict)
+    outlets: dict[str, Outlet] = field(default_factory=dict)
+    history: list[HistoryRow] = field(default_factory=list)
     skipped: int = 0                     # rows without a usable code / name
 
 
@@ -177,6 +248,20 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
     at, kind, col = found
     body = [r for r in rows[at + 1:] if any(_clean(c) for c in r)]
     g = lambda r, name: _clean(r[col[name]]) if name in col and col[name] < len(r) else ""  # noqa: E731
+    raw = lambda r, name: r[col[name]] if name in col and col[name] < len(r) else ""  # noqa: E731
+
+    if kind == HISTORY:                   # many days: attendance location + phone per person per day
+        out, skipped, dates = [], 0, set()
+        for r in body:
+            code, d = norm_code(g(r, "emp id")), _date(g(r, "for date"))
+            if not re.match(r"^[A-Z]{2}\d{3,}$", code) or d is None:
+                skipped += 1
+                continue
+            dates.add(d)
+            out.append(HistoryRow(code, d, hhmm(g(r, "attendance time")), latlng(g(r, "location")), g(r, "imei") or None))
+        if not out:
+            raise BizomError(f"{LABEL[kind]}: no rows with an employee code and date.")
+        return BizomFile(kind, max(dates), history=out, skipped=skipped)
 
     if kind == ATTENDANCE:
         d = _single_date([_date(g(r, "date")) for r in body], LABEL[kind])
@@ -194,13 +279,15 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
                 first_activity=hhmm(g(r, "first transaction time")), last_activity=hhmm(g(r, "last transaction time")),
                 market_minutes=(s // 60 if (s := seconds(g(r, "time spent in market"))) is not None else None),
                 km=_num(g(r, "km_traveled")), end_time=hhmm(g(r, "end time")), variance_m=_num(g(r, "variance(metres)")),
-                photo=None if not photo else photo == "yes", active=g(r, "user_status").lower() != "inactive"))
+                photo=None if not photo else photo == "yes", active=g(r, "user_status").lower() != "inactive",
+                photo_url=photo_link(raw(r, "attendance image")), location=latlng(g(r, "location"))))
         return BizomFile(kind, d, attendance=out, skipped=skipped)
 
     if kind == EOD:
         d = _single_date([_date(g(r, "for_date")) for r in body], LABEL[kind])
         out = [EodRow(name=g(r, "user_name"), marked=g(r, "status").lower() == "marked", attendance_time=hhmm(g(r, "attendance_time")),
-                      eod_time=hhmm(g(r, "eod_time"))) for r in body if g(r, "user_name")]
+                      eod_time=hhmm(g(r, "eod_time")), location=latlng(g(r, "location")), eod_location=latlng(g(r, "eod_location")),
+                      photo_url=photo_link(raw(r, "attendance_image"))) for r in body if g(r, "user_name")]
         return BizomFile(kind, d, eod=out, skipped=len(body) - len(out))
 
     # CALLS: aggregate per person; coordinates only used here, in memory
@@ -214,6 +301,8 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
             continue
         by[code].append(r)
     summaries: dict[str, CallSummary] = {}
+    points: dict[str, list[CallPoint]] = {}
+    outlets: dict[str, Outlet] = {}
     end_m = minutes_of(day_end)
     for code, rs in by.items():
         s = CallSummary()
@@ -235,6 +324,15 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
             s.order_value += _num(g(r, "order_value")) or 0.0
             if start:
                 calls.append((start, end or start, lat, lon))
+            oid = g(r, "outlet_id") or None
+            if oid and oid not in outlets:
+                outlets[oid] = Outlet(oid, g(r, "outlet_name")[:200], g(r, "beat_id") or None, g(r, "beat_name")[:200] or None,
+                                      g(r, "outlet category")[:100] or g(r, "outlet_type")[:100] or None, g(r, "outlet_pincode") or None,
+                                      coord(_num(g(r, "outlet_latitude")), _num(g(r, "outlet_longitude"))))
+            points.setdefault(code, []).append(CallPoint(
+                g(r, "call_id")[:40], start, end, dur, coord(lat, lon), oid, g(r, "beat_id") or None, g(r, "beat_name")[:200] or None,
+                dist, g(r, "call_status").upper() == "PC"))
+        points[code].sort(key=lambda p: p.start or "99:99")
         calls.sort()
         if calls:
             s.first_call, s.last_call = calls[0][0], max(c[1] for c in calls)
@@ -246,7 +344,7 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
             if km > 1 and km / gap_h > max_speed_kmh:
                 s.fast_moves += 1
         summaries[code] = s
-    return BizomFile(kind, d, calls=summaries, skipped=skipped)
+    return BizomFile(kind, d, calls=summaries, call_points=points, outlets=outlets, skipped=skipped)
 
 
 def read_rows(data: bytes, filename: str) -> list[list[str]]:

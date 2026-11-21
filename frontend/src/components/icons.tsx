@@ -19,6 +19,8 @@ const PATHS: Record<string, string> = {
   field: "M12 21s-6-5.3-6-10.5a6 6 0 0112 0C18 15.7 12 21 12 21zM12 12.5a2 2 0 100-4 2 2 0 000 4z",
   switch: "M7 7h13l-3-3M17 17H4l3 3",
   arrow: "M5 12h14M13 6l6 6-6 6",
+  map: "M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14",
+  flag: "M5 21V4h11l-1.5 4L16 12H5",
 };
 
 export function Icon({ name, className }: { name: string; className?: string }) {

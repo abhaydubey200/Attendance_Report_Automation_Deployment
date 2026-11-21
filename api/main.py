@@ -71,7 +71,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
         # A route may set a stricter policy (e.g. sandboxed HTML report downloads); keep it.
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; font-src 'self'; style-src 'self' 'unsafe-inline'; "
             f"frame-ancestors {' '.join(settings.api.frame_ancestors)}",
         )
         if path.startswith("/api/"):

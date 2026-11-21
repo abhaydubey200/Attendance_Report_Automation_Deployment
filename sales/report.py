@@ -84,7 +84,7 @@ def _evidence(r, flags: list[str]) -> str:
 
 
 def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list[dict] | None = None,
-               proof: list[dict] | None = None) -> dict:
+               proof: list[dict] | None = None, ctx: dict | None = None) -> dict:
     people = [_person(r) for r in sorted(rows, key=lambda r: r.name)]
     cnt = Counter(p["status"] for p in people)
     flagged = sorted([p for p in people if p["flags"]],
@@ -113,9 +113,24 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
         "checks": checks or [], "checks_summary": _checks_summary(checks or []),
         "checks_high": sum(1 for c in (checks or []) if c["level"] == "high"),
         "proof": proof or [],
+        "ctx": ctx or {}, "company_pct": day.get("attendance_pct"),
     }
+    out["trend"] = _trend(out)
     out["highlights"] = highlights(out)
     return out
+
+
+def _trend(v: dict) -> str:
+    """'down 2.1 points on 17-Nov; company 85%' - empty when there is nothing to compare."""
+    bits = []
+    prev, now = v["ctx"].get("prev_pct"), v["pct"]
+    if prev is not None and now is not None:
+        diff = round(now - prev, 1)
+        bits.append("same as" if diff == 0 else f"{'up' if diff > 0 else 'down'} {abs(diff):g} point{'s' if abs(diff) != 1 else ''} on")
+        bits[-1] += f" {v['ctx']['prev_date']:%d-%b}"
+    if v["view"] == "team" and v["company_pct"] is not None and now is not None:
+        bits.append(f"company {v['company_pct']:g}%")
+    return "; ".join(bits)
 
 
 def highlights(v: dict) -> list[dict]:
@@ -129,6 +144,10 @@ def highlights(v: dict) -> list[dict]:
         else:
             low = next((t for t in v["teams"] if t["pct"] is not None), None)
             h.append({"level": "high", "text": f"{c['ABSENT']} absent" + (f"; lowest team {low['zonal']} ({low['pct']:g}%)." if low else ".")})
+    streaks = v["ctx"].get("streaks") or []
+    if streaks:
+        h.append({"level": "high", "text": "Absent several days in a row: " +
+                  ", ".join(f"{n} ({k} days)" for n, k in streaks[:4]) + (f" and {len(streaks) - 4} more." if len(streaks) > 4 else ".")})
     if c["LATE"]:
         h.append({"level": "medium", "text": f"{c['LATE']} late (after 10:30 AM)."})
     if v["flagged"]:
@@ -160,7 +179,7 @@ def email_html(v: dict) -> str:
 def email_text(v: dict) -> str:
     c = v["counts"]
     lines = [f"Dear {v['recipient']},", "",
-             f"Field sales attendance for {v['weekday']}, {v['date_long']}: {v['n']} people.",
+             f"Field sales attendance for {v['weekday']}, {v['date_long']}: {v['n']} people." + (f" ({v['trend']})" if v["trend"] else ""),
              f"Attendance {v['pct'] if v['pct'] is not None else '-'}% | Absent {c['ABSENT']} | Late {c['LATE']} | "
              f"Needs checking {len(v['flagged'])}" + (f" | Location & selfie checks {len(v['checks'])}" if v["checks"] else ""), ""]
     if v["highlights"]:

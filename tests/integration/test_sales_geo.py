@@ -167,7 +167,7 @@ def test_visibility_cases_review_and_purge(day):
         m = geo.day_map(s, date(2026, 11, 18), "SL00001")
         assert len(m["calls"]) == 6 and m["calls"][0]["away"] and m["attendance"]["lat"] == BASE[0] and m["case"]["status"] == "OK"
         assert m["signs"][0]["kind"] == "location" and m["photo_url"].endswith(".jpg")
-        res = geo.purge(s, today=date(2027, 7, 1))
+        res = geo.purge(s, today=date(2028, 1, 1))                                  # kept 12 months
         assert res["locations"] == 10 and res["calls"] == 24 and res["photos"] == 5
         assert s.query(SalesEmployeeDay).filter_by(code="SL00001").one().geo_flags        # the warning signs themselves stay
 

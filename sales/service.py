@@ -62,7 +62,9 @@ def read_files(files: list[tuple[str, bytes]], session: Session) -> dict[str, tu
     return found
 
 
-def process(session: Session, files: list[tuple[str, bytes]], actor: str, replace: bool = False) -> SalesDayUpload:
+def process(session: Session, files: list[tuple[str, bytes]], actor: str, replace: bool = False, plan_mail: bool = True,
+            rescore: bool = True) -> SalesDayUpload:
+    """plan_mail=False for past days loaded as training data (no emails); rescore=False when the caller rescores once at the end."""
     found = read_files(files, session)
     att = found[bizom.ATTENDANCE][2]
     day = att.report_date
@@ -99,10 +101,12 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     from sales import photos
     photos.register_day(session, up)                      # selfies to check (downloaded later by the photo job)
     from sales import ml
-    ml.rescore(session, day)                              # learned usual places / unusual days / risk scores
+    if rescore:
+        ml.rescore(session, day)                          # learned usual places / unusual days / risk scores
     geo.check_day(session, day)
     geo.purge(session)
-    mail.plan(session, up)
+    if plan_mail:
+        mail.plan(session, up)
     return up
 
 

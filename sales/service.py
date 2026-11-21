@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesMailItem
 from ingestion.checksum import sha256_bytes
 from sales.util import utc_iso
-from sales import analysis, bizom, mail
+from sales import analysis, bizom, geo, mail
 from sales.config import get_rules
 
 MAX_MB = 25
@@ -45,6 +45,8 @@ def read_files(files: list[tuple[str, bytes]], session: Session) -> dict[str, tu
             kind = bizom.kind_of(rows)
             if kind is None:
                 raise UploadError(f"{name}: not a Bizom Attendance, Attendance & EOD or Call Variance report.")
+            if kind == bizom.HISTORY:
+                raise UploadError(f"{name}: this is Bizom's multi-day attendance history - import it under 'Location history' instead.")
             if kind in found:
                 raise UploadError(f"Two {bizom.LABEL[kind]}s were chosen ({found[kind][0]} and {name}); upload one of each.")
             parsed = bizom.parse(rows, short_call_seconds=rules.short_call_seconds, far_call_m=rules.far_call_m,
@@ -90,10 +92,26 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
             calls=c.calls if c else None, productive_calls=c.productive if c else None, short_calls=c.short if c else None,
             telephonic_calls=c.telephonic if c else None, beat_jump_calls=c.beat_jump if c else None, far_calls=c.far if c else None,
             max_call_distance_m=c.max_distance_m if c else None, fast_moves=c.fast_moves if c else None,
-            order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None))
+            order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None, photo_url=p.photo_url))
     session.flush()
+    geo.store_day(session, up, result.people, found.get(bizom.CALLS, (None, None, None))[2])
+    geo.check_day(session, day)
+    geo.purge(session)
     mail.plan(session, up)
     return up
+
+
+def import_history(session: Session, name: str, data: bytes) -> dict:
+    if len(data) > 60 * 1024 * 1024:
+        raise UploadError(f"{name}: larger than 60 MB.")
+    try:
+        rows = bizom.read_rows(data, name)
+        if bizom.kind_of(rows) != bizom.HISTORY:
+            raise UploadError(f"{name}: not Bizom's multi-day AttendanceReport (needs Emp Id, For Date, Attendance Time, IMEI, Location).")
+        hist = bizom.parse(rows)
+    except bizom.BizomError as exc:
+        raise UploadError(f"{name}: {exc}") from exc
+    return geo.import_history(session, hist)
 
 
 def rows_for(session: Session, upload_id: int) -> list[SalesEmployeeDay]:

@@ -10,6 +10,8 @@ export const SALES_PAGES = [
   { section: "Field sales", title: "Upload", path: "/sales/upload", icon: "upload", perm: "UPLOAD_AND_SEND" },
   { section: "Field sales", title: "Day insights", path: "/sales/day", icon: "insights" },
   { section: "Field sales", title: "Approve emails", path: "/sales/mail", icon: "mail" },
+  { section: "Field sales", title: "Needs checking", path: "/sales/cases", icon: "flag" },
+  { section: "Field sales", title: "Day map", path: "/sales/map", icon: "map", hidden: true },
   { section: "Reports", title: "Attendance report", path: "/sales/report", icon: "reports" },
   { section: "Reports", title: "Employee report", path: "/sales/employee", icon: "employee-report" },
   { section: "Reports", title: "Email log", path: "/sales/emails", icon: "emails" },
@@ -42,7 +44,7 @@ export function SalesLayout() {
           {sections.map((section) => (
             <div className="nav-section" key={section}>
               <div className="nav-section-title">{section}</div>
-              {pages.filter((p) => p.section === section).map((p) => (
+              {pages.filter((p) => p.section === section && !("hidden" in p)).map((p) => (
                 <NavLink key={p.path} to={p.path} end={"end" in p} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
                   <Icon name={p.icon} />
                   <span>{p.title}</span>

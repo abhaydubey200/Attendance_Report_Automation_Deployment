@@ -33,6 +33,7 @@ export interface SalesMailItem {
 export interface SalesDay {
   report_date: string; people: number; summary: SalesSummary; files: { attendance: string | null; eod: string | null; calls: string | null };
   uploaded_by: string; uploaded_at: string; rows: SalesPerson[]; warnings: SalesWarning[]; teams: SalesTeam[]; mail: SalesMailItem[];
+  geo?: Record<string, string[]>; geo_summary?: SalesGeoSummary;
 }
 
 export interface SalesDayRow {
@@ -60,6 +61,11 @@ export interface SalesRules {
   exclude_codes: string[]; supervisor_designations: string[]; short_market_minutes: number; very_short_market_minutes: number;
   late_start_minutes: number; high_km: number; attendance_far_m: number; short_day_minutes: number; short_call_seconds: number;
   short_calls_min: number; far_call_m: number; max_speed_kmh: number; calls_after: string; beat_jump_min: number;
+  geo_in_emails: boolean; keep_months: number; geo_away_outlet_m: number; geo_away_outlet_min: number; geo_same_spot_m: number;
+  geo_same_spot_min_calls: number; geo_cluster_m: number; geo_cluster_outlets: number; geo_cluster_outlet_far_m: number;
+  geo_km_ratio: number; geo_km_extra: number; geo_start_away_km: number; geo_start_history_days: number; geo_start_min_days: number;
+  geo_end_away_km: number; geo_offbeat_min: number; geo_together_m: number; geo_together_minutes: number; geo_together_share: number;
+  geo_together_min_calls: number;
 }
 
 export interface SalesEmailSettings {
@@ -107,3 +113,26 @@ export interface SalesJobs { inbox: string; waiting: string[]; auto_send: boolea
 
 export interface SalesMonthList { months: { month: string; label: string; days: number; emails: number }[]; default: string }
 export interface SalesMonthMail { month: string; label: string; mode: "test" | "live"; testing: string | null; items: SalesMailItem[] }
+
+// ---------------------------------------------------------------- location checks
+export type GeoLevel = "high" | "medium" | "low";
+export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" }
+export interface GeoPoint { lat: number; lng: number; time: string | null }
+export interface GeoCall {
+  seq: number; start: string | null; end: string | null; duration_s: number | null; lat: number | null; lng: number | null;
+  outlet: string | null; outlet_lat: number | null; outlet_lng: number | null; beat: string | null; distance_m: number | null;
+  productive: boolean; away: boolean; fast: boolean; leg: { km: number; minutes: number; kmh: number } | null;
+}
+export interface GeoCase { code: string; date: string; status: "OPEN" | "OK" | "ACTION"; status_label: string; note: string; reviewed_by: string | null; reviewed_at: string | null }
+export interface GeoDayMap {
+  date: string; code: string; name: string; designation: string; manager: string; hod: string; status: SalesStatus;
+  attendance_time: string | null; eod_time: string | null; km: number | null; market_minutes: number | null; photo_url: string | null;
+  attendance: GeoPoint | null; day_end: GeoPoint | null; usual_start: { lat: number; lng: number; days: number; limit_km: number } | null;
+  calls: GeoCall[]; signs: GeoSign[]; case: GeoCase;
+}
+export interface GeoCaseRow {
+  date: string; code: string; name: string; designation: string; manager: string; hod: string; signs: GeoSign[]; other_signs: string[];
+  high: number; case: GeoCase;
+}
+export interface GeoCases { from: string; to: string; cases: GeoCaseRow[]; hods: string[]; labels: Record<string, string> }
+export interface SalesGeoSummary { people: number; signs: { code: string; label: string; level: GeoLevel; n: number }[]; points: boolean; calls: boolean }

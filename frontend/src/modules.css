@@ -98,3 +98,19 @@
 .sales-module .sales-trend small { font-size: .65rem; color: var(--muted); }
 .sales-module .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
 .sales-module form.toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }
+
+/* location checks: day map */
+.sales-module .geo-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 1rem; align-items: start; }
+.sales-module .geo-side { display: grid; gap: 1rem; }
+.sales-module .geo-map { height: 520px; border-radius: 10px; border: 1px solid var(--line); z-index: 0; }
+.sales-module .geo-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .8rem; margin-top: .5rem; align-items: center; }
+.sales-module .geo-legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.geo-pin { display: inline-flex !important; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
+  font: 700 11px/1 system-ui, sans-serif; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); font-style: normal; }
+.sales-module .geo-legend .geo-pin { width: 18px; height: 18px; font-size: 9px; }
+.geo-att { background: #16a34a; } .geo-end { background: #14213d; } .geo-call { background: #2563eb; } .geo-bad { background: #dc2626; }
+.geo-usual { background: #94a3b8; }
+.sales-module .geo-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; border: 1px solid #b45309; }
+.sales-module .geo-signs { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.sales-module .geo-signs li { display: flex; gap: .6rem; align-items: flex-start; }
+@media (max-width: 900px) { .sales-module .geo-layout { grid-template-columns: minmax(0, 1fr); } .sales-module .geo-map { height: 380px; } }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from core.config import Settings
 from daily.branding import inline_logo_for_browser
 from database.models.sales import SalesMailItem
 from sales.util import utc_iso
-from sales import bizom, jobs, mail, monthly, report, reports, service, staff
+from sales import bizom, geo, jobs, mail, monthly, report, reports, service, staff
 from sales.config import SalesEmail, SalesRules, get_email, get_rules, save_email, save_rules
 from security.permissions import Perm, Principal
 
@@ -40,7 +40,9 @@ def _day(db: Session, up) -> dict:
             "files": {"attendance": up.attendance_file, "eod": up.eod_file, "calls": up.calls_file},
             "uploaded_by": up.uploaded_by, "uploaded_at": utc_iso(up.uploaded_at),
             "rows": view["people"], "warnings": view["warnings"], "teams": view["teams"],
-            "mail": [mail.item_dict(i) for i in mail.items_for(db, up.report_date)]}
+            "mail": [mail.item_dict(i) for i in mail.items_for(db, up.report_date)],
+            "geo": {r.code: [geo.GEO[k][0] for k in r.geo_flags.split(",") if k in geo.GEO] for r in rows if r.geo_flags},
+            "geo_summary": geo.summary(db, up.report_date)}
 
 
 # ---------------------------------------------------------------- days
@@ -377,3 +379,57 @@ def month_approve(month: str, body: ApproveIn, principal: Principal = Depends(re
     todo = [i for i in monthly.items(db, _month(month)) if i.status in (mail.PENDING, mail.FAILED) and (body.ids is None or i.id in body.ids)]
     done = mail.send_items(db, todo, principal.username, _outbox(settings))
     return {**_month_items(db, month), "sent_now": len(done)}
+
+
+# ---------------------------------------------------------------- location checks (day map, cases, history)
+class CaseIn(BaseModel):
+    status: str
+    note: str | None = None
+
+
+@router.get("/geo/{report_date}")
+def geo_summary(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    return geo.summary(db, report_date)
+
+
+@router.get("/map/{report_date}/{code}")
+def day_map(report_date: date, code: str, principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    code = bizom.norm_code(code)
+    visible = geo.visible_codes(db, principal)
+    data = geo.day_map(db, report_date, code) if visible is None or code in visible else None
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No Field Sales day for {code} on {report_date:%d-%b-%Y}.")
+    return data
+
+
+@router.get("/cases")
+def case_list(start: date | None = None, end: date | None = None, status_: str = Query("", alias="status"), hod: str = "",
+              principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    d0, d1 = reports.default_range(db)
+    start, end = start or d0, end or d1
+    rows = geo.cases(db, start, end, geo.visible_codes(db, principal), status_, hod)
+    return {"from": start.isoformat(), "to": end.isoformat(), "cases": rows, "hods": sorted({r["hod"] for r in rows if r["hod"]}),
+            "labels": {k: v[0] for k, v in geo.GEO.items()}}
+
+
+@router.put("/cases/{report_date}/{code}")
+def case_review(report_date: date, code: str, body: CaseIn, principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+                db: Session = Depends(get_db)) -> dict:
+    code = bizom.norm_code(code)
+    visible = geo.visible_codes(db, principal)
+    if visible is not None and code not in visible:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found.")
+    try:
+        return geo.review(db, code, report_date, body.status, body.note, principal.username)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+
+
+@router.post("/history")
+async def history_import(file: UploadFile = File(...), principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)),
+                         db: Session = Depends(get_db)) -> dict:
+    data = await file.read(60 * 1024 * 1024 + 1)
+    try:
+        return service.import_history(db, file.filename or "history.csv", data)
+    except service.UploadError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None

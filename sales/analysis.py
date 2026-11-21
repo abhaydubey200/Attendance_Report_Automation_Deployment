@@ -71,6 +71,9 @@ class PersonDay:
     photo: bool | None = None
     calls: CallSummary | None = None
     flags: list[str] = field(default_factory=list)
+    att_location: tuple[float, float] | None = None      # where attendance was marked
+    eod_location: tuple[float, float] | None = None      # where the day was ended
+    photo_url: str | None = None
 
 
 def _match(rx: list[str], code: str) -> bool:
@@ -187,7 +190,10 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                       first_activity=r.first_activity, last_activity=r.last_activity, market_minutes=r.market_minutes, km=r.km,
                       eod_time=e.eod_time if e else (r.end_time if st in WORKING else None),
                       attendance_variance_m=r.variance_m, photo=r.photo,
-                      calls=(calls.calls.get(r.code) if calls else None))
+                      calls=(calls.calls.get(r.code) if calls else None),
+                      att_location=(e.location if e and e.location else r.location),
+                      eod_location=e.eod_location if e and st in WORKING else None,
+                      photo_url=r.photo_url or (e.photo_url if e else None))
         people.append(p)
     not_marked = 0
     if rules.not_marked_is_absent:

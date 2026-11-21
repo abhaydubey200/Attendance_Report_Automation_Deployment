@@ -1,14 +1,14 @@
 """Tables of Module 2 - Field Sales attendance (Bizom). Separate from Module 1 (Head Office, Pocket HRMS) tables.
 
-Personal / location data from Bizom (phone numbers, attendance photos, GPS coordinates, outlet mobiles, IMEI) is NEVER
-stored: only codes, names, times, statuses, counts and the warning signs worked out from them.
+Location checks (2026-11-21): attendance / day-end / call / outlet coordinates, attendance photo links and a scrambled phone
+code ARE stored, for 6 months (then deleted by sales.geo.purge). Phone numbers, outlet mobiles and raw IMEI are never stored.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.timeutils import now_utc
@@ -100,6 +100,9 @@ class SalesEmployeeDay(Base):
     fast_moves: Mapped[int | None] = mapped_column(Integer)
     order_value: Mapped[float | None] = mapped_column(Float)
     flags: Mapped[str | None] = mapped_column(String(300))                             # comma-separated warning codes
+    geo_flags: Mapped[str | None] = mapped_column(String(300))                         # location warning codes (app only for now)
+    geo_evidence: Mapped[str | None] = mapped_column(Text)                             # JSON {code: "why, with distances"}
+    photo_url: Mapped[str | None] = mapped_column(String(500))                         # attendance selfie link (6 months)
 
 
 class SalesMailItem(Base):
@@ -142,3 +145,83 @@ class SalesJobRun(Base):
     started_by: Mapped[str] = mapped_column(String(100), nullable=False)
     started_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SalesLocation(Base):
+    """Where someone marked attendance (ATT) or ended the day (EOD) on a day. Kept 6 months."""
+    __tablename__ = "sales_location"
+    __table_args__ = (UniqueConstraint("code", "day", "kind", name="uq_sales_location"), Index("ix_sales_location_day", "day"),
+                      {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(4), nullable=False)               # ATT | EOD
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lng: Mapped[float] = mapped_column(Float, nullable=False)
+    time: Mapped[str | None] = mapped_column(String(8))
+    source: Mapped[str] = mapped_column(String(10), nullable=False)            # DAY | HISTORY
+
+
+class SalesDevice(Base):
+    """The phone used to mark attendance, as a scrambled code (never the IMEI itself). Kept 6 months."""
+    __tablename__ = "sales_device"
+    __table_args__ = (UniqueConstraint("code", "day", name="uq_sales_device"), Index("ix_sales_device_day", "day", "device"),
+                      {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    device: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class SalesCall(Base):
+    """One outlet visit with its location (Call Variance report). Kept 6 months."""
+    __tablename__ = "sales_call"
+    __table_args__ = (Index("ix_sales_call_upload", "upload_id"), Index("ix_sales_call_day_code", "day", "code"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    upload_id: Mapped[int] = mapped_column(ForeignKey(f"{SCHEMA}.sales_day_upload.upload_id"), nullable=False)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    call_id: Mapped[str | None] = mapped_column(String(40))
+    start: Mapped[str | None] = mapped_column(String(8))
+    end: Mapped[str | None] = mapped_column(String(8))
+    duration_s: Mapped[int | None] = mapped_column(Integer)
+    lat: Mapped[float | None] = mapped_column(Float)
+    lng: Mapped[float | None] = mapped_column(Float)
+    outlet_id: Mapped[str | None] = mapped_column(String(40))
+    beat_id: Mapped[str | None] = mapped_column(String(40))
+    distance_m: Mapped[float | None] = mapped_column(Float)                    # from the outlet, worked out by the app
+    productive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class SalesOutlet(Base):
+    """Outlets seen in Call Variance reports: name, beat and fixed location (business data, no phone numbers)."""
+    __tablename__ = "sales_outlet"
+    __table_args__ = {"schema": SCHEMA}
+
+    outlet_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    beat_id: Mapped[str | None] = mapped_column(String(40))
+    beat_name: Mapped[str | None] = mapped_column(String(200))
+    category: Mapped[str | None] = mapped_column(String(100))
+    pincode: Mapped[str | None] = mapped_column(String(10))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lng: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc, onupdate=now_utc)
+
+
+class SalesCase(Base):
+    """The review of one person's day that needs checking: open / checked - OK / action taken, with a note."""
+    __tablename__ = "sales_case"
+    __table_args__ = (UniqueConstraint("code", "day", name="uq_sales_case"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN")   # OPEN | OK | ACTION
+    note: Mapped[str | None] = mapped_column(String(1000))
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    reviewed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

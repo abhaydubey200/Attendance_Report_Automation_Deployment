@@ -8,6 +8,7 @@ import { Icon } from "../components/icons";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 import { StaffEditor } from "./more";
+import { HistoryImportCard } from "./geo";
 import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffRow, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
@@ -128,19 +129,20 @@ export function SalesUpload() {
         <form onSubmit={submit} className="sales-upload">
           <ol className="sales-steps">
             <li><strong>Attendance report</strong> <span className="badge badge-fail">required</span><span>Status, attendance time, time in market, KM.</span></li>
-            <li><strong>Attendance &amp; EOD report</strong> <span className="badge badge-info">optional</span><span>Adds the day-end checks (day not closed, short day).</span></li>
-            <li><strong>Call Variance report</strong> <span className="badge badge-info">optional</span><span>Adds the outlet-visit checks (short visits, away from the outlet, impossible travel).</span></li>
+            <li><strong>Attendance &amp; EOD report</strong> <span className="badge badge-info">optional</span><span>Adds the day-end checks and the attendance / day-end locations.</span></li>
+            <li><strong>Call Variance report</strong> <span className="badge badge-info">optional</span><span>Adds the outlet-visit checks and the day map (call and outlet locations). Export the whole team, not one person.</span></li>
           </ol>
           <Field label="Bizom files (.csv)">
             <input type="file" multiple accept=".csv,.xlsx" onChange={(e) => setFiles([...(e.target.files ?? [])].slice(0, 3))} />
           </Field>
           {files.length > 0 && <p className="muted">{files.map((f) => f.name).join(" · ")}</p>}
           <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace the day if it is already uploaded</label>
-          <p className="muted">Phone numbers, attendance photos and GPS positions in the files are never stored.</p>
+          <p className="muted">Locations and photo links are kept for 6 months for the location checks, then deleted. Phone numbers are never stored.</p>
           <ActionMessages error={error} message={message} />
           <button type="submit" className="btn btn-primary btn-auto" disabled={busy || files.length === 0}>{busy ? "Processing…" : "Process the day"}</button>
         </form>
       </Card>
+      <HistoryImportCard />
     </>
   );
 }
@@ -195,6 +197,8 @@ export function SalesDayPage() {
             <KpiCard label="Late" value={s.counts.LATE} tone="warn" hint="after 10:30 AM" />
             <KpiCard label="Leave · week off" value={`${s.counts.LEAVE} · ${s.counts.WEEK_OFF}`} />
             <KpiCard label="Needs checking" value={s.people_flagged} tone="brand" hint={`${s.people_high} serious`} />
+            {day.data.geo_summary && <KpiCard label="Location signs" value={day.data.geo_summary.people} tone={day.data.geo_summary.people ? "warn" : "ok"}
+              hint={<Link to={`/sales/cases?start=${date}&end=${date}`}>Needs checking list</Link>} />}
           </div>
           {(s.data.not_in_staff_list.length > 0 || !s.files.eod || !s.files.calls) && (
             <Notice kind="warn">
@@ -241,6 +245,10 @@ export function SalesDayPage() {
               { header: "KM", render: (p) => p.km ?? "", value: (p) => p.km },
               { header: "Day end", render: (p) => p.eod },
               { header: "Warning signs", render: (p) => <Flags p={p} />, value: (p) => p.flags.map((f) => f.label).join("; ") },
+              { header: "Location", render: (p) => <span className="sales-flags">{(day.data?.geo?.[p.code] ?? []).map((l) => <span key={l} className="badge badge-warn">{l}</span>)}</span>,
+                value: (p) => (day.data?.geo?.[p.code] ?? []).join("; ") },
+              { header: "", sortable: false, render: (p) => (["PRESENT", "LATE", "HALF_DAY"].includes(p.status)
+                ? <Link className="btn btn-ghost btn-small" to={`/sales/map?date=${date}&code=${p.code}`}>Map</Link> : null) },
             ]} />
           </Card>
         </>
@@ -444,6 +452,28 @@ export function SalesSettingsPage() {
             <Field label="Visit away from the outlet (metres)">{num("far_call_m")}</Field>
             <Field label="Impossible travel speed (km/h)">{num("max_speed_kmh")}</Field>
             <Field label="Visits after (HH:MM)"><input value={rules.calls_after} onChange={(e) => setRules({ ...rules, calls_after: e.target.value })} /></Field>
+          </div>
+        </Card>
+        <Card title="Location checks" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}
+          onClick={() => void run(() => api.put("/v1/sales/settings/rules", rules), "Saved. They apply to the next upload (upload again with replace to recheck a day).")}>Save</button>}>
+          <label className="check"><input type="checkbox" checked={rules.geo_in_emails} onChange={(e) => setRules({ ...rules, geo_in_emails: e.target.checked })} /> Show location signs in the emails (off = app only)</label>
+          <div className="form-grid">
+            <Field label="Keep locations and photo links (months)">{num("keep_months")}</Field>
+            <Field label="Call away from the outlet (metres)">{num("geo_away_outlet_m")}</Field>
+            <Field label="... on at least this many calls">{num("geo_away_outlet_min")}</Field>
+            <Field label="All calls from one spot: within (metres)">{num("geo_same_spot_m")}</Field>
+            <Field label="... with at least this many calls">{num("geo_same_spot_min_calls")}</Field>
+            <Field label="Several outlets from one spot: within (metres)">{num("geo_cluster_m")}</Field>
+            <Field label="... at least this many outlets">{num("geo_cluster_outlets")}</Field>
+            <Field label="KM more than route x (times)">{num("geo_km_ratio")}</Field>
+            <Field label="... and at least this many km more">{num("geo_km_extra")}</Field>
+            <Field label="Attendance away from usual start (km, minimum)">{num("geo_start_away_km")}</Field>
+            <Field label="Usual start: days to look back">{num("geo_start_history_days")}</Field>
+            <Field label="Day ended away from the last call (km)">{num("geo_end_away_km")}</Field>
+            <Field label="Calls outside the day's beat (count)">{num("geo_offbeat_min")}</Field>
+            <Field label="With another person: within (metres)">{num("geo_together_m")}</Field>
+            <Field label="... and minutes">{num("geo_together_minutes")}</Field>
+            <Field label="... for this share of calls (0-1)">{num("geo_together_share")}</Field>
           </div>
         </Card>
       </div>

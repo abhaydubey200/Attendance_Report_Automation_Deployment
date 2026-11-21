@@ -37,6 +37,12 @@ def _scores(db: Session, d: date) -> dict:
     return ml.scores(db, d)
 
 
+def _checks_and_proof(db: Session, d: date) -> tuple[list[dict], list[dict]]:
+    from sales import checks
+    found = checks.day_checks(db, d, None)
+    return found, checks.proof(db, d, found)
+
+
 def _checks(db: Session, d: date) -> list[dict]:
     from sales import checks
     return checks.day_checks(db, d, None)
@@ -86,7 +92,7 @@ def day(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), 
 def day_excel(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     up = _upload_or_404(db, report_date)
     v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "hr", "HR", up.report_date,
-                           _checks(db, up.report_date))
+                           *_checks_and_proof(db, up.report_date))
     return Response(report.excel(v), media_type=XLSX, headers={"Content-Disposition": f'attachment; filename="{v["stem"]}.xlsx"'})
 
 
@@ -94,7 +100,7 @@ def day_excel(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGH
 def day_dashboard(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     up = _upload_or_404(db, report_date)
     v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "company", "HR", up.report_date,
-                           _checks(db, up.report_date))
+                           *_checks_and_proof(db, up.report_date))
     return Response(report.dashboard(v), media_type="text/html", headers={
         "Content-Disposition": f'attachment; filename="{v["stem"]}_dashboard.html"', "Content-Security-Policy": DASHBOARD_CSP})
 

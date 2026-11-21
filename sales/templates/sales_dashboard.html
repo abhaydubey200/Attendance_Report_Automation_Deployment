@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ v.title }} – {{ v.date_long }} – {{ v.recipient }}</title>
-<style>{% include "_dash_style.css" %}
+<style>
+  .proof { display: grid; gap: 12px; } .pf { display: flex; gap: 14px; flex-wrap: wrap; border: 1px solid #e6e8ef; border-radius: 12px; padding: 10px; }
+  .pf figure { margin: 0; width: 128px; } .pf img { width: 128px; height: 170px; object-fit: cover; border-radius: 8px; border: 1px solid #e6e8ef; display: block; }
+  .pf figcaption { font-size: 11.5px; color: #5d6577; margin-top: 3px; } .pf .info { flex: 1 1 260px; min-width: 0; font-size: 13px; }
+  .pf .rk { display: inline-block; color: #fff; padding: 1px 8px; border-radius: 999px; font-weight: 700; margin-right: 6px; }{% include "_dash_style.css" %}
   .kp { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:16px; }
   .kc { border-radius:14px; padding:12px 14px; border:1.5px solid; background:#fff; cursor:pointer; text-align:left; font:inherit; color:inherit; }
   .kc:hover { box-shadow:0 8px 18px rgba(20,33,61,.12); }
@@ -49,6 +53,10 @@
     <div class="card" id="teamsCard" {% if not v.teams %}style="display:none"{% endif %}><div class="card-h"><h3>Teams <span class="muted">– lowest attendance first</span></h3></div>
       <div class="tablewrap"><table class="grid" style="font-size:13px"><thead><tr><th>Zonal head</th><th>HOD</th><th>People</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="teams"></tbody></table></div></div>
     {% if not v.teams %}<div class="card"><div class="card-h"><h3>Status</h3></div><ul class="wl" id="stl"></ul></div>{% endif %}
+  </section>
+  <section class="card" style="margin-top:16px" id="proofCard" hidden>
+    <div class="card-h"><h3>Proof <span class="muted">– attendance selfie, the confirmed matching selfie and the place on the map</span></h3></div>
+    <div id="proof" class="proof"></div>
   </section>
   <section class="card" style="margin-top:16px" id="checksCard" hidden>
     <div class="card-h"><h3>Location &amp; selfie checks <span class="muted">– highest risk first; map and selfies in the HR Portal</span></h3></div>
@@ -124,6 +132,19 @@ render();
     <td><b>${esc(c.name)}</b> <span class="code">(${esc(c.code)})</span></td><td>${esc(c.manager)}</td>
     <td>${c.signs.map((s) => `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;margin:1px 3px 1px 0;color:${col(s.level)};background:#f8fafc;border:1px solid #e6e8ef">${esc(s.kind)}: ${esc(s.label)}</span>`).join("")}</td>
     <td style="font-size:12px">${esc(c.why)}</td></tr>`).join("");
+})();
+(function () {
+  const P = (JSON.parse(document.getElementById("data").textContent).proof) || [];
+  if (!P.length) return;
+  const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const fig = (uri, url, cap) => uri ? `<figure><a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${uri}" alt="${esc(cap)}"></a><figcaption>${esc(cap)}</figcaption></figure>` : "";
+  document.getElementById("proofCard").hidden = false;
+  document.getElementById("proof").innerHTML = P.map((x) => `<div class="pf">
+    ${fig(x.selfie_uri, x.selfie_url, "Attendance selfie" + (x.att_time ? " " + x.att_time : ""))}
+    ${x.matches.map((m) => fig(m.uri, m.url, "Matches: " + m.name + ", " + m.date)).join("")}
+    <div class="info"><span class="rk" style="background:${x.risk >= 60 ? "#b91c1c" : x.risk >= 30 ? "#d97706" : "#64748b"}">${x.risk}</span><b>${esc(x.name)}</b> <span class="code">(${esc(x.code)})</span> <span class="muted">${esc(x.manager)}</span>
+      <div style="margin:4px 0">${x.signs.map((s) => `<div><b>${esc(s.kind)}:</b> ${esc(s.label)}${s.why ? ` – <span class="muted">${esc(s.why)}</span>` : ""}</div>`).join("")}</div>
+      <div>${x.from_usual ? esc(x.from_usual) + " · " : ""}${x.att_map ? `<a href="${esc(x.att_map)}" target="_blank" rel="noopener noreferrer">Attendance place on the map</a>` : ""}${x.eod_map ? ` · <a href="${esc(x.eod_map)}" target="_blank" rel="noopener noreferrer">Day end</a>` : ""}</div></div></div>`).join("");
 })();
 </script>
 </body>

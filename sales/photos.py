@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from core.timeutils import now_utc
 from database.connection import session_scope
-from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesPhoto
+from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesPhoto, SalesPhotoPair
 from sales.config import SalesRules, get_rules
 
 PHOTO: dict[str, tuple[str, str, str]] = {
@@ -232,11 +232,21 @@ def fetch(engine, limit: int | None = None, client=None, workers: int = 6) -> di
     finally:
         if own:
             client.close()
+    res = check_and_confirm(engine, client if not own else None)
+    return {"fetched": len(todo), **dict(stats), **res}
+
+
+def check_and_confirm(engine, client=None) -> dict:
+    """Fingerprint check -> confirm new look-alike pairs by image details -> final check -> risk scores."""
     with session_scope(engine) as s:
         res = check(s)
+    confirmed = confirm_pairs(engine, res.pop("_waiting"), client)
+    with session_scope(engine) as s:
+        res = check(s)
+        res.pop("_waiting", None)
         from sales import ml
         ml.rescore(s)                                     # risk scores include the selfie signs
-    return {"fetched": len(todo), **dict(stats), **res}
+    return {**res, "pairs_confirmed_now": confirmed}
 
 
 def recount(engine, client=None, workers: int = 6) -> dict:
@@ -268,10 +278,7 @@ def recount(engine, client=None, workers: int = 6) -> dict:
     finally:
         if own:
             client.close()
-    with session_scope(engine) as s:
-        res = check(s)
-        from sales import ml
-        ml.rescore(s)
+    res = check_and_confirm(engine)
     return {"looked_again": len(todo), "face_count_changed": changed, **res}
 
 
@@ -303,6 +310,7 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
     by_id = {p.id: p for p in photos}
     names = {e.code: e.name for e in session.scalars(select(SalesEmployee))}
     near = _near_pairs(photos, min(7, max(rules.photo_same_bits, rules.photo_reuse_bits)))
+    pairs = {(a, b): n for a, b, n in session.execute(select(SalesPhotoPair.a_id, SalesPhotoPair.b_id, SalesPhotoPair.points))}
     hashes = {p.id: int(p.phash, 16) for p in photos if p.phash}
     bits = lambda a, b: (hashes[a] ^ hashes[b]).bit_count() if a in hashes and b in hashes else 64  # noqa: E731
     for grp in _groups(photos, "sha256").values():
@@ -323,7 +331,8 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
     stats: Counter = Counter()
     for p in photos:
         f: dict[str, str] = {}
-        others = [by_id[o] for o in near.get(p.id, ()) if o not in placeholder] if p.id not in placeholder else []
+        others = [by_id[o] for o in near.get(p.id, ()) if o not in placeholder and _confirmed(p, by_id[o], pairs, rules)] \
+            if p.id not in placeholder else []
         other_people = sorted({o for o in others if o.code != p.code and (o.sha256 == p.sha256 or bits(o.id, p.id) <= rules.photo_same_bits)},
                               key=lambda o: (o.day, o.code))
         other_days = sorted({o for o in others if o.code == p.code and o.day != p.day
@@ -331,12 +340,12 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
         matches = []
         if other_people:
             o = other_people[0]
-            f["PHOTO_OTHER_PERSON"] = (f"Same as {names.get(o.code, o.code)}'s selfie on {o.day:%d-%b}"
+            f["PHOTO_OTHER_PERSON"] = (f"Same as {names.get(o.code, o.code)}'s selfie on {o.day:%d-%b} ({_proof(p, o, pairs)})"
                                        + (f" (and {len(other_people) - 1} more)" if len(other_people) > 1 else "") + ".")
             matches += other_people[:3]
         if other_days:
             f["PHOTO_REUSED"] = f"Same as the selfie on {', '.join(f'{o.day:%d-%b}' for o in other_days[:3])}" + \
-                                (f" and {len(other_days) - 3} more days" if len(other_days) > 3 else "") + "."
+                                (f" and {len(other_days) - 3} more days" if len(other_days) > 3 else "") + f" ({_proof(p, other_days[0], pairs)})."
             matches += other_days[:3]
         if p.exif_time:
             taken = datetime.strptime(p.exif_time, "%Y-%m-%d %H:%M:%S")
@@ -363,7 +372,80 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
         p.evidence = json.dumps({**{x: f[x] for x in order}, "_matches": [m.id for m in matches]}) if order else None
         stats.update(order)
     session.flush()
-    return {"checked": len(photos), "flagged": sum(1 for p in photos if p.flags), "signs": dict(stats), "placeholders": len(placeholder)}
+    waiting = [(a, b) for a, bs in near.items() for b in bs if a < b and (a, b) not in pairs
+               and by_id[a].sha256 != by_id[b].sha256 and a not in placeholder and b not in placeholder]
+    return {"checked": len(photos), "flagged": sum(1 for p in photos if p.flags), "signs": dict(stats), "placeholders": len(placeholder),
+            "pairs_to_confirm": len(waiting), "_waiting": waiting}
+
+
+def _key(a: SalesPhoto, b: SalesPhoto) -> tuple[int, int]:
+    return (a.id, b.id) if a.id < b.id else (b.id, a.id)
+
+
+def _confirmed(p: SalesPhoto, o: SalesPhoto, pairs: dict, rules: SalesRules) -> bool:
+    if p.sha256 and p.sha256 == o.sha256:
+        return True
+    n = pairs.get(_key(p, o))
+    return n is not None and n >= rules.photo_confirm_points
+
+
+def _proof(p: SalesPhoto, o: SalesPhoto, pairs: dict) -> str:
+    if p.sha256 and p.sha256 == o.sha256:
+        return "identical file"
+    return f"confirmed: {pairs.get(_key(p, o))} matching image details"
+
+
+def match_points(a, b) -> int:
+    """How many image details (ORB keypoints) line up between two photos after a RANSAC perspective fit."""
+    import cv2
+    import numpy as np
+    orb = cv2.ORB_create(1500)
+    ka, da = orb.detectAndCompute(a, None)
+    kb, db = orb.detectAndCompute(b, None)
+    if da is None or db is None:
+        return 0
+    good = [m for m, n in (x for x in cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(da, db, k=2) if len(x) == 2) if m.distance < 0.75 * n.distance]
+    if len(good) < 8:
+        return 0
+    _, mask = cv2.findHomography(np.float32([ka[m.queryIdx].pt for m in good]), np.float32([kb[m.trainIdx].pt for m in good]), cv2.RANSAC, 5.0)
+    return int(mask.sum()) if mask is not None else 0
+
+
+def _grey(data: bytes):
+    import numpy as np
+    from PIL import Image, ImageOps
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("L")
+    im.thumbnail((800, 800))
+    return np.asarray(im)
+
+
+def confirm_pairs(engine, waiting: list[tuple[int, int]], client=None) -> int:
+    """Download each look-alike pair again (in memory) and store how many image details line up."""
+    import httpx
+    if not waiting:
+        return 0
+    with session_scope(engine) as s:
+        urls = dict(s.execute(select(SalesPhoto.id, SalesPhoto.url).where(SalesPhoto.id.in_({i for p in waiting for i in p}))).all())
+    own = client is None
+    client = client or httpx.Client(timeout=30, follow_redirects=False, headers={"User-Agent": "HR-Portal-photo-check/1.0"})
+    cache: dict[int, object] = {}
+    out = []
+    try:
+        for a, b in waiting:
+            try:
+                for i in (a, b):
+                    if i not in cache:
+                        cache[i] = _grey(_download(client, urls[i]))
+                out.append((a, b, match_points(cache[a], cache[b])))
+            except Exception:
+                out.append((a, b, None))
+    finally:
+        if own:
+            client.close()
+    with session_scope(engine) as s:
+        for a, b, n in out:
+            s.add(SalesPhotoPair(a_id=a, b_id=b, points=n))
+    return len(out)
 
 
 def _groups(photos: list[SalesPhoto], attr: str) -> dict[str, list[int]]:

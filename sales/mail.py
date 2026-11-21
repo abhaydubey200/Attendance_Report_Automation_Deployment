@@ -77,8 +77,9 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
     rows = [r for r in session.scalars(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == up.upload_id)) if r.code in codes]
     cfg = get_email(session)
     from sales import checks
-    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date,
-                             checks.day_checks(session, up.report_date, codes))
+    found = checks.day_checks(session, up.report_date, codes)
+    proof = checks.proof(session, up.report_date, found) if item.role in checks.PROOF_ROLES else None
+    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof)
     files = []
     if cfg.attach_excel:
         files.append(Attachment(f"{view['stem']}.xlsx", report.excel(view), XLSX))

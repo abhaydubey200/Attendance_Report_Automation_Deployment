@@ -283,3 +283,16 @@ class SalesDayScore(Base):
     unusual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reasons: Mapped[str | None] = mapped_column(Text)
+
+
+class SalesPhotoPair(Base):
+    """A pair of selfies whose fingerprints look alike, confirmed (or not) by comparing image details (ORB keypoints +
+    RANSAC: how many details line up). Only confirmed pairs become 'reused' / 'same as another person'."""
+    __tablename__ = "sales_photo_pair"
+    __table_args__ = (UniqueConstraint("a_id", "b_id", name="uq_sales_photo_pair"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    a_id: Mapped[int] = mapped_column(BigId, nullable=False)          # the lower photo id
+    b_id: Mapped[int] = mapped_column(BigId, nullable=False)
+    points: Mapped[int | None] = mapped_column(Integer)                # matching image details; None = could not compare
+    checked_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)

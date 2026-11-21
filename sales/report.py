@@ -83,7 +83,8 @@ def _evidence(r, flags: list[str]) -> str:
     return "; ".join(bits)
 
 
-def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list[dict] | None = None) -> dict:
+def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list[dict] | None = None,
+               proof: list[dict] | None = None) -> dict:
     people = [_person(r) for r in sorted(rows, key=lambda r: r.name)]
     cnt = Counter(p["status"] for p in people)
     flagged = sorted([p for p in people if p["flags"]],
@@ -99,7 +100,7 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
             teams.append({"hod": hod, "zonal": zonal, "people": len(rs), "pct": pct_of(rs), "absent": c["ABSENT"],
                           "late": c["LATE"], "flagged": sum(1 for r in rs if r.flags)})
     safe = "".join(ch if ch.isalnum() else "_" for ch in recipient).strip("_")
-    return {
+    out = {
         "view": view, "title": TITLES[view], "recipient": recipient, "date": d, "date_long": f"{d:%d-%b-%Y}", "weekday": f"{d:%A}",
         "people": people, "n": len(people), "counts": {k: cnt.get(k, 0) for k in STATUS_LABEL}, "pct": pct_of(rows),
         "not_marked": [p for p in people if p["status"] == "ABSENT"], "late": [p for p in people if p["status"] == "LATE"],
@@ -111,7 +112,39 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
         "stem": f"Field_Sales_{d.isoformat()}_{safe}",
         "checks": checks or [], "checks_summary": _checks_summary(checks or []),
         "checks_high": sum(1 for c in (checks or []) if c["level"] == "high"),
+        "proof": proof or [],
     }
+    out["highlights"] = highlights(out)
+    return out
+
+
+def highlights(v: dict) -> list[dict]:
+    """At most six short lines for the email; every list and the proof are in the dashboard and Excel."""
+    h: list[dict] = []
+    c = v["counts"]
+    if c["ABSENT"]:
+        if v["view"] == "team":
+            names = ", ".join(p["name"] for p in v["not_marked"][:5]) + (f" and {c['ABSENT'] - 5} more" if c["ABSENT"] > 5 else "")
+            h.append({"level": "high", "text": f"{c['ABSENT']} absent: {names}."})
+        else:
+            low = next((t for t in v["teams"] if t["pct"] is not None), None)
+            h.append({"level": "high", "text": f"{c['ABSENT']} absent" + (f"; lowest team {low['zonal']} ({low['pct']:g}%)." if low else ".")})
+    if c["LATE"]:
+        h.append({"level": "medium", "text": f"{c['LATE']} late (after 10:30 AM)."})
+    if v["flagged"]:
+        top = "; ".join(f"{p['name']} – {p['flags'][0]['label'].lower()}" for p in v["flagged"][:2])
+        h.append({"level": "high" if v["flagged_high"] else "medium",
+                  "text": f"{len(v['flagged'])} need checking ({v['flagged_high']} serious): {top}" + (" and more." if len(v["flagged"]) > 2 else ".")})
+    if v["checks"]:
+        top = "; ".join(f"{x['name']} (risk {x['risk']}) – {x['signs'][0]['label'].lower()}" for x in v["checks"][:3])
+        h.append({"level": v["checks"][0]["level"], "text": f"Highest risk: {top}."})
+        reused = [x["name"] for x in v["checks"] if any(s["label"].startswith(("Selfie reused", "Same selfie")) for s in x["signs"])]
+        if reused:
+            h.append({"level": "high", "text": f"Selfie reused (confirmed by image comparison): {', '.join(reused[:4])}."})
+    if v["view"] == "hr" and v["data"] and (v["data"].get("not_in_staff_list") or v["data"].get("left_but_marked")):
+        h.append({"level": "low", "text": f"Data to fix: {len(v['data'].get('not_in_staff_list', []))} not on the staff list, "
+                                           f"{len(v['data'].get('left_but_marked', []))} marked attendance though Left."})
+    return h[:6]
 
 
 def _checks_summary(checks: list[dict]) -> list[dict]:
@@ -128,21 +161,12 @@ def email_text(v: dict) -> str:
     c = v["counts"]
     lines = [f"Dear {v['recipient']},", "",
              f"Field sales attendance for {v['weekday']}, {v['date_long']}: {v['n']} people.",
-             f"Attendance {v['pct'] if v['pct'] is not None else '-'}% | Present {c['PRESENT']} | Late {c['LATE']} | Half day {c['HALF_DAY']} | "
-             f"Leave {c['LEAVE']} | Week off {c['WEEK_OFF']} | Absent {c['ABSENT']}", ""]
-    if v["not_marked"]:
-        lines += [f"Absent / did not mark attendance ({len(v['not_marked'])}):"] + [f"- {p['name']} ({p['code']})" for p in v["not_marked"][:20]]
-        lines += [f"+ {len(v['not_marked']) - 20} more in the attachments."] * (len(v["not_marked"]) > 20) + [""]
-    if v["flagged"]:
-        lines += [f"Needs checking ({len(v['flagged'])}):"] + [f"- {p['name']} ({p['code']}): {', '.join(f['label'] for f in p['flags'])}"
-                                                               for p in v["flagged"][:20]]
-        lines += [f"+ {len(v['flagged']) - 20} more in the attachments."] * (len(v["flagged"]) > 20) + [""]
-    if v["checks"]:
-        lines += [f"Location & selfie checks ({len(v['checks'])}, highest risk first):"] + \
-                 [f"- {c['name']} ({c['code']}) risk {c['risk']}: {', '.join(s['label'] for s in c['signs'])}. {c['why']}" for c in v["checks"][:15]]
-        lines += [f"+ {len(v['checks']) - 15} more in the attachments."] * (len(v["checks"]) > 15)
-        lines += ["Open the HR Portal (Field Sales > Needs checking) for the map and the selfies.", ""]
-    lines += ["Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
+             f"Attendance {v['pct'] if v['pct'] is not None else '-'}% | Absent {c['ABSENT']} | Late {c['LATE']} | "
+             f"Needs checking {len(v['flagged'])}" + (f" | Location & selfie checks {len(v['checks'])}" if v["checks"] else ""), ""]
+    if v["highlights"]:
+        lines += ["Highlights:"] + [f"- {x['text']}" for x in v["highlights"]] + [""]
+    lines += ["Full lists, selfies and map links: the attached dashboard (open in Chrome or Edge) and Excel.",
+              "Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
     return "\n".join(lines)
 
 
@@ -224,6 +248,34 @@ def excel(v: dict) -> bytes:
         wc.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
         wc.freeze_panes(1, 3)
 
+    if v["proof"]:
+        wp = wb.add_worksheet("Proof")
+        link = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "valign": "top", "text_wrap": True})
+        top = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "top", "text_wrap": True})
+        cols = [("Risk", 6), ("Employee", 24), ("Warning signs and why", 52), ("Attendance selfie", 17), ("Matching selfie", 17), ("Where", 30)]
+        for j, (h, w) in enumerate(cols):
+            wp.write(0, j, h, head)
+            wp.set_column(j, j, w)
+        for i, x in enumerate(v["proof"], start=1):
+            wp.set_row(i, 132)
+            wp.write(i, 0, x["risk"], top)
+            wp.write(i, 1, f"{x['name']}\n{x['code']}\n{x['manager']}", top)
+            wp.write(i, 2, "\n".join(f"{s['kind']}: {s['label']}" for s in x["signs"]) + ("\n\n" + x["why"] if x["why"] else ""), top)
+            for j, (jpg, url, cap) in enumerate([(x["selfie_jpg"], x["selfie_url"], f"{v['date_long']}")] +
+                                                [(m["jpg"], m["url"], f"{m['name']} {m['date']}") for m in x["matches"][:1]], start=3):
+                if jpg:
+                    wp.insert_image(i, j, f"{cap}.jpg", {"image_data": io.BytesIO(jpg), "x_scale": 0.52, "y_scale": 0.52,
+                                                         "x_offset": 4, "y_offset": 4, "url": url, "object_position": 1})
+                elif url:
+                    wp.write_url(i, j, url, link, "Open selfie")
+            r_lines = [x["from_usual"]] if x["from_usual"] else []
+            wp.write(i, 5, "\n".join(r_lines) or "", top)
+            if x["att_map"]:
+                wp.write_url(i, 5, x["att_map"], link, ("\n".join(r_lines) + "\n" if r_lines else "") + "Attendance place on the map")
+        wp.write(len(v["proof"]) + 2, 0, "Selfies are small copies made for this workbook; click one to open the original on Bizom. "
+                                         "The HR Portal itself keeps no photos.", note)
+        wp.freeze_panes(1, 2)
+
     wn = wb.add_worksheet("Absent")
     for j, (h, w) in enumerate([("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 12), ("Manager", 24), ("Reason", 36)]):
         wn.write(0, j, h, head)
@@ -269,6 +321,9 @@ def excel(v: dict) -> bytes:
 # ---------------------------------------------------------------- dashboard
 def dashboard(v: dict) -> bytes:
     data = {"people": v["people"], "warnings": v["warnings"], "teams": v["teams"], "colors": COLORS, "labels": v["status_label"],
-            "checks": v["checks"]}
+            "checks": v["checks"],
+            "proof": [{k: x[k] for k in ("code", "name", "manager", "risk", "signs", "why", "selfie_url", "selfie_uri", "att_map", "eod_map",
+                                          "att_time", "from_usual")} | {"matches": [{k: m[k] for k in ("name", "date", "url", "uri")} for m in x["matches"]]}
+                      for x in v["proof"]]}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return _env.get_template("sales_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js).encode("utf-8")

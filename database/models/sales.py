@@ -103,6 +103,7 @@ class SalesEmployeeDay(Base):
     geo_flags: Mapped[str | None] = mapped_column(String(300))                         # location warning codes (app only for now)
     geo_evidence: Mapped[str | None] = mapped_column(Text)                             # JSON {code: "why, with distances"}
     photo_url: Mapped[str | None] = mapped_column(String(500))                         # attendance selfie link (6 months)
+    present_type: Mapped[str | None] = mapped_column(String(40))                       # Bizom Present_Type (HQ / EX-HQ work)
 
 
 class SalesMailItem(Base):
@@ -223,6 +224,7 @@ class SalesCase(Base):
     day: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN")   # OPEN | OK | ACTION
     note: Mapped[str | None] = mapped_column(String(1000))
+    reason: Mapped[str | None] = mapped_column(String(40))          # why: approved tour / GPS error / staff list wrong / real issue / other
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     reviewed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
@@ -237,6 +239,7 @@ class SalesHistoryDay(Base):
     code: Mapped[str] = mapped_column(String(30), nullable=False)
     day: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(12), nullable=False)        # present late halfday absent leave week_off not_marked
+    present_type: Mapped[str | None] = mapped_column(String(40))
     leave: Mapped[str | None] = mapped_column(String(40))
 
 

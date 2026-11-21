@@ -75,6 +75,8 @@ class SalesRules(BaseModel):
     # look-alike pairs are confirmed by comparing image details (ORB + RANSAC). Measured 2026-11-22: real reuse 73-126
     # matching details, different photos 0-12 (a same-wall background up to ~68 in one control pair).
     photo_confirm_points: int = 70
+    # warning signs switched off after the calibration review showed they are wrong most of the time
+    disabled_signs: list[str] = Field(default_factory=list)
     photo_dark: float = 40.0                      # average brightness (0-255) below this = too dark
     photo_blurry: float = 15.0                    # sharpness below this = too blurry to judge
     photo_time_hours: float = 2.0                 # time written in the photo this far from the attendance time

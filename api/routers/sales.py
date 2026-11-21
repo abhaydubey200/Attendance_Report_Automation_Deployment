@@ -404,6 +404,7 @@ def month_approve(month: str, body: ApproveIn, principal: Principal = Depends(re
 class CaseIn(BaseModel):
     status: str
     note: str | None = None
+    reason: str | None = None
 
 
 @router.get("/geo/{report_date}")
@@ -439,7 +440,7 @@ def case_review(report_date: date, code: str, body: CaseIn, principal: Principal
     if visible is not None and code not in visible:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found.")
     try:
-        return geo.review(db, code, report_date, body.status, body.note, principal.username)
+        return geo.review(db, code, report_date, body.status, body.note, principal.username, body.reason)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
 
@@ -505,3 +506,36 @@ def learning_relearn(_: Principal = Depends(require(Perm.MANAGE_SETTINGS)), db: 
     res = learning.learn(db)
     ml.rerisk(db)
     return res
+
+
+@router.get("/calibration")
+def calibration_sample(n: int = 50, principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    d0, d1 = _cases_range(db)
+    return geo.calibration(db, d0, d1, geo.visible_codes(db, principal), max(10, min(n, 200)))
+
+
+class SignSwitchIn(BaseModel):
+    code: str
+    off: bool
+
+
+@router.post("/learning/switch")
+def sign_switch(body: SignSwitchIn, principal: Principal = Depends(require(Perm.MANAGE_SETTINGS)), db: Session = Depends(get_db)) -> dict:
+    """Switch a warning sign off (or on again), then recheck the stored days so lists, scores and emails follow."""
+    from datetime import timedelta
+
+    from sales import learning, ml, photos
+    if body.code not in learning._all_signs():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown warning sign.")
+    rules = get_rules(db)
+    off = set(rules.disabled_signs)
+    off = off | {body.code} if body.off else off - {body.code}
+    save_rules(db, rules.model_copy(update={"disabled_signs": sorted(off)}), principal.username)
+    last = reports.default_range(db)[1]
+    for i in range(0, 62):                          # recheck the uploaded days of the last two months
+        d = last - timedelta(days=i)
+        if service.current_upload(db, d):
+            geo.check_day(db, d)
+    photos.check(db)
+    ml.rescore(db)
+    return learning.summary(db)

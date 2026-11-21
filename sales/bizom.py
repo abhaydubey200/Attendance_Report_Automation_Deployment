@@ -106,6 +106,16 @@ def latlng(v: str) -> tuple[float, float] | None:
     return (la, lo) if 5 <= la <= 38 and 66 <= lo <= 99 else None
 
 
+def work_place(present_type: str | None) -> str | None:
+    """'Retailing EX-HQ' -> 'EXHQ' (outstation), 'Retailing HQ' -> 'HQ', blank / other -> None."""
+    t = re.sub(r"[^A-Z]", "", (present_type or "").upper())
+    if t.endswith("EXHQ"):
+        return "EXHQ"
+    if t.endswith("HQ"):
+        return "HQ"
+    return None
+
+
 def coord(la: float | None, lo: float | None) -> tuple[float, float] | None:
     return (la, lo) if la is not None and lo is not None and 5 <= la <= 38 and 66 <= lo <= 99 else None
 
@@ -155,6 +165,7 @@ class AttendanceRow:
     active: bool
     photo_url: str | None = None
     location: tuple[float, float] | None = None
+    present_type: str | None = None       # Bizom "Present_Type": Retailing HQ / Retailing EX-HQ / Joint Working EX-HQ ...
 
 
 @dataclass
@@ -203,6 +214,7 @@ class HistoryRow:
     status: str | None = None             # present / late / halfday / absent / leave / week_off / not_marked
     leave: str | None = None
     photo_url: str | None = None
+    present_type: str | None = None
 
 
 
@@ -266,7 +278,8 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
             st = ("week_off" if leave.lower().startswith("weekly off") else "leave" if leave else
                   att if att in ("present", "late", "halfday", "absent") else "not_marked" if marked == "not marked" else None)
             out.append(HistoryRow(code, d, hhmm(g(r, "attendance time")), latlng(g(r, "location")), g(r, "imei") or None, st,
-                                  leave.replace("Causal", "Casual") or None, photo_link(raw(r, "attendance image"))))
+                                  leave.replace("Causal", "Casual") or None, photo_link(raw(r, "attendance image")),
+                                  g(r, "present_type")[:40] or None))
         if not out:
             raise BizomError(f"{LABEL[kind]}: no rows with an employee code and date.")
         return BizomFile(kind, max(dates), history=out, skipped=skipped)
@@ -288,7 +301,8 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
                 market_minutes=(s // 60 if (s := seconds(g(r, "time spent in market"))) is not None else None),
                 km=_num(g(r, "km_traveled")), end_time=hhmm(g(r, "end time")), variance_m=_num(g(r, "variance(metres)")),
                 photo=None if not photo else photo == "yes", active=g(r, "user_status").lower() != "inactive",
-                photo_url=photo_link(raw(r, "attendance image")), location=latlng(g(r, "location"))))
+                photo_url=photo_link(raw(r, "attendance image")), location=latlng(g(r, "location")),
+                present_type=g(r, "present_type")[:40] or None))
         return BizomFile(kind, d, attendance=out, skipped=skipped)
 
     if kind == EOD:

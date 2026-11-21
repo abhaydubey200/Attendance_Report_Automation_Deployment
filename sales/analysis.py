@@ -74,6 +74,7 @@ class PersonDay:
     att_location: tuple[float, float] | None = None      # where attendance was marked
     eod_location: tuple[float, float] | None = None      # where the day was ended
     photo_url: str | None = None
+    present_type: str | None = None                       # HQ / EX-HQ work that day (Bizom)
 
 
 def _match(rx: list[str], code: str) -> bool:
@@ -152,7 +153,7 @@ def warnings(p: PersonDay, rules: SalesRules, have_eod: bool, have_calls: bool) 
             f.append("BEAT_JUMP")
         if c.outside_hours:
             f.append("CALLS_AFTER_HOURS")
-    return sorted(f, key=lambda x: (LEVEL_ORDER[WARNINGS[x][1]], x))
+    return sorted((x for x in f if x not in rules.disabled_signs), key=lambda x: (LEVEL_ORDER[WARNINGS[x][1]], x))
 
 
 @dataclass
@@ -193,7 +194,7 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                       calls=(calls.calls.get(r.code) if calls else None),
                       att_location=(e.location if e and e.location else r.location),
                       eod_location=e.eod_location if e and st in WORKING else None,
-                      photo_url=r.photo_url or (e.photo_url if e else None))
+                      photo_url=r.photo_url or (e.photo_url if e else None), present_type=r.present_type)
         people.append(p)
     not_marked = 0
     if rules.not_marked_is_absent:

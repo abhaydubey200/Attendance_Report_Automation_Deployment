@@ -159,10 +159,42 @@ def summary(session: Session, st: dict | None = None) -> dict:
                      "weight": round(st["model"]["coef"].get(code, 0.0), 2) if st.get("model") else None})
     rows.sort(key=lambda r: (-r["reviewed"], ("high", "medium", "low").index(r["level"]), r["label"]))
     m = st.get("model")
-    return {"labels": st.get("labels", 0), "updated_at": st.get("updated_at"),
+    from sales.config import get_rules
+    off = set(get_rules(session).disabled_signs)
+    weak = set(weak_signs(st))
+    for r in rows:
+        r["switched_off"], r["suggest_off"] = r["code"] in off, r["code"] in weak and r["code"] not in off
+    return {"labels": st.get("labels", 0), "updated_at": st.get("updated_at"), "reasons": REASONS,
             "mode": "model" if m else "feedback", "model": {k: m[k] for k in ("trained_on", "auc", "trained_at")} if m else None,
             "needed_for_model": {"reviews": MODEL_MIN, "each_outcome": MODEL_MIN_EACH}, "signs": rows}
 
 
 def last_review_day(session: Session) -> date | None:
     return session.scalar(select(SalesCase.day).order_by(SalesCase.day.desc()).limit(1))
+
+
+# ---------------------------------------------------------------- track record + calibration
+REASONS = {"APPROVED_TOUR": "Approved tour / outstation", "GPS_ERROR": "GPS or app error", "DATA_WRONG": "Staff list or data wrong",
+           "REAL_ISSUE": "Real issue", "OTHER": "Other"}
+WEAK_BELOW, WEAK_MIN_REVIEWS = 25, 5             # a sign right < 25 % of the time over 5+ reviews is suggested for switching off
+
+
+def record(st: dict, code: str) -> str | None:
+    s = st.get("signs", {}).get(code, {})
+    n = s.get("action", 0) + s.get("ok", 0)
+    return f"right {s.get('action', 0)} of {n} times when checked" if n >= 3 else None
+
+
+def add_records(st: dict, signs: list[dict]) -> list[dict]:
+    for s in signs:
+        s["record"] = record(st, s["code"])
+    return signs
+
+
+def weak_signs(st: dict) -> list[str]:
+    out = []
+    for code, s in st.get("signs", {}).items():
+        n = s.get("action", 0) + s.get("ok", 0)
+        if n >= WEAK_MIN_REVIEWS and 100 * s.get("action", 0) / n < WEAK_BELOW:
+            out.append(code)
+    return out

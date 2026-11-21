@@ -8,8 +8,9 @@ import { api } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
-import type { GeoCall, GeoCase, GeoCaseRow, GeoCases, GeoDayMap, GeoLevel, GeoSign, LearningSummary } from "./types";
+import type { Calibration, GeoCall, GeoCase, GeoCaseRow, GeoCases, GeoDayMap, GeoLevel, GeoSign, LearningSummary } from "./types";
 import { DayPhotosCard, PhotoSigns } from "./photos";
+import { useAuth } from "../auth/AuthContext";
 
 const LEVEL_KIND: Record<GeoLevel, "fail" | "warn" | "info"> = { high: "fail", medium: "warn", low: "info" };
 const CASE_KIND = { OPEN: "warn", OK: "ok", ACTION: "fail" } as const;
@@ -30,7 +31,7 @@ export function RiskBadge({ risk }: { risk: number }) {
 function Signs({ signs }: { signs: GeoSign[] }) {
   return (
     <span className="sales-flags">
-      {signs.map((s) => <span key={s.code} className={`badge badge-${LEVEL_KIND[s.level]}`} title={s.evidence || s.why}>{s.label}</span>)}
+      {signs.map((s) => <span key={s.code} className={`badge badge-${LEVEL_KIND[s.level]}`} title={[s.evidence || s.why, s.record ? `Track record: ${s.record}` : ""].filter(Boolean).join(" · ")}>{s.label}</span>)}
     </span>
   );
 }
@@ -161,7 +162,7 @@ export function SalesMapPage() {
                   <ul className="geo-signs">
                     {[...loc, ...photoSigns, ...day].map((s) => (
                       <li key={s.code}><span className={`badge badge-${LEVEL_KIND[s.level]}`}>{s.kind === "location" ? "Location" : s.kind === "photo" ? "Selfie" : "Day"}</span>
-                        <div><strong>{s.label}</strong><div className="small">{s.evidence || s.why}</div></div></li>
+                        <div><strong>{s.label}</strong><div className="small">{s.evidence || s.why}</div>{s.record && <div className="muted small">Track record: {s.record}</div>}</div></li>
                     ))}
                   </ul>
                 )}
@@ -189,12 +190,14 @@ export function SalesMapPage() {
 
 function ReviewCard({ date, code, initial }: { date: string; code: string; initial: GeoCase }) {
   const [status, setStatus] = useState(initial.status);
+  const [reason, setReason] = useState(initial.reason ?? "");
+  const reasons = useApi<LearningSummary>("/v1/sales/learning").data?.reasons ?? {};
   const [note, setNote] = useState(initial.note ?? "");
   const [saved, setSaved] = useState<GeoCase>(initial);
   const { busy, error, message, run } = useAction();
   async function save(e: FormEvent) {
     e.preventDefault();
-    const r = await run(() => api.put<GeoCase>(`/v1/sales/cases/${date}/${encodeURIComponent(code)}`, { status, note }), "Review saved.");
+    const r = await run(() => api.put<GeoCase>(`/v1/sales/cases/${date}/${encodeURIComponent(code)}`, { status, note, reason: status === "OPEN" ? null : reason || null }), "Review saved.");
     if (r) setSaved(r);
   }
   return (
@@ -205,6 +208,13 @@ function ReviewCard({ date, code, initial }: { date: string; code: string; initi
             <option value="OPEN">Open – not checked yet</option><option value="OK">Checked – OK</option><option value="ACTION">Action taken</option>
           </select>
         </Field>
+        {status !== "OPEN" && (
+          <Field label="Reason" hint="Helps measure how accurate each warning sign is.">
+            <select value={reason} onChange={(e) => setReason(e.target.value)}>
+              <option value="">Choose…</option>{Object.entries(reasons).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Note"><textarea rows={3} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} placeholder="What was found when checking" /></Field>
         <ActionMessages error={error} message={message} />
         <Toolbar>
@@ -294,6 +304,13 @@ export function HistoryImportCard() {
 function LearningPanel() {
   const data = useApi<LearningSummary>("/v1/sales/learning");
   const [open, setOpen] = useState(false);
+  const { busy, error, message, run } = useAction();
+  const { hasPermission } = useAuth();
+  const canSwitch = hasPermission("MANAGE_SETTINGS");
+  async function toggle(code: string, off: boolean) {
+    await run(() => api.post("/v1/sales/learning/switch", { code, off }), off ? "Switched off - the days were checked again." : "Switched on again.");
+    data.reload();
+  }
   const d = data.data;
   if (!d) return null;
   const reviewed = d.signs.filter((s) => s.reviewed > 0);
@@ -304,7 +321,10 @@ function LearningPanel() {
           ? <>A model trained on <b>{d.model?.trained_on}</b> reviews sets the risk score{d.model?.auc ? <> (accuracy check: AUC {d.model.auc})</> : null}.</>
           : <>Learning from <b>{d.labels}</b> review{d.labels === 1 ? "" : "s"}. A full model takes over after {d.needed_for_model.reviews} reviews with at least {d.needed_for_model.each_outcome} of each outcome.</>}
         {" "}Cases marked <i>helps the model learn</i> have signs with few reviews; they are shown a little higher so the score learns faster.
+        {" "}<Link to="/sales/calibration">Calibration review</Link> measures each sign quickly.
       </p>
+      {d.signs.some((s) => s.suggest_off) && <Notice kind="warn">Wrong most of the time when checked: {d.signs.filter((s) => s.suggest_off).map((s) => s.label).join(", ")}. Consider switching {d.signs.filter((s) => s.suggest_off).length === 1 ? "it" : "them"} off.</Notice>}
+      <ActionMessages error={error} message={message} />
       {open && (
         <DataTable rows={reviewed.length ? d.signs : d.signs.slice(0, 12)} rowKey={(s) => s.code} columns={[
           { header: "Warning sign", render: (s) => s.label, value: (s) => s.label },
@@ -312,8 +332,62 @@ function LearningPanel() {
           { header: "Reviews", render: (s) => s.reviewed ? `${s.reviewed} (${s.action} action, ${s.ok} OK)` : "–", value: (s) => s.reviewed },
           { header: "Right at the start", render: (s) => `${s.start}%`, value: (s) => s.start },
           { header: "Right now (learned)", render: (s) => <b style={{ color: s.learned > s.start ? "#b91c1c" : s.learned < s.start ? "#15803d" : undefined }}>{s.learned}%</b>, value: (s) => s.learned },
+          { header: "", sortable: false, render: (s) => (s.switched_off
+            ? <>{"Switched off "}{canSwitch && <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => void toggle(s.code, false)}>Switch on</button>}</>
+            : canSwitch ? <button type="button" className={`btn btn-small ${s.suggest_off ? "btn-primary" : "btn-ghost"}`} disabled={busy} onClick={() => void toggle(s.code, true)}>Switch off</button> : null) },
         ]} />
       )}
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------- calibration review
+export function SalesCalibrationPage() {
+  const data = useApi<Calibration>("/v1/sales/calibration?n=50");
+  const reasons = useApi<LearningSummary>("/v1/sales/learning").data?.reasons ?? {};
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const { busy, error, message, run } = useAction();
+  const d = data.data;
+  async function save(c: GeoCaseRow, status: "OK" | "ACTION") {
+    const key = `${c.date}|${c.code}`;
+    if (!pick[key]) return;
+    await run(() => api.put(`/v1/sales/cases/${c.date}/${encodeURIComponent(c.code)}`, { status, reason: pick[key], note: null }),
+      `${c.name}: ${status === "ACTION" ? "action taken" : "checked – OK"}.`);
+    data.reload();
+  }
+  return (
+    <>
+      <PageHeader title="Calibration review" subtitle="Review a sample that covers every kind of warning sign. Each answer measures how often that sign is right; signs that are mostly wrong can then be switched off." />
+      <ActionMessages error={error} message={message} />
+      {data.error && <ErrorNotice error={data.error} />}
+      {!d ? <Loading /> : (
+        <>
+          <div className="kpi-grid">
+            <KpiCard label="Reviewed with a reason" value={`${d.reviewed_with_reason} / ${d.target}`} tone={d.reviewed_with_reason >= d.target ? "ok" : "warn"} hint="target for a first calibration" />
+            <KpiCard label="Kinds of sign in this sample" value={d.sign_kinds} />
+            <KpiCard label="Open cases in the sample" value={d.cases.length} hint={`${formatDate(d.from)} – ${formatDate(d.to)}`} />
+          </div>
+          <Card title="Sample to review">
+            <p className="muted small">Open the day, check with the person or the team head, then choose the reason and the outcome. Reviewed cases leave the list and the next ones come in.</p>
+            <DataTable rows={d.cases} rowKey={(c) => `${c.date}|${c.code}`} empty="Nothing left to review in this period." columns={[
+              { header: "Risk", render: (c) => <RiskBadge risk={c.risk} />, value: (c) => c.risk },
+              { header: "Employee", render: (c) => <Link to={`/sales/map?${qs({ date: c.date, code: c.code })}`}><strong>{c.name}</strong> <span className="muted">{formatDate(c.date)}</span></Link>, value: (c) => c.name },
+              { header: "Warning signs", render: (c) => <><Signs signs={c.signs} /><PhotoSigns signs={c.photo_signs} />{[...c.signs, ...c.photo_signs].slice(0, 2).map((s) => s.evidence && <span key={s.code} className="cell-sub">{s.evidence}</span>)}</>,
+                value: (c) => [...c.signs, ...c.photo_signs].map((s) => s.label).join("; ") },
+              { header: "Reason", sortable: false, render: (c) => (
+                <select value={pick[`${c.date}|${c.code}`] ?? ""} onChange={(e) => setPick({ ...pick, [`${c.date}|${c.code}`]: e.target.value })} aria-label={`Reason for ${c.name}`}>
+                  <option value="">Choose…</option>{Object.entries(reasons).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>) },
+              { header: "Outcome", sortable: false, render: (c) => (
+                <span className="row-actions">
+                  <button type="button" className="btn btn-ghost btn-small" disabled={busy || !pick[`${c.date}|${c.code}`]} onClick={() => void save(c, "OK")}>Checked – OK</button>
+                  <button type="button" className="btn btn-ghost btn-small" disabled={busy || !pick[`${c.date}|${c.code}`]} onClick={() => void save(c, "ACTION")}>Action taken</button>
+                </span>) },
+            ]} />
+          </Card>
+          <LearningPanel />
+        </>
+      )}
+    </>
   );
 }

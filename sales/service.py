@@ -92,7 +92,8 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
             calls=c.calls if c else None, productive_calls=c.productive if c else None, short_calls=c.short if c else None,
             telephonic_calls=c.telephonic if c else None, beat_jump_calls=c.beat_jump if c else None, far_calls=c.far if c else None,
             max_call_distance_m=c.max_distance_m if c else None, fast_moves=c.fast_moves if c else None,
-            order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None, photo_url=p.photo_url))
+            order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None, photo_url=p.photo_url,
+            present_type=p.present_type))
     session.flush()
     geo.store_day(session, up, result.people, found.get(bizom.CALLS, (None, None, None))[2])
     from sales import photos

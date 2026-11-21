@@ -117,14 +117,14 @@ export interface SalesMonthMail { month: string; label: string; mode: "test" | "
 
 // ---------------------------------------------------------------- location checks
 export type GeoLevel = "high" | "medium" | "low";
-export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" | "photo" }
+export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" | "photo"; record?: string | null }
 export interface GeoPoint { lat: number; lng: number; time: string | null }
 export interface GeoCall {
   seq: number; start: string | null; end: string | null; duration_s: number | null; lat: number | null; lng: number | null;
   outlet: string | null; outlet_lat: number | null; outlet_lng: number | null; beat: string | null; distance_m: number | null;
   productive: boolean; away: boolean; fast: boolean; leg: { km: number; minutes: number; kmh: number } | null;
 }
-export interface GeoCase { code: string; date: string; status: "OPEN" | "OK" | "ACTION"; status_label: string; note: string; reviewed_by: string | null; reviewed_at: string | null }
+export interface GeoCase { code: string; date: string; status: "OPEN" | "OK" | "ACTION"; status_label: string; note: string; reason: string | null; reviewed_by: string | null; reviewed_at: string | null }
 export interface GeoDayMap {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; status: SalesStatus;
   attendance_time: string | null; eod_time: string | null; km: number | null; market_minutes: number | null; photo_url: string | null;
@@ -158,5 +158,8 @@ export interface LearningSummary {
   labels: number; updated_at: string | null; mode: "feedback" | "model";
   model: { trained_on: number; auc: number | null; trained_at: string } | null;
   needed_for_model: { reviews: number; each_outcome: number };
-  signs: { code: string; label: string; level: GeoLevel; reviewed: number; action: number; ok: number; start: number; learned: number; weight: number | null }[];
+  signs: { code: string; label: string; level: GeoLevel; reviewed: number; action: number; ok: number; start: number; learned: number; weight: number | null;
+    switched_off: boolean; suggest_off: boolean }[];
+  reasons: Record<string, string>;
 }
+export interface Calibration { from: string; to: string; cases: GeoCaseRow[]; reviewed_with_reason: number; target: number; sign_kinds: number }

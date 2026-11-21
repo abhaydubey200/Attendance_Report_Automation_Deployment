@@ -225,3 +225,50 @@ class SalesCase(Base):
     note: Mapped[str | None] = mapped_column(String(1000))
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     reviewed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SalesHistoryDay(Base):
+    """Attendance status per person per day from Bizom's multi-day AttendanceReport (days without a full daily upload)."""
+    __tablename__ = "sales_history_day"
+    __table_args__ = (UniqueConstraint("code", "day", name="uq_sales_history_day"), Index("ix_sales_history_day_day", "day"),
+                      {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)        # present late halfday absent leave week_off not_marked
+    leave: Mapped[str | None] = mapped_column(String(40))
+
+
+class SalesClaim(Base):
+    """One expense claim line (Bizom Claim report) and the claim warning signs. Photo links are cleared after keep_months."""
+    __tablename__ = "sales_claim"
+    __table_args__ = (UniqueConstraint("detail_id", name="uq_sales_claim_detail"), Index("ix_sales_claim_day_code", "day", "code"),
+                      {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    detail_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    claim_id: Mapped[str | None] = mapped_column(String(40))
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    designation: Mapped[str | None] = mapped_column(String(60))
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    submit_date: Mapped[date | None] = mapped_column(Date)
+    claim_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    present_type: Mapped[str | None] = mapped_column(String(60))
+    mode: Mapped[str | None] = mapped_column(String(40))
+    from_place: Mapped[str | None] = mapped_column(String(120))
+    to_place: Mapped[str | None] = mapped_column(String(120))
+    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    approved_amount: Mapped[float | None] = mapped_column(Float)
+    approval_status: Mapped[str | None] = mapped_column(String(60))
+    approver: Mapped[str | None] = mapped_column(String(120))
+    images: Mapped[str | None] = mapped_column(Text)                         # JSON {document, bill_1, bill_2, odometer_start, odometer_end}
+    calls: Mapped[int | None] = mapped_column(Integer)
+    orders: Mapped[int | None] = mapped_column(Integer)
+    sales_value: Mapped[float | None] = mapped_column(Float)
+    market_minutes: Mapped[int | None] = mapped_column(Integer)
+    flags: Mapped[str | None] = mapped_column(String(300))
+    evidence: Mapped[str | None] = mapped_column(Text)                       # JSON {code: why}
+    imported_by: Mapped[str | None] = mapped_column(String(100))
+    imported_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)

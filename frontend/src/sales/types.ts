@@ -65,7 +65,8 @@ export interface SalesRules {
   geo_same_spot_min_calls: number; geo_cluster_m: number; geo_cluster_outlets: number; geo_cluster_outlet_far_m: number;
   geo_km_ratio: number; geo_km_extra: number; geo_start_away_km: number; geo_start_history_days: number; geo_start_min_days: number;
   geo_end_away_km: number; geo_offbeat_min: number; geo_together_m: number; geo_together_minutes: number; geo_together_share: number;
-  geo_together_min_calls: number;
+  geo_together_min_calls: number; claim_high_ratio: number; claim_high_extra: number; claim_high_min_peers: number;
+  claim_short_market_minutes: number; claim_base_km: number;
 }
 
 export interface SalesEmailSettings {
@@ -116,7 +117,7 @@ export interface SalesMonthMail { month: string; label: string; mode: "test" | "
 
 // ---------------------------------------------------------------- location checks
 export type GeoLevel = "high" | "medium" | "low";
-export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" }
+export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" | "claim" }
 export interface GeoPoint { lat: number; lng: number; time: string | null }
 export interface GeoCall {
   seq: number; start: string | null; end: string | null; duration_s: number | null; lat: number | null; lng: number | null;
@@ -128,11 +129,22 @@ export interface GeoDayMap {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; status: SalesStatus;
   attendance_time: string | null; eod_time: string | null; km: number | null; market_minutes: number | null; photo_url: string | null;
   attendance: GeoPoint | null; day_end: GeoPoint | null; usual_start: { lat: number; lng: number; days: number; limit_km: number } | null;
-  calls: GeoCall[]; signs: GeoSign[]; case: GeoCase;
+  calls: GeoCall[]; signs: GeoSign[]; case: GeoCase; claims: ClaimLine[];
 }
 export interface GeoCaseRow {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; signs: GeoSign[]; other_signs: string[];
-  high: number; case: GeoCase;
+  high: number; case: GeoCase; claim_signs: GeoSign[]; claim_amount: number;
 }
 export interface GeoCases { from: string; to: string; cases: GeoCaseRow[]; hods: string[]; labels: Record<string, string> }
 export interface SalesGeoSummary { people: number; signs: { code: string; label: string; level: GeoLevel; n: number }[]; points: boolean; calls: boolean }
+
+// ---------------------------------------------------------------- expense claims
+export interface ClaimLine {
+  id: string; claim_id: string | null; code: string; name: string; designation: string; date: string; submitted: string | null; type: string;
+  present_type: string; mode: string; from: string; to: string; amount: number; approved: number | null; status: string; approver: string;
+  images: Record<string, string>; calls: number | null; orders: number | null; market_minutes: number | null; signs: GeoSign[];
+}
+export interface ClaimsOverview {
+  from: string; to: string; lines: number; amount: number; flagged_lines: number; flagged_amount: number; people: number;
+  signs: { code: string; label: string; level: GeoLevel; why: string; n: number; amount: number }[]; claims: ClaimLine[]; shown: number;
+}

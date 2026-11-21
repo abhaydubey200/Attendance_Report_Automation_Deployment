@@ -114,3 +114,5 @@
 .sales-module .geo-signs { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
 .sales-module .geo-signs li { display: flex; gap: .6rem; align-items: flex-start; }
 @media (max-width: 900px) { .sales-module .geo-layout { grid-template-columns: minmax(0, 1fr); } .sales-module .geo-map { height: 380px; } }
+
+.sales-module .cell-sub { display: block; font-size: .8rem; color: var(--muted); margin-top: 2px; max-width: 46ch; }

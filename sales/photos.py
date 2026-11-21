@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import re
+import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
@@ -106,16 +107,16 @@ def phash(gray) -> str:
     return f"{int(''.join('1' if b else '0' for b in bits), 2):016x}"
 
 
-_FACES = None
+_LOCAL = threading.local()
 
 
 def _detectors():
-    global _FACES
-    if _FACES is None:
+    """One pair of face detectors per thread: OpenCV's cascade classifier must not be shared between threads."""
+    if getattr(_LOCAL, "faces", None) is None:
         import cv2
-        _FACES = (cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml"),
-                  cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml"))
-    return _FACES
+        _LOCAL.faces = (cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml"),
+                        cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml"))
+    return _LOCAL.faces
 
 
 def count_faces(gray) -> int:

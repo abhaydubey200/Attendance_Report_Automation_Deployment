@@ -15,7 +15,7 @@ from core.config import Settings
 from daily.branding import inline_logo_for_browser
 from database.models.sales import SalesMailItem
 from sales.util import utc_iso
-from sales import bizom, claims, geo, jobs, mail, monthly, report, reports, service, staff
+from sales import bizom, claims, geo, jobs, mail, monthly, photos, report, reports, service, staff
 from sales.config import SalesEmail, SalesRules, get_email, get_rules, save_email, save_rules
 from security.permissions import Perm, Principal
 
@@ -465,3 +465,26 @@ def claims_overview(start: date | None = None, end: date | None = None, sign: st
                     principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
     d0, d1 = _claims_range(db)
     return claims.overview(db, start or d0, end or d1, geo.visible_codes(db, principal), sign, q)
+
+
+# ---------------------------------------------------------------- selfie checks
+class PhotoRunIn(BaseModel):
+    limit: int = 300
+
+
+@router.get("/photos")
+def photos_overview(start: date | None = None, end: date | None = None, sign: str = "",
+                    principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from database.models.sales import SalesPhoto
+    last = db.scalar(select(func.max(SalesPhoto.day)))
+    d1 = end or last or reports.default_range(db)[1]
+    return photos.overview(db, start or d1 - timedelta(days=30), d1, geo.visible_codes(db, principal), sign)
+
+
+@router.post("/photos/run")
+def photos_run(body: PhotoRunIn, _: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), engine=Depends(get_engine)) -> dict:
+    return photos.fetch(engine, max(1, min(body.limit, 1000)))

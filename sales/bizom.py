@@ -203,6 +203,7 @@ class HistoryRow:
     imei: str | None                      # raw only in memory; stored scrambled
     status: str | None = None             # present / late / halfday / absent / leave / week_off / not_marked
     leave: str | None = None
+    photo_url: str | None = None
 
 
 @dataclass
@@ -322,7 +323,7 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
             st = ("week_off" if leave.lower().startswith("weekly off") else "leave" if leave else
                   att if att in ("present", "late", "halfday", "absent") else "not_marked" if marked == "not marked" else None)
             out.append(HistoryRow(code, d, hhmm(g(r, "attendance time")), latlng(g(r, "location")), g(r, "imei") or None, st,
-                                  leave.replace("Causal", "Casual") or None))
+                                  leave.replace("Causal", "Casual") or None, photo_link(raw(r, "attendance image"))))
         if not out:
             raise BizomError(f"{LABEL[kind]}: no rows with an employee code and date.")
         return BizomFile(kind, max(dates), history=out, skipped=skipped)

@@ -71,6 +71,13 @@ class SalesRules(BaseModel):
     claim_high_min_peers: int = 20                # need this many claims of that type and role to know "usual"
     claim_short_market_minutes: int = 60          # travel / allowance claimed with less time than this in market
     claim_base_km: float = 15.0                   # outstation allowance while attendance was this close to the usual start
+    # photo checks (sales.photos): selfies are downloaded from Bizom's image server, fingerprinted in memory, never stored
+    photo_downloads: bool = True
+    photo_batch: int = 3000                       # photos fetched per run (daily job / "Check photos now")
+    photo_same_bits: int = 6                      # perceptual-hash bits that may differ for "nearly identical"
+    photo_dark: float = 40.0                      # average brightness (0-255) below this = too dark
+    photo_blurry: float = 15.0                    # sharpness below this = too blurry to judge
+    photo_time_hours: float = 2.0                 # time written in the photo this far from the attendance time
 
     @field_validator("late_after", "half_day_from", "calls_after")
     @classmethod

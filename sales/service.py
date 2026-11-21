@@ -97,6 +97,8 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
             order_value=round(c.order_value, 2) if c else None, flags=",".join(p.flags) or None, photo_url=p.photo_url))
     session.flush()
     geo.store_day(session, up, result.people, found.get(bizom.CALLS, (None, None, None))[2])
+    from sales import photos
+    photos.register_day(session, up)                      # selfies to check (downloaded later by the photo job)
     geo.check_day(session, day)
     geo.purge(session)
     mail.plan(session, up)

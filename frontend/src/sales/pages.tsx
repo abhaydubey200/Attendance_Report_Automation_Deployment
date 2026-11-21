@@ -488,6 +488,17 @@ export function SalesSettingsPage() {
             <Field label="Outstation allowance: never left base within (km)">{num("claim_base_km")}</Field>
           </div>
         </Card>
+        <Card title="Selfie checks" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}
+          onClick={() => void run(() => api.put("/v1/sales/settings/rules", rules), "Saved. They apply to the next photo check.")}>Save</button>}>
+          <label className="check"><input type="checkbox" checked={rules.photo_downloads} onChange={(e) => setRules({ ...rules, photo_downloads: e.target.checked })} /> Download and check selfies from Bizom (only fingerprints are kept)</label>
+          <div className="form-grid">
+            <Field label="Selfies checked per run">{num("photo_batch")}</Field>
+            <Field label="Nearly identical: bits that may differ (0-7)">{num("photo_same_bits")}</Field>
+            <Field label="Too dark below (brightness 0-255)">{num("photo_dark")}</Field>
+            <Field label="Too blurry below (sharpness)">{num("photo_blurry")}</Field>
+            <Field label="Photo time vs attendance (hours)">{num("photo_time_hours")}</Field>
+          </div>
+        </Card>
       </div>
     </>
   );

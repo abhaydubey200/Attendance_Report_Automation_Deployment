@@ -29,6 +29,7 @@ class EmployeeIn(BaseModel):
     hod_name: str | None = None
     hod_email: str | None = None
     team_lead_email: str | None = None
+    also_to: str | None = None
     reporting_manager: str | None = None
 
 
@@ -127,7 +128,7 @@ async def import_file(file: UploadFile = File(...), principal: Principal = Depen
 @router.get("/employees/export")
 def export(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     """Same columns as HR's import file (plus Status / Last working day), so it can be edited and re-imported."""
-    head = ["EMPLOYEE CODE", "Employee Name", "Department", "DOJ", "HOD", "Email ID - HOD", "Sub split ID",
+    head = ["EMPLOYEE CODE", "Employee Name", "Department", "DOJ", "HOD", "Email ID - HOD", "Sub split ID", "Also send to",
             "Reporting Manager", "Team", "Status", "Last working day"]
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
@@ -138,7 +139,7 @@ def export(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = De
     for i, e in enumerate(emp.list_all(db), start=1):
         d = emp.to_dict(e)
         vals = [d["code"], d["name"], d["department"], d["date_of_joining"] or "", d["hod_name"], d["hod_email"],
-                d["team_lead_email"], d["reporting_manager"], d["team"], "Left" if d["status"] == emp.LEFT else "Active",
+                d["team_lead_email"], d["also_to"], d["reporting_manager"], d["team"], "Left" if d["status"] == emp.LEFT else "Active",
                 d["exit_date"] or ""]
         for j, v in enumerate(vals):
             ws.write_string(i, j, str(v))

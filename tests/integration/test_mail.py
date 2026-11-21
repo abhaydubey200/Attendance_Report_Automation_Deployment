@@ -566,3 +566,27 @@ def test_no_email_when_the_whole_team_is_on_week_off_or_holiday(engine, settings
         assert by["lead.a@example.com"].status == mail.DISABLED and "week off / holiday" in by["lead.a@example.com"].note
         assert "week off / holiday" in by["lead.a@example.com"].subject and "all present" not in by["lead.a@example.com"].subject
         assert mail.approve(s, settings, DAY, "tester") == [] or all(i.recipient_key == "HR" for i in mail.approve(s, settings, DAY, "t"))
+
+
+def test_second_hod_also_gets_the_person_counted_once(engine, settings):
+    """Someone who works for two HODs: both get them in their normal team list; reports count them once (first HOD)."""
+    with session_scope(engine) as s:
+        load(s, settings)
+        e = emp.update(s, "T4", {"also_to": "ARUN@example.com"}, "tester")
+        assert e.also_to == "arun@example.com"
+        with pytest.raises(emp.EmployeeError):
+            emp.update(s, "T4", {"also_to": "not-an-email"}, "tester")
+        r = {x.code: x for x in routing.routes(s)}
+        assert r["T4"].detail_to == "rahul@example.com" and r["T4"].summary_to == "rahul@example.com" and r["T4"].also_to == ["arun@example.com"]
+        recs = {x.key: x for x in routing.recipients(s, get_email_settings(s, settings))}
+        assert "T4" in {x.code for x in recs["rahul@example.com"].team} and "T4" in {x.code for x in recs["arun@example.com"].team}
+        assert recs["rahul@example.com"].role == "HOD"                            # Rahul's email layout unchanged
+        ov = routing.overview(s, get_email_settings(s, settings))
+        assert ov["employees"] == 6 and ov["unique"]                               # still one route per person
+        # held people stay with HR only, even with an extra address
+        emp.update(s, "C1", {"also_to": "rahul@example.com"}, "tester")
+        assert routing.route_employee(emp.get(s, "C1")).also_to == []
+        # a re-import without the column keeps the extra address
+        emp.import_rows(s, [{"code": "T4", "name": "No Sub Split", "hod_name": "RAHUL SHARMA", "hod_email": "rahul@example.com"}], "tester")
+        assert emp.get(s, "T4").also_to == "arun@example.com"
+        assert emp.to_dict(emp.get(s, "T4"))["also_to"] == "arun@example.com"

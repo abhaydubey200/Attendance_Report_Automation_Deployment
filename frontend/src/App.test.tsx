@@ -261,7 +261,7 @@ test("server unreachable shows a retry screen", async () => {
 
 const EMP = (code: string, name: string, dept: string, hod: string, team: string, status: "ACTIVE" | "LEFT" = "ACTIVE"): Employee => ({
   id: 1, code, name, department: dept, date_of_joining: null, hod_name: hod, hod_email: hod ? `${hod.split(" ")[0].toLowerCase()}@example.com` : "",
-  team_lead_email: "", team, reporting_manager: "Mohan", status, exit_date: status === "LEFT" ? "2026-10-31" : null, source: "IMPORT",
+  team_lead_email: "", also_to: "", team, reporting_manager: "Mohan", status, exit_date: status === "LEFT" ? "2026-10-31" : null, source: "IMPORT",
   updated_at: null, updated_by: null, routing_issue: "",
 });
 const EMPLOYEES: EmployeeList = {

@@ -28,7 +28,7 @@ function hodLabelOf(name: string, email: string, shared: Set<string>): string {
 
 const FIELD_LABELS: Record<string, string> = {
   routing_issue: "Routing issue", name: "Name", department: "Department", date_of_joining: "Date of joining", hod_name: "HOD", hod_email: "HOD email",
-  team_lead_email: "Team lead email", reporting_manager: "Reporting manager", status: "Status", exit_date: "Last working day",
+  team_lead_email: "Team lead email", also_to: "Also send to", reporting_manager: "Reporting manager", status: "Status", exit_date: "Last working day",
 };
 
 function countBy(rows: Employee[], key: (e: Employee) => string): [string, number][] {
@@ -56,6 +56,7 @@ interface Draft {
   hod_name: string;
   hod_email: string;
   team_lead_email: string;
+  also_to: string;
   reporting_manager: string;
   routing_issue: string;
 }
@@ -64,6 +65,7 @@ function toDraft(e?: Employee): Draft {
   return {
     code: e?.code ?? "", name: e?.name ?? "", department: e?.department ?? "", date_of_joining: e?.date_of_joining ?? "",
     hod_name: e?.hod_name ?? "", hod_email: e?.hod_email ?? "", team_lead_email: e?.team_lead_email ?? "",
+    also_to: e?.also_to ?? "",
     reporting_manager: e?.reporting_manager ?? "",
     routing_issue: e?.routing_issue ?? "",
   };
@@ -143,6 +145,9 @@ function EmployeeEditor({ employee, list, canEdit, onDone, onClose }: {
         <Field label="HOD email" hint="Receives this HOD's daily report."><input type="email" value={d.hod_email} disabled={ro} onChange={(e) => set({ hod_email: e.target.value })} /></Field>
         <Field label="Team lead email (Sub split ID)" hint="Blank = reports directly to the HOD.">
           <input type="email" value={d.team_lead_email} disabled={ro} onChange={(e) => set({ team_lead_email: e.target.value })} />
+        </Field>
+        <Field label="Also send to (second HOD)" hint="Optional. Email(s) that also get this person in their daily team email, e.g. when someone works for two HODs. Reports still count them under the HOD above.">
+          <input value={d.also_to} disabled={ro} placeholder="amit@apisindia.com" onChange={(e) => set({ also_to: e.target.value })} />
         </Field>
         <Field label="Reporting manager" hint="For information only; the team lead email decides who gets the email.">
           <input list="dl-managers" value={d.reporting_manager} disabled={ro} onChange={(e) => set({ reporting_manager: e.target.value })} />

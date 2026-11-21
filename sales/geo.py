@@ -458,8 +458,17 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
                     "signs": [s for s in signs if s["kind"] == "location"], "photo_signs": list(psigns.values()),
                     "other_signs": [s["label"] for s in signs if s["kind"] == "day"],
                     "high": sum(1 for s in signs + list(psigns.values()) if s["level"] == "high"), "case": c,
-                    "risk": sc["risk"]})
-    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -x["risk"], -x["high"], x["date"], x["name"]))
+                    "risk": sc["risk"], "_anomaly": sc["anomaly"], "_unusual": sc["unusual"]})
+    # exploration: open cases are ordered by an optimistic risk, so signs with few reviews are seen (and learned) sooner
+    from sales import learning
+    st = learning.state(session)
+    lvl = ml._signs(session, start, end)
+    for x in out:
+        sl = lvl.get((x["code"], date.fromisoformat(x["date"])), [])
+        x["explore"] = learning.risk(st, sl, x.pop("_anomaly"), x["_unusual"], explore=True)
+        x["learning"] = learning.needs_reviews(st, sl, x.pop("_unusual"))
+    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -(x["explore"] if x["case"]["status"] == OPEN else x["risk"]), -x["high"],
+                            x["date"], x["name"]))
     return out
 
 
@@ -470,6 +479,9 @@ def review(session: Session, code: str, day: date, status: str, note: str | None
     c.status, c.note, c.reviewed_by, c.reviewed_at = status, (note or "").strip()[:1000] or None, actor, now_utc()
     session.add(c)
     session.flush()
+    from sales import learning, ml
+    learning.learn(session)                               # every review is feedback: re-learn the signs, re-score the days
+    ml.rerisk(session)
     return case_dict(c, code, day)
 
 

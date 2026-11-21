@@ -6,11 +6,10 @@
 2. Unusual day - each person-day becomes a vector of how far it is from that person's own normal (robust z-scores of
    attendance time, distance from usual places, KM, time in market, day length, calls). An Isolation Forest trained on all
    person-days scores how unusual each day is; the biggest differences become plain-language reasons.
-3. Risk score 0-100 per person-day: every warning sign of the day (attendance, location, selfie) weighted by level, plus the
-   unusual-day score. It ranks the Needs checking list and the emails' check section.
+3. Risk score 0-100 per person-day: the chance that at least one of the day's warning signs (attendance, location, selfie) is
+   right, from each sign's reliability learned from HR's reviews (sales.learning), plus the unusual-day score.
 
-No labels exist yet (nobody has confirmed a case), so the model is unsupervised; the reviews (OK / action taken) are kept so
-the weights can be tuned later.
+The unusual-day model is unsupervised; the risk score learns from the reviews (OK / action taken) - see sales.learning.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from database.models.sales import SalesCall, SalesDayScore, SalesDayUpload, Sale
 from sales.config import SalesRules, get_rules
 
 EARTH_KM = 6371.0
-WEIGHT = {"high": 30, "medium": 15, "low": 5}
 FEATURES = ("att_min", "place_km", "km", "market_min", "day_min", "calls")
 
 
@@ -191,6 +189,8 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
     pct = np.empty(len(raw))
     pct[order] = np.arange(len(raw)) / max(1, len(raw) - 1)
     signs = _signs(session, start, end)
+    from sales import learning
+    st = learning.state(session)
     session.execute(delete(SalesDayScore).where(SalesDayScore.day >= start, SalesDayScore.day <= end))
     unusual_n = 0
     for i, (code, d) in enumerate(keys):
@@ -203,15 +203,29 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
         unusual = bool(pct[i] >= 0.98 and reasons)
         unusual_n += unusual
         s = signs.get((code, d), [])
-        risk = sum(WEIGHT[lvl] for _c, lvl in s) + (20 if unusual else 10) * float(pct[i]) * (1 if reasons else 0.3)
+        risk = learning.risk(st, s, float(pct[i]), unusual)
         session.add(SalesDayScore(code=code, day=d, anomaly=round(float(pct[i]), 3), unusual=unusual, risk=min(100, round(risk)),
                                   reasons=json.dumps(reasons[:3]) if reasons else None))
     for key, s in signs.items():                       # days with signs but no features (e.g. a selfie only)
         if key not in rows:
             session.add(SalesDayScore(code=key[0], day=key[1], anomaly=None, unusual=False,
-                                      risk=min(100, sum(WEIGHT[lvl] for _c, lvl in s)), reasons=None))
+                                      risk=learning.risk(st, s, None, False), reasons=None))
     session.flush()
     return {"scored": len(keys), "unusual": unusual_n, "from": start.isoformat(), "to": end.isoformat()}
+
+
+def rerisk(session: Session) -> int:
+    """Recompute only the risk scores (stored unusual-day scores + current signs + what was learned) - fast, after each review."""
+    from sales import learning
+    st = learning.state(session)
+    rows = list(session.scalars(select(SalesDayScore)))
+    if not rows:
+        return 0
+    signs = _signs(session, min(r.day for r in rows), max(r.day for r in rows))
+    for r in rows:
+        r.risk = learning.risk(st, signs.get((r.code, r.day), []), r.anomaly, r.unusual)
+    session.flush()
+    return len(rows)
 
 
 def _signs(session: Session, start: date, end: date) -> dict[tuple[str, date], list[tuple[str, str]]]:

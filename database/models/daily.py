@@ -112,6 +112,7 @@ class Employee(Base):
     hod_name: Mapped[str | None] = mapped_column(String(200))
     hod_email: Mapped[str | None] = mapped_column(String(320))
     team_lead_email: Mapped[str | None] = mapped_column(String(320))               # "Sub split ID"
+    also_to: Mapped[str | None] = mapped_column(String(500))     # extra recipients (e.g. a 2nd HOD): also get this person
     reporting_manager: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")  # ACTIVE | LEFT
     routing_issue: Mapped[str | None] = mapped_column(String(200))   # e.g. HOD_EMAIL_CONFLICT -> held for HR

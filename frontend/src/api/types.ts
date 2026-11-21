@@ -296,6 +296,7 @@ export interface Employee {
   hod_name: string;
   hod_email: string;
   team_lead_email: string;
+  also_to: string;
   team: string;
   reporting_manager: string;
   status: "ACTIVE" | "LEFT";

@@ -45,9 +45,17 @@ class Route:
     summary_to: str | None          # HOD email, or None
     issue: str | None = None        # why it is in the HR queue
     hod_plain: str = ""             # the HOD name as entered (hod may carry the email when two HODs share a name)
+    also_to: list[str] = field(default_factory=list)   # extra recipients (e.g. a 2nd HOD) who also get this person
 
 
 def route_employee(e: Employee) -> Route:
+    r = _route(e)
+    if r.detail_to != HR:               # held people stay with HR only
+        r.also_to = [m for m in dict.fromkeys(x.lower() for x in emp.emails_in(e.also_to)) if m not in (r.detail_to, r.summary_to)]
+    return r
+
+
+def _route(e: Employee) -> Route:
     hod_mails = list(dict.fromkeys(m.lower() for m in emp.emails_in(e.hod_email)))
     sub_raw = (e.team_lead_email or "").strip()
     sub = [m.lower() for m in emp.emails_in(sub_raw)]
@@ -133,6 +141,8 @@ def recipients(session: Session, cfg: EmailSettings, day: date | None = None, al
     hod_names: dict[str, Counter] = defaultdict(Counter)
     for r in rs:
         team[r.detail_to].append(r)
+        for extra in r.also_to:         # e.g. a second HOD: gets this person in their own team list too
+            team[extra].append(r)
         if r.summary_to:
             summary[r.summary_to].append(r)
             if r.hod_plain or r.hod:

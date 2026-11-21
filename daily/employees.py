@@ -24,7 +24,7 @@ from ingestion.file_reader import ReadError, read_raw
 
 ACTIVE, LEFT = "ACTIVE", "LEFT"
 DIRECT = "Direct to HOD"
-EDITABLE = ("name", "department", "date_of_joining", "hod_name", "hod_email", "team_lead_email", "reporting_manager",
+EDITABLE = ("name", "department", "date_of_joining", "hod_name", "hod_email", "team_lead_email", "also_to", "reporting_manager",
             "routing_issue")
 INACTIVE_WORDS = {"INACTIVE", "LEFT", "EXITED", "RESIGNED", "SEPARATED", "TERMINATED", "N"}
 _SPLIT = re.compile(r"[,;/\s]+")
@@ -39,6 +39,7 @@ COLUMNS = {
     "hod_name": ("hod", "hod name"),
     "hod_email": ("email id - hod", "hod email", "email id hod"),
     "team_lead_email": ("sub split id", "team lead email", "sub split"),
+    "also_to": ("also send to", "second hod email", "2nd hod email", "additional hod email"),
     "reporting_manager": ("reporting manager", "reporting manager name"),
     "status": ("employee status", "status"),
     "routing_issue": ("issues", "routing issue"),
@@ -109,7 +110,7 @@ def to_dict(e: Employee) -> dict:
     return {"id": e.id, "code": e.code, "name": e.name, "department": e.department or "",
             "date_of_joining": e.date_of_joining.isoformat() if e.date_of_joining else None,
             "hod_name": e.hod_name or "", "hod_email": e.hod_email or "", "team_lead_email": e.team_lead_email or "",
-            "team": team_of(e.team_lead_email), "reporting_manager": e.reporting_manager or "", "status": e.status,
+            "also_to": e.also_to or "", "team": team_of(e.team_lead_email), "reporting_manager": e.reporting_manager or "", "status": e.status,
             "exit_date": e.exit_date.isoformat() if e.exit_date else None, "source": e.source,
             "routing_issue": e.routing_issue or "",
             "updated_at": e.updated_at.isoformat() if e.updated_at else None, "updated_by": e.updated_by}
@@ -206,6 +207,12 @@ def _validated(data: dict, hods: dict[str, str], depts: dict[str, str], partial:
             if text and not emails_in(text):
                 raise EmployeeError(f"Invalid email in {'HOD email' if f == 'hod_email' else 'team lead email'}: {text}")
             out[f] = text or None
+        elif f == "also_to":
+            parts = [x for x in _SPLIT.split(_given(v).lower()) if x]
+            bad = [x for x in parts if not valid_email(x)]
+            if bad:
+                raise EmployeeError(f"Invalid email in 'Also send to': {', '.join(bad)}")
+            out[f] = ", ".join(dict.fromkeys(parts)) or None
         elif f == "name":
             out[f] = _clean(v) or None
         elif f == "routing_issue":
@@ -332,7 +339,7 @@ def import_rows(session: Session, rows: list[dict], actor: str) -> ImportResult:
             # Keep the row; drop only the bad value so one typo doesn't block the import.
             res.problems.append(f"{code}: {exc}")
             fixed = dict(raw)
-            for f in ("hod_email", "team_lead_email", "date_of_joining"):
+            for f in ("hod_email", "team_lead_email", "also_to", "date_of_joining"):
                 try:
                     _validated({f: raw.get(f)}, hods, depts, partial=True)
                 except EmployeeError:

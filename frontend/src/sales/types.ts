@@ -65,7 +65,7 @@ export interface SalesRules {
   geo_same_spot_min_calls: number; geo_cluster_m: number; geo_cluster_outlets: number; geo_cluster_outlet_far_m: number;
   geo_km_ratio: number; geo_km_extra: number; geo_start_away_km: number; geo_start_history_days: number; geo_start_min_days: number;
   geo_end_away_km: number; geo_offbeat_min: number; geo_together_m: number; geo_together_minutes: number; geo_together_share: number;
-  geo_together_min_calls: number; photo_downloads: boolean; photo_batch: number; photo_same_bits: number;
+  geo_together_min_calls: number; photo_downloads: boolean; photo_batch: number; photo_same_bits: number; photo_reuse_bits: number;
   photo_dark: number; photo_blurry: number; photo_time_hours: number;
 }
 

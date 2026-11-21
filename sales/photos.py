@@ -243,7 +243,9 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
     photos = list(session.scalars(select(SalesPhoto).where(SalesPhoto.status == DONE)))
     by_id = {p.id: p for p in photos}
     names = {e.code: e.name for e in session.scalars(select(SalesEmployee))}
-    near = _near_pairs(photos, min(7, rules.photo_same_bits))
+    near = _near_pairs(photos, min(7, max(rules.photo_same_bits, rules.photo_reuse_bits)))
+    hashes = {p.id: int(p.phash, 16) for p in photos if p.phash}
+    bits = lambda a, b: (hashes[a] ^ hashes[b]).bit_count() if a in hashes and b in hashes else 64  # noqa: E731
     for grp in _groups(photos, "sha256").values():
         for a in grp:
             near[a] |= set(grp) - {a}
@@ -255,8 +257,10 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
     for p in photos:
         f: dict[str, str] = {}
         others = [by_id[o] for o in near.get(p.id, ()) if o not in placeholder] if p.id not in placeholder else []
-        other_people = sorted({o for o in others if o.code != p.code}, key=lambda o: (o.day, o.code))
-        other_days = sorted({o for o in others if o.code == p.code and o.day != p.day}, key=lambda o: o.day)
+        other_people = sorted({o for o in others if o.code != p.code and (o.sha256 == p.sha256 or bits(o.id, p.id) <= rules.photo_same_bits)},
+                              key=lambda o: (o.day, o.code))
+        other_days = sorted({o for o in others if o.code == p.code and o.day != p.day
+                             and (o.sha256 == p.sha256 or bits(o.id, p.id) <= rules.photo_reuse_bits)}, key=lambda o: o.day)
         matches = []
         if other_people:
             o = other_people[0]

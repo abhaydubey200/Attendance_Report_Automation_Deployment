@@ -11,7 +11,6 @@ export const SALES_PAGES = [
   { section: "Field sales", title: "Day insights", path: "/sales/day", icon: "insights" },
   { section: "Field sales", title: "Approve emails", path: "/sales/mail", icon: "mail" },
   { section: "Field sales", title: "Needs checking", path: "/sales/cases", icon: "flag" },
-  { section: "Field sales", title: "Expense claims", path: "/sales/claims", icon: "reports" },
   { section: "Field sales", title: "Selfie checks", path: "/sales/photos", icon: "employees" },
   { section: "Field sales", title: "Day map", path: "/sales/map", icon: "map", hidden: true },
   { section: "Reports", title: "Attendance report", path: "/sales/report", icon: "reports" },

@@ -65,12 +65,6 @@ class SalesRules(BaseModel):
     geo_together_minutes: int = 15                # ... within this many minutes ...
     geo_together_share: float = 0.6               # ... for this share of the person's calls
     geo_together_min_calls: int = 4
-    # expense claim checks (sales.claims)
-    claim_high_ratio: float = 3.0                 # amount this many times the usual for the claim type and role ...
-    claim_high_extra: float = 300.0               # ... and at least this many rupees more
-    claim_high_min_peers: int = 20                # need this many claims of that type and role to know "usual"
-    claim_short_market_minutes: int = 60          # travel / allowance claimed with less time than this in market
-    claim_base_km: float = 15.0                   # outstation allowance while attendance was this close to the usual start
     # photo checks (sales.photos): selfies are downloaded from Bizom's image server, fingerprinted in memory, never stored
     photo_downloads: bool = True
     photo_batch: int = 3000                       # photos fetched per run (daily job / "Check photos now")

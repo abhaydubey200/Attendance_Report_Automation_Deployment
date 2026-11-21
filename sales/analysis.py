@@ -36,7 +36,7 @@ WARNINGS: dict[str, tuple[str, str, str]] = {
     "SHORT_CALLS": ("Many very short visits", "high", "Several outlet visits under a minute - possible visits logged without a real visit."),
     "FAR_CALLS": ("Visit logged away from the outlet", "high", "Call location far from the outlet's location."),
     "FAST_MOVES": ("Impossible travel between visits", "high", "Two visits too far apart for the time between them."),
-    "HIGH_KM": ("Very high KM travelled", "medium", "Unusually long distance for one day - check the claim."),
+    "HIGH_KM": ("Very high KM travelled", "medium", "Unusually long distance for one day - worth checking."),
     "ZERO_KM": ("0 KM but market activity", "medium", "Location tracking off or not working while working in market."),
     "FAR_ATTENDANCE": ("Attendance marked away from the expected spot", "medium", "Attendance location differs from the expected place."),
     "NO_PHOTO": ("No attendance photo", "medium", "Attendance marked without the selfie."),

@@ -9,7 +9,6 @@ import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, 
 import { formatDate, formatDateTime } from "../format";
 import { StaffEditor } from "./more";
 import { HistoryImportCard } from "./geo";
-import { ClaimsImportCard } from "./claims";
 import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffRow, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
@@ -144,7 +143,6 @@ export function SalesUpload() {
         </form>
       </Card>
       <HistoryImportCard />
-      <ClaimsImportCard />
     </>
   );
 }
@@ -476,16 +474,6 @@ export function SalesSettingsPage() {
             <Field label="With another person: within (metres)">{num("geo_together_m")}</Field>
             <Field label="... and minutes">{num("geo_together_minutes")}</Field>
             <Field label="... for this share of calls (0-1)">{num("geo_together_share")}</Field>
-          </div>
-        </Card>
-        <Card title="Expense claim checks" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}
-          onClick={() => void run(() => api.put("/v1/sales/settings/rules", rules), "Saved. Import the Claim report again to recheck.")}>Save</button>}>
-          <div className="form-grid">
-            <Field label="Amount above usual: times the usual">{num("claim_high_ratio")}</Field>
-            <Field label="... and at least this many rupees more">{num("claim_high_extra")}</Field>
-            <Field label="Claims needed to know the usual amount">{num("claim_high_min_peers")}</Field>
-            <Field label="Very little time in market (minutes)">{num("claim_short_market_minutes")}</Field>
-            <Field label="Outstation allowance: never left base within (km)">{num("claim_base_km")}</Field>
           </div>
         </Card>
         <Card title="Selfie checks" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}

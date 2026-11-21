@@ -15,7 +15,7 @@ from core.config import Settings
 from daily.branding import inline_logo_for_browser
 from database.models.sales import SalesMailItem
 from sales.util import utc_iso
-from sales import bizom, claims, geo, jobs, mail, monthly, photos, report, reports, service, staff
+from sales import bizom, geo, jobs, mail, monthly, photos, report, reports, service, staff
 from sales.config import SalesEmail, SalesRules, get_email, get_rules, save_email, save_rules
 from security.permissions import Perm, Principal
 
@@ -405,11 +405,11 @@ def day_map(report_date: date, code: str, principal: Principal = Depends(require
 @router.get("/cases")
 def case_list(start: date | None = None, end: date | None = None, status_: str = Query("", alias="status"), hod: str = "", kind: str = "",
               principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
-    d0, d1 = _claims_range(db)
+    d0, d1 = _cases_range(db)
     start, end = start or d0, end or d1
     rows = geo.cases(db, start, end, geo.visible_codes(db, principal), status_, hod, kind)
     return {"from": start.isoformat(), "to": end.isoformat(), "cases": rows, "hods": sorted({r["hod"] for r in rows if r["hod"]}),
-            "labels": {k: v[0] for k, v in {**geo.GEO, **claims.CLAIM}.items()}}
+            "labels": {k: v[0] for k, v in {**geo.GEO, **photos.PHOTO}.items()}}
 
 
 @router.put("/cases/{report_date}/{code}")
@@ -435,36 +435,19 @@ async def history_import(file: UploadFile = File(...), principal: Principal = De
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
 
 
-# ---------------------------------------------------------------- expense claims
-def _claims_range(db: Session) -> tuple[date, date]:
-    """Default period: the last 30 days up to the latest Field Sales day or claim, whichever is later."""
+# ---------------------------------------------------------------- default period for the cases list
+def _cases_range(db: Session) -> tuple[date, date]:
+    """The last 30 days up to the latest Field Sales day or checked selfie, whichever is later."""
     from datetime import timedelta
 
     from sqlalchemy import func, select
 
-    from database.models.sales import SalesClaim
+    from database.models.sales import SalesPhoto
     d0, d1 = reports.default_range(db)
-    last_claim = db.scalar(select(func.max(SalesClaim.day)))
-    if last_claim and last_claim > d1:
-        d1 = last_claim
+    last = db.scalar(select(func.max(SalesPhoto.day)).where(SalesPhoto.flags.is_not(None)))
+    if last and last > d1:
+        d1 = last
     return d1 - timedelta(days=30), d1
-
-
-@router.post("/claims/import")
-async def claims_import(file: UploadFile = File(...), principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)),
-                        db: Session = Depends(get_db)) -> dict:
-    data = await file.read(60 * 1024 * 1024 + 1)
-    try:
-        return service.import_claims(db, file.filename or "claims.csv", data, principal.username)
-    except service.UploadError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
-
-
-@router.get("/claims")
-def claims_overview(start: date | None = None, end: date | None = None, sign: str = "", q: str = "",
-                    principal: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
-    d0, d1 = _claims_range(db)
-    return claims.overview(db, start or d0, end or d1, geo.visible_codes(db, principal), sign, q)
 
 
 # ---------------------------------------------------------------- selfie checks

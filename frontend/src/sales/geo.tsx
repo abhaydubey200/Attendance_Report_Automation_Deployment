@@ -22,6 +22,11 @@ const t12 = (t: string | null | undefined) => {
 const dist = (m: number | null) => (m === null ? "" : m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
+export function RiskBadge({ risk }: { risk: number }) {
+  const tone = risk >= 60 ? "fail" : risk >= 30 ? "warn" : "info";
+  return <span className={`badge badge-${tone} risk-badge`} title="Risk 0-100: the day's warning signs weighted by level, plus how unusual the day is for the person (learned model)">{risk}</span>;
+}
+
 function Signs({ signs }: { signs: GeoSign[] }) {
   return (
     <span className="sales-flags">
@@ -48,11 +53,11 @@ function DayMapView({ m, focus }: { m: GeoDayMap; focus: number | null }) {
       return L.marker([lat, lng], { icon: L.divIcon({ className: `geo-pin ${cls}`, html, iconSize: [26, 26], iconAnchor: [13, 13] }), title })
         .addTo(lm);
     };
-    if (m.usual_start) {
-      L.circle([m.usual_start.lat, m.usual_start.lng], { radius: m.usual_start.limit_km * 1000, color: "#64748b", weight: 1, dashArray: "4 4", fillOpacity: 0.04 })
-        .addTo(lm).bindTooltip(`Usual start (${m.usual_start.days} earlier days) - within ${m.usual_start.limit_km} km is normal`);
-      pin(m.usual_start.lat, m.usual_start.lng, "U", "geo-usual", "Usual start point");
-    }
+    (m.usual_places ?? []).forEach((u, i) => {
+      L.circle([u.lat, u.lng], { radius: u.limit_km * 1000, color: "#64748b", weight: 1, dashArray: "4 4", fillOpacity: 0.04 })
+        .addTo(lm).bindTooltip(`Usual place ${i + 1} (${u.days} earlier days) - within ${u.limit_km} km is normal`);
+      pin(u.lat, u.lng, `U${(m.usual_places?.length ?? 0) > 1 ? i + 1 : ""}`, "geo-usual", `Usual place ${i + 1}`);
+    });
     const path: L.LatLngExpression[] = [];
     if (m.attendance) {
       pin(m.attendance.lat, m.attendance.lng, "A", "geo-att", "Attendance").bindPopup(`<b>Attendance</b><br>${t12(m.attendance.time)}`);
@@ -136,7 +141,8 @@ export function SalesMapPage() {
             <KpiCard label="Calls" value={m.calls.length} hint={`${m.calls.filter((c) => c.productive).length} with an order`} />
             <KpiCard label="KM (Bizom)" value={m.km ?? "–"} />
             <KpiCard label="Day end" value={t12(m.eod_time) || "–"} hint={m.day_end ? "location recorded" : "no location"} />
-            <KpiCard label="Location signs" value={loc.length} tone={loc.some((s) => s.level === "high") ? "fail" : loc.length ? "warn" : "ok"} />
+            <KpiCard label="Risk (0-100)" value={m.score.risk} tone={m.score.risk >= 60 ? "fail" : m.score.risk >= 30 ? "warn" : "ok"}
+              hint={m.score.unusual ? "unusual day for this person" : m.score.anomaly !== null ? `more unusual than ${Math.round(m.score.anomaly * 100)}% of days` : "no pattern yet"} />
           </div>
           <div className="geo-layout">
             <Card title="Map">
@@ -145,7 +151,7 @@ export function SalesMapPage() {
                 <span><i className="geo-pin geo-att">A</i> Attendance</span><span><i className="geo-pin geo-call">1</i> Call (in order)</span>
                 <span><i className="geo-pin geo-call geo-bad">1</i> Away from outlet / impossible travel</span>
                 <span><i className="geo-dot" /> Outlet</span><span><i className="geo-pin geo-end">E</i> Day end</span>
-                <span><i className="geo-pin geo-usual">U</i> Usual start</span>
+                <span><i className="geo-pin geo-usual">U</i> Usual place (learned)</span>
               </div>
               <p className="muted small">The street map needs internet; points and lines come from Bizom. Distances are straight-line.</p>
             </Card>
@@ -239,6 +245,7 @@ export function SalesCasesPage() {
           </Toolbar>
           <DataTable rows={d.cases} rowKey={(c) => `${c.date}|${c.code}`} search exportName={`field_sales_needs_checking_${d.from}_${d.to}`}
             empty="Nobody to check for these filters." columns={[
+              { header: "Risk", render: (c) => <RiskBadge risk={c.risk} />, value: (c) => c.risk },
               { header: "Date", render: (c) => formatDate(c.date), value: (c) => c.date },
               { header: "Employee", render: (c) => <Link to={`/sales/map?${qs({ date: c.date, code: c.code })}`}><strong>{c.name}</strong> <span className="muted">{c.code}</span></Link>, value: (c) => `${c.name} ${c.code}` },
               { header: "Team head", render: (c) => c.manager },

@@ -33,7 +33,7 @@ export interface SalesMailItem {
 export interface SalesDay {
   report_date: string; people: number; summary: SalesSummary; files: { attendance: string | null; eod: string | null; calls: string | null };
   uploaded_by: string; uploaded_at: string; rows: SalesPerson[]; warnings: SalesWarning[]; teams: SalesTeam[]; mail: SalesMailItem[];
-  geo?: Record<string, string[]>; geo_summary?: SalesGeoSummary;
+  geo?: Record<string, string[]>; geo_summary?: SalesGeoSummary; risk?: Record<string, number>;
 }
 
 export interface SalesDayRow {
@@ -130,10 +130,12 @@ export interface GeoDayMap {
   attendance_time: string | null; eod_time: string | null; km: number | null; market_minutes: number | null; photo_url: string | null;
   attendance: GeoPoint | null; day_end: GeoPoint | null; usual_start: { lat: number; lng: number; days: number; limit_km: number } | null;
   calls: GeoCall[]; signs: GeoSign[]; case: GeoCase; photos: PhotoItem[];
+  usual_places: { lat: number; lng: number; days: number; radius_km: number; limit_km: number }[];
+  score: { risk: number; unusual: boolean; anomaly: number | null; reasons: string[] };
 }
 export interface GeoCaseRow {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; signs: GeoSign[]; other_signs: string[];
-  high: number; case: GeoCase; photo_signs: GeoSign[];
+  high: number; case: GeoCase; photo_signs: GeoSign[]; risk: number;
 }
 export interface GeoCases { from: string; to: string; cases: GeoCaseRow[]; hods: string[]; labels: Record<string, string> }
 export interface SalesGeoSummary { people: number; signs: { code: string; label: string; level: GeoLevel; n: number }[]; points: boolean; calls: boolean }

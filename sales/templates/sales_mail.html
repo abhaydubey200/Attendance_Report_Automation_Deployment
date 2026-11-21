@@ -108,6 +108,24 @@
   </td></tr>
   {% endif %}
 
+  {% if v.checks %}
+  {{ heading("Location & selfie checks", "Highest risk first. Risk 0–100 combines the day's warning signs and how unusual the day is for the person. Map and selfies: HR Portal > Field Sales > Needs checking.") }}
+  <tr><td class="pad" style="padding:4px 24px 6px;">
+    <table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:12.5px;border:1px solid #e6e8ef;">
+      {% for c in v.checks[:(15 if v.view == "team" else 10)] %}
+      {% set col = '#b91c1c' if c.level == 'high' else ('#d97706' if c.level == 'medium' else '#64748b') %}
+      <tr style="border-top:1px solid #eef0f5;background:{{ '#fafbfd' if loop.index is even else '#ffffff' }};">
+        <td style="border-left:4px solid {{ col }};"><b style="color:#14213d;">{{ c.name }}</b> <span style="font-size:11px;color:#5d6577;">{{ c.code }}{% if v.view != "team" and c.manager %} · {{ c.manager }}{% endif %}</span>
+          <div style="color:{{ col }};font-weight:bold;">{{ c.signs | map(attribute="label") | join(" · ") }}</div>
+          <div style="color:#5d6577;font-size:11.5px;">{{ c.why }}</div></td>
+        <td align="right" valign="top" style="white-space:nowrap;"><span style="display:inline-block;min-width:34px;text-align:center;padding:2px 6px;border-radius:999px;font-weight:bold;font-size:12px;color:#ffffff;background:{{ '#b91c1c' if c.risk >= 60 else ('#d97706' if c.risk >= 30 else '#64748b') }};">{{ c.risk }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% set more = v.checks | length - (15 if v.view == "team" else 10) %}{% if more > 0 %}<div style="font-size:12px;color:#5d6577;padding-top:4px;">+ {{ more }} more in the attachments.</div>{% endif %}
+  </td></tr>
+  {% endif %}
+
   <tr><td style="padding:8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
   <tr><td style="padding:10px 24px;border-top:1px solid #e6e8ef;font-size:11px;color:#94a3b8;">
     Automated email from the APIS HR Portal (source: Bizom). Please do not forward or reply.

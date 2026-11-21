@@ -526,6 +526,10 @@ def cmd_sales_photos(args: argparse.Namespace) -> int:
     """Module 2 selfie checks: download waiting selfies from Bizom, fingerprint them in memory (never stored), check them."""
     from sales import photos
 
+    if args.recount:
+        r = photos.recount(_engine())
+        print(f"Looked again at {r['looked_again']} selfies; face count changed for {r['face_count_changed']} | signs: {r.get('signs')}")
+        return 0
     total = {"fetched": 0, "done": 0, "failed": 0, "skipped": 0}
     while True:
         r = photos.fetch(_engine(), args.batch)
@@ -654,6 +658,7 @@ def build_parser() -> argparse.ArgumentParser:
     sph = sub.add_parser("sales-photos", help="Field Sales (Bizom): check waiting attendance selfies (download, fingerprint, check)")
     sph.add_argument("--batch", type=int, default=1000, help="photos per batch (default 1000)")
     sph.add_argument("--all", action="store_true", help="keep going until no photo is waiting")
+    sph.add_argument("--recount", action="store_true", help="look again at selfies flagged 'no face' / 'too dark or blurry'")
     sph.set_defaults(func=cmd_sales_photos)
 
     cl = sub.add_parser("cleanup", help="remove a month's daily rows after its archive and a later backup are verified")

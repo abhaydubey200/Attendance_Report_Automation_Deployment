@@ -83,7 +83,7 @@ def _evidence(r, flags: list[str]) -> str:
     return "; ".join(bits)
 
 
-def build_view(rows, day: dict, view: str, recipient: str, d: date) -> dict:
+def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list[dict] | None = None) -> dict:
     people = [_person(r) for r in sorted(rows, key=lambda r: r.name)]
     cnt = Counter(p["status"] for p in people)
     flagged = sorted([p for p in people if p["flags"]],
@@ -109,7 +109,14 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date) -> dict:
         "teams": teams, "data": day.get("data", {}) if view == "hr" else {}, "files": day.get("files", {}),
         "working": sum(cnt.get(k, 0) for k in WORKING), "colors": COLORS, "status_label": STATUS_LABEL,
         "stem": f"Field_Sales_{d.isoformat()}_{safe}",
+        "checks": checks or [], "checks_summary": _checks_summary(checks or []),
+        "checks_high": sum(1 for c in (checks or []) if c["level"] == "high"),
     }
+
+
+def _checks_summary(checks: list[dict]) -> list[dict]:
+    from sales.checks import summary
+    return summary(checks)
 
 
 # ---------------------------------------------------------------- email
@@ -130,6 +137,11 @@ def email_text(v: dict) -> str:
         lines += [f"Needs checking ({len(v['flagged'])}):"] + [f"- {p['name']} ({p['code']}): {', '.join(f['label'] for f in p['flags'])}"
                                                                for p in v["flagged"][:20]]
         lines += [f"+ {len(v['flagged']) - 20} more in the attachments."] * (len(v["flagged"]) > 20) + [""]
+    if v["checks"]:
+        lines += [f"Location & selfie checks ({len(v['checks'])}, highest risk first):"] + \
+                 [f"- {c['name']} ({c['code']}) risk {c['risk']}: {', '.join(s['label'] for s in c['signs'])}. {c['why']}" for c in v["checks"][:15]]
+        lines += [f"+ {len(v['checks']) - 15} more in the attachments."] * (len(v["checks"]) > 15)
+        lines += ["Open the HR Portal (Field Sales > Needs checking) for the map and the selfies.", ""]
     lines += ["Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
     return "\n".join(lines)
 
@@ -195,6 +207,23 @@ def excel(v: dict) -> bytes:
         wf.write(1, 0, "Nothing to check on this day.", note)
     wf.freeze_panes(1, 2)
 
+    if v["checks"]:
+        wc = wb.add_worksheet("Location & selfie checks")
+        cols = [("Risk (0-100)", 9), ("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Type", 10), ("Warning sign", 34), ("Why", 70)]
+        for j, (h, w) in enumerate(cols):
+            wc.write(0, j, h, head)
+            wc.set_column(j, j, w)
+        i = 1
+        for c in v["checks"]:
+            for s in c["signs"]:
+                for j, val in enumerate([c["risk"], c["code"], c["name"], c["designation"], c["manager"], s["kind"], s["label"], s["why"]]):
+                    wc.write(i, j, val, lvl[s["level"]] if j == 6 else wrap)
+                i += 1
+        wc.write(i + 1, 0, "Risk = all warning signs of the day weighted by level, plus how unusual the day is for the person (learned model). "
+                           "Map and selfies: HR Portal > Field Sales > Needs checking.", note)
+        wc.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
+        wc.freeze_panes(1, 3)
+
     wn = wb.add_worksheet("Absent")
     for j, (h, w) in enumerate([("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 12), ("Manager", 24), ("Reason", 36)]):
         wn.write(0, j, h, head)
@@ -239,6 +268,7 @@ def excel(v: dict) -> bytes:
 
 # ---------------------------------------------------------------- dashboard
 def dashboard(v: dict) -> bytes:
-    data = {"people": v["people"], "warnings": v["warnings"], "teams": v["teams"], "colors": COLORS, "labels": v["status_label"]}
+    data = {"people": v["people"], "warnings": v["warnings"], "teams": v["teams"], "colors": COLORS, "labels": v["status_label"],
+            "checks": v["checks"]}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return _env.get_template("sales_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js).encode("utf-8")

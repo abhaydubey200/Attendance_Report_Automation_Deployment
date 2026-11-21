@@ -45,7 +45,7 @@ class SalesRules(BaseModel):
     calls_after: str = "20:00"
     beat_jump_min: int = 3
     # location checks (sales.geo) - shown in the app; in emails only once geo_in_emails is switched on
-    geo_in_emails: bool = False
+    geo_in_emails: bool = True                    # 2026-11-21: the user asked for the checks in the emails
     keep_months: int = 6                          # locations, photo links and phone codes are deleted after this
     geo_away_outlet_m: float = 300.0              # call made this far from the outlet's own location
     geo_away_outlet_min: int = 2                  # ... on at least this many calls

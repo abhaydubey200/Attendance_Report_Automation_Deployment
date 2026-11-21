@@ -131,7 +131,7 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         html, text, files = mail.render(s, items["ravi@example.com"])
         assert "Needs checking" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
         assert [f.filename.split("_")[-1] for f in files] == ["Manager.xlsx", "dashboard.html"]
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Needs checking", "Absent", "Team list"]
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Needs checking", "Location & selfie checks", "Absent", "Team list"]
         assert "9999999999" not in html + text + files[1].content.decode() and "<img src=x>" not in files[1].content.decode()
         hr_html, _, hr_files = mail.render(s, items["HR"])
         assert "Data to fix" in hr_html and "Data issues" in load_workbook(io.BytesIO(hr_files[0].content)).sheetnames

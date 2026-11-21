@@ -76,7 +76,9 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
     codes = set(c["codes"])
     rows = [r for r in session.scalars(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == up.upload_id)) if r.code in codes]
     cfg = get_email(session)
-    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date)
+    from sales import checks
+    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date,
+                             checks.day_checks(session, up.report_date, codes))
     files = []
     if cfg.attach_excel:
         files.append(Attachment(f"{view['stem']}.xlsx", report.excel(view), XLSX))

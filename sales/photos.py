@@ -19,6 +19,7 @@ import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import delete, func, or_, select
@@ -119,10 +120,30 @@ def _detectors():
     return _LOCAL.faces
 
 
-def count_faces(gray) -> int:
+YUNET = Path(__file__).with_name("models") / "face_detection_yunet_2023mar.onnx"
+
+
+def _yunet():
+    """One YuNet face detector per thread (OpenCV's model zoo, MIT). None when the model file is missing."""
+    if getattr(_LOCAL, "yunet", None) is None and YUNET.is_file():
+        import cv2
+        _LOCAL.yunet = cv2.FaceDetectorYN.create(str(YUNET), "", (320, 320), 0.7, 0.3, 50)
+    return getattr(_LOCAL, "yunet", None)
+
+
+def count_faces(gray, rgb=None) -> int:
+    """Faces in the selfie. YuNet (a neural-network face finder) when available, else OpenCV's older cascades."""
     import cv2
     import numpy as np
     w = 480
+    det = _yunet()
+    if det is not None:
+        src = rgb if rgb is not None else gray.convert("RGB")
+        img = src.resize((w, max(1, int(src.height * w / src.width)))) if src.width > w else src
+        bgr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+        det.setInputSize((bgr.shape[1], bgr.shape[0]))
+        _, faces = det.detect(bgr)
+        return 0 if faces is None else len(faces)
     g = gray.resize((w, max(1, int(gray.height * w / gray.width)))) if gray.width > w else gray
     a = np.asarray(g)
     front, profile = _detectors()
@@ -150,7 +171,7 @@ def analyse(data: bytes) -> dict:
     gray = im.convert("L")
     small = np.asarray(gray.resize((min(640, gray.width), max(1, int(gray.height * min(640, gray.width) / gray.width)))))
     return {"sha256": hashlib.sha256(data).hexdigest(), "phash": phash(gray), "width": im.width, "height": im.height,
-            "size_kb": round(len(data) / 1024), "faces": count_faces(gray), "brightness": round(float(small.mean()), 1),
+            "size_kb": round(len(data) / 1024), "faces": count_faces(gray, im.convert("RGB")), "brightness": round(float(small.mean()), 1),
             "sharpness": round(float(cv2.Laplacian(small, cv2.CV_64F).var()), 1), "exif_time": when}
 
 
@@ -213,7 +234,45 @@ def fetch(engine, limit: int | None = None, client=None, workers: int = 6) -> di
             client.close()
     with session_scope(engine) as s:
         res = check(s)
+        from sales import ml
+        ml.rescore(s)                                     # risk scores include the selfie signs
     return {"fetched": len(todo), **dict(stats), **res}
+
+
+def recount(engine, client=None, workers: int = 6) -> dict:
+    """Look again (new face finder) at the selfies flagged 'no face' or 'too dark / blurry'. Photos are still not stored."""
+    import httpx
+    with session_scope(engine) as s:
+        todo = list(s.execute(select(SalesPhoto.id, SalesPhoto.url).where(SalesPhoto.status == DONE, or_(
+            SalesPhoto.flags.like("%PHOTO_NO_FACE%"), SalesPhoto.flags.like("%PHOTO_POOR%")))))
+    own = client is None
+    client = client or httpx.Client(timeout=30, follow_redirects=False, headers={"User-Agent": "HR-Portal-photo-check/1.0"})
+    changed = 0
+
+    def work(item):
+        pid, url = item
+        try:
+            return pid, analyse(_download(client, url))
+        except Exception:
+            return pid, None
+    try:
+        for k in range(0, len(todo), 200):
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                results = list(ex.map(work, todo[k:k + 200]))
+            with session_scope(engine) as s:
+                for pid, res in results:
+                    if res:
+                        p = s.get(SalesPhoto, pid)
+                        changed += (p.faces or 0) != (res["faces"] or 0)
+                        p.faces, p.brightness, p.sharpness = res["faces"], res["brightness"], res["sharpness"]
+    finally:
+        if own:
+            client.close()
+    with session_scope(engine) as s:
+        res = check(s)
+        from sales import ml
+        ml.rescore(s)
+    return {"looked_again": len(todo), "face_count_changed": changed, **res}
 
 
 # ---------------------------------------------------------------- the checks (all fingerprints at once)

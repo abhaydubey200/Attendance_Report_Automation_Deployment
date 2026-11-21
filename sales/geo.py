@@ -21,7 +21,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from core.timeutils import now_utc
-from database.models.sales import (SalesCall, SalesCase, SalesDayUpload, SalesDevice, SalesEmployee, SalesEmployeeDay,
+from database.models.sales import (SalesCall, SalesCase, SalesDayScore, SalesDayUpload, SalesDevice, SalesEmployee, SalesEmployeeDay,
                                    SalesHistoryDay, SalesLocation, SalesOutlet)
 from sales import bizom
 from sales.analysis import WARNINGS, WORKING, PersonDay
@@ -134,6 +134,8 @@ def import_history(session: Session, hist: bizom.BizomFile) -> dict:
         SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date >= days[0], SalesDayUpload.report_date <= days[-1]))]
     for d in rechecked:
         check_day(session, d)
+    from sales import ml
+    ml.rescore(session, max([days[-1], *rechecked]))
     return {"photos_added": photos_added, "from": days[0].isoformat(), "to": days[-1].isoformat(), "days": len(days), "rows": len(hist.history),
             "locations_added": added_loc, "phones_added": added_dev, "days_rechecked": len(rechecked)}
 
@@ -164,21 +166,14 @@ def _locs(session: Session, day: date) -> dict[tuple[str, str], SalesLocation]:
     return {(x.code, x.kind): x for x in session.scalars(select(SalesLocation).where(SalesLocation.day == day))}
 
 
-def usual_starts(session: Session, day: date, rules: SalesRules) -> dict[str, tuple[float, float, int, float]]:
-    """code -> (lat, lng, earlier days, personal limit km). The limit is the larger of the Settings value and 3 x how far this
-    person's start normally varies (75th percentile), so people who travel for work are not flagged every day."""
-    since = day - timedelta(days=rules.geo_start_history_days)
-    pts: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    for code, la, lo in session.execute(select(SalesLocation.code, SalesLocation.lat, SalesLocation.lng).where(
-            SalesLocation.kind == "ATT", SalesLocation.day >= since, SalesLocation.day < day)):
-        pts[code].append((la, lo))
+def usual_starts(session: Session, day: date, rules: SalesRules):
+    """code -> (lat, lng, days, limit km, places) for the main usual place, plus all the person's learned usual places
+    (sales.ml: DBSCAN clustering of earlier attendance points - a person can have several, e.g. home and HQ)."""
+    from sales import ml
     out = {}
-    for c, v in pts.items():
-        if len(v) < rules.geo_start_min_days:
-            continue
-        mid = (statistics.median(p[0] for p in v), statistics.median(p[1] for p in v))
-        spread = sorted(km(mid, p) for p in v)[int(0.75 * (len(v) - 1))]
-        out[c] = (mid[0], mid[1], len(v), max(rules.geo_start_away_km, 3 * spread))
+    for c, places in ml.usual_places(session, day, rules).items():
+        main = places[0]
+        out[c] = (main.lat, main.lng, sum(p.days for p in places), ml.away_limit(main, rules), places)
     return out
 
 
@@ -254,9 +249,12 @@ def _person_checks(r: SalesEmployeeDay, calls: list[SalesCall], locs: dict, outl
     # 5. attendance away from the usual start
     att = locs.get((r.code, "ATT"))
     if att and usual:
-        d = km((att.lat, att.lng), (usual[0], usual[1]))
-        if d > usual[3]:
-            f["GEO_START_AWAY"] = f"Attendance {d:.1f} km from the usual start point ({usual[2]} earlier days)."
+        from sales import ml
+        d, place = ml.nearest(usual[4], (att.lat, att.lng))
+        if d > ml.away_limit(place, rules):
+            n = len(usual[4])
+            f["GEO_START_AWAY"] = (f"Attendance {d:.1f} km from the nearest usual place ({n} usual place{'s' if n > 1 else ''} "
+                                   f"learned from {usual[2]} earlier days).")
     # 6. day ended away from the market
     eod = locs.get((r.code, "EOD"))
     if eod and pts:
@@ -367,8 +365,11 @@ def day_map(session: Session, day: date, code: str) -> dict | None:
     return {"photos": photos.for_day(session, code, day), "date": day.isoformat(), "code": code, "name": r.name, "designation": r.designation or "", "manager": r.manager_name or "",
             "hod": r.hod_name or "", "status": r.status, "attendance_time": r.attendance_time, "eod_time": r.eod_time, "km": r.km,
             "market_minutes": r.market_minutes, "photo_url": r.photo_url, "attendance": pts("ATT"), "day_end": pts("EOD"),
-            "usual_start": {"lat": usual[0], "lng": usual[1], "days": usual[2], "limit_km": round(usual[3], 1)} if usual else None, "calls": out_calls,
-            "signs": _labels(r), "case": case_dict(case, code, day)}
+            "usual_start": {"lat": usual[0], "lng": usual[1], "days": usual[2], "limit_km": round(usual[3], 1)} if usual else None,
+            "usual_places": [{"lat": p.lat, "lng": p.lng, "days": p.days, "radius_km": round(p.radius_km, 2),
+                              "limit_km": round(ml_away(p, rules), 1)} for p in (usual[4] if usual else [])],
+            "score": _score(session, code, day), "calls": out_calls,
+            "signs": unusual_sign(_score(session, code, day)) + _labels(r), "case": case_dict(case, code, day)}
 
 
 def _history_row(session: Session, code: str, day: date) -> SalesEmployeeDay | None:
@@ -385,6 +386,26 @@ def _history_row(session: Session, code: str, day: date) -> SalesEmployeeDay | N
     return SalesEmployeeDay(code=code, name=(e.name if e else code), photo_url=p.url if p else None, designation=e.designation if e else None,
                             manager_name=e.manager_name if e else None, hod_name=e.hod_name if e else None, status=st,
                             attendance_time=att.time if att else None, km=None, market_minutes=None)
+
+
+def ml_away(place, rules) -> float:
+    from sales import ml
+    return ml.away_limit(place, rules)
+
+
+UNUSUAL = ("Unusual day for this person", "medium", "The learned model finds this day very different from the person's own normal pattern.")
+
+
+def _score(session: Session, code: str, day: date) -> dict:
+    from sales import ml
+    return ml.score_dict(session.scalar(select(SalesDayScore).where(SalesDayScore.code == code, SalesDayScore.day == day)))
+
+
+def unusual_sign(score: dict) -> list[dict]:
+    if not score.get("unusual"):
+        return []
+    return [{"code": "UNUSUAL_DAY", "label": UNUSUAL[0], "level": UNUSUAL[1], "why": UNUSUAL[2],
+             "evidence": "; ".join(score["reasons"]).capitalize() + ".", "kind": "location"}]
 
 
 def case_dict(c: SalesCase | None, code: str, day: date) -> dict:
@@ -405,6 +426,12 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
     rows: dict[tuple[str, date], SalesEmployeeDay | None] = {(r.code, d): r for d, r in session.execute(q)}
     for key in photo_days:
         rows.setdefault(key, None)
+    from sales import ml
+    day_scores = {(s.code, s.day): ml.score_dict(s) for s in session.scalars(select(SalesDayScore).where(
+        SalesDayScore.day >= start, SalesDayScore.day <= end))}
+    for key, sc in day_scores.items():
+        if sc["unusual"]:
+            rows.setdefault(key, None)
     out = []
     for (code, d), r in rows.items():
         if visible is not None and code not in visible:
@@ -418,9 +445,10 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
         c = case_dict(reviews.get((code, d)), code, d)
         if status and c["status"] != status:
             continue
-        if kind == "location" and not (r and r.geo_flags) or kind == "photos" and not ph:
+        sc = day_scores.get((code, d), ml.score_dict(None))
+        if kind == "location" and not (r and r.geo_flags) and not sc["unusual"] or kind == "photos" and not ph:
             continue
-        signs = _labels(r) if r else []
+        signs = (_labels(r) if r else []) + unusual_sign(sc)
         psigns = {}
         for x in ph:
             for s in photos_mod.labels(x):
@@ -429,9 +457,9 @@ def cases(session: Session, start: date, end: date, visible: set[str] | None, st
                     "manager": (r.manager_name if r else (e.manager_name if e else "")) or "", "hod": hod_name,
                     "signs": [s for s in signs if s["kind"] == "location"], "photo_signs": list(psigns.values()),
                     "other_signs": [s["label"] for s in signs if s["kind"] == "day"],
-                    "high": sum(1 for s in signs + list(psigns.values()) if s["level"] == "high"), "case": c})
-    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -x["high"], -len(x["signs"]) - len(x["photo_signs"]),
-                            x["date"], x["name"]))
+                    "high": sum(1 for s in signs + list(psigns.values()) if s["level"] == "high"), "case": c,
+                    "risk": sc["risk"]})
+    out.sort(key=lambda x: (x["case"]["status"] != OPEN, -x["risk"], -x["high"], x["date"], x["name"]))
     return out
 
 

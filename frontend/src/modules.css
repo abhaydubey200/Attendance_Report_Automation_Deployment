@@ -125,3 +125,5 @@
 .sales-module .photo-thumb img { width: 120px; height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #f1f5f9; display: block; }
 .sales-module .photo-thumb figcaption { font-size: .75rem; margin-top: 3px; line-height: 1.25; }
 .sales-module .photo-info { flex: 1 1 260px; min-width: 0; }
+
+.sales-module .risk-badge { min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; }

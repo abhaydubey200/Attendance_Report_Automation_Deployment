@@ -17,6 +17,7 @@ import { SalesLayout } from "./sales/SalesLayout";
 import { SalesAutomationPage, SalesEmailLogPage, SalesEmployeePage, SalesReportPage } from "./sales/more";
 import { SalesCasesPage, SalesMapPage } from "./sales/geo";
 import { SalesClaimsPage } from "./sales/claims";
+import { SalesPhotosPage } from "./sales/photos";
 import { SalesDayPage, SalesMailPage, SalesOverview, SalesSettingsPage, SalesStaffPage, SalesUpload } from "./sales/pages";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UploadPage } from "./pages/UploadPage";
@@ -75,6 +76,7 @@ export function App() {
         <Route path="mail" element={<SalesMailPage />} />
         <Route path="cases" element={<SalesCasesPage />} />
         <Route path="claims" element={<SalesClaimsPage />} />
+        <Route path="photos" element={<SalesPhotosPage />} />
         <Route path="map" element={<SalesMapPage />} />
         <Route path="report" element={<SalesReportPage />} />
         <Route path="employee" element={<SalesEmployeePage />} />

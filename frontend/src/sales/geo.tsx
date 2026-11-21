@@ -10,6 +10,7 @@ import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, 
 import { formatDate, formatDateTime } from "../format";
 import type { GeoCall, GeoCase, GeoCaseRow, GeoCases, GeoDayMap, GeoLevel, GeoSign } from "./types";
 import { ClaimSigns, DayClaimsCard } from "./claims";
+import { DayPhotosCard, PhotoSigns } from "./photos";
 
 const LEVEL_KIND: Record<GeoLevel, "fail" | "warn" | "info"> = { high: "fail", medium: "warn", low: "info" };
 const CASE_KIND = { OPEN: "warn", OK: "ok", ACTION: "fail" } as const;
@@ -119,7 +120,7 @@ export function SalesMapPage() {
   if (!date || !code) return <><PageHeader title="Day map" /><Notice>Open a person's map from <Link to="/sales/cases">Needs checking</Link> or Day insights.</Notice></>;
   const loc = m?.signs.filter((s) => s.kind === "location") ?? [];
   const day = m?.signs.filter((s) => s.kind === "day") ?? [];
-  const claimSigns = [...new Map((m?.claims ?? []).flatMap((c) => c.signs).map((s) => [s.code, s])).values()];
+  const claimSigns = [...new Map([...(m?.claims ?? []).flatMap((c) => c.signs), ...(m?.photos ?? []).flatMap((p) => p.signs)].map((s) => [s.code, s])).values()];
   return (
     <>
       <PageHeader title={m ? `${m.name} · ${formatDate(m.date)}` : "Day map"}
@@ -154,7 +155,7 @@ export function SalesMapPage() {
                 {loc.length + day.length + claimSigns.length === 0 ? <p className="muted">Nothing to check on this day.</p> : (
                   <ul className="geo-signs">
                     {[...loc, ...claimSigns, ...day].map((s) => (
-                      <li key={s.code}><span className={`badge badge-${LEVEL_KIND[s.level]}`}>{s.kind === "location" ? "Location" : s.kind === "claim" ? "Claim" : "Day"}</span>
+                      <li key={s.code}><span className={`badge badge-${LEVEL_KIND[s.level]}`}>{s.kind === "location" ? "Location" : s.kind === "claim" ? "Claim" : s.kind === "photo" ? "Selfie" : "Day"}</span>
                         <div><strong>{s.label}</strong><div className="small">{s.evidence || s.why}</div></div></li>
                     ))}
                   </ul>
@@ -164,6 +165,7 @@ export function SalesMapPage() {
               <ReviewCard date={m.date} code={m.code} initial={m.case} />
             </div>
           </div>
+          <DayPhotosCard items={m.photos} />
           <DayClaimsCard claims={m.claims} />
           <Card title="Day timeline">
             <DataTable rows={m.calls} rowKey={(c) => String(c.seq)} empty="No calls in the Call Variance report for this day." columns={[
@@ -232,7 +234,7 @@ export function SalesCasesPage() {
             {[["OPEN", "Open"], ["OK", "Checked – OK"], ["ACTION", "Action taken"], ["ALL", "All"]].map(([k, l]) => (
               <button type="button" key={k} className={`chip-btn${f.status === k ? " on" : ""}`} onClick={() => set({ status: k })}>{l}</button>))}
             <span className="muted small">|</span>
-            {[["", "Location + claims"], ["location", "Location"], ["claims", "Claims"]].map(([k, l]) => (
+            {[["", "Everything"], ["location", "Location"], ["claims", "Claims"], ["photos", "Selfies"]].map(([k, l]) => (
               <button type="button" key={`k${k}`} className={`chip-btn${f.kind === k ? " on" : ""}`} onClick={() => set({ kind: k })}>{l}</button>))}
             <label className="field inline"><span className="field-label">HOD</span>
               <select value={f.hod} onChange={(e) => set({ hod: e.target.value })}><option value="">All</option>{d.hods.map((h) => <option key={h}>{h}</option>)}</select></label>
@@ -242,9 +244,11 @@ export function SalesCasesPage() {
               { header: "Date", render: (c) => formatDate(c.date), value: (c) => c.date },
               { header: "Employee", render: (c) => <Link to={`/sales/map?${qs({ date: c.date, code: c.code })}`}><strong>{c.name}</strong> <span className="muted">{c.code}</span></Link>, value: (c) => `${c.name} ${c.code}` },
               { header: "Team head", render: (c) => c.manager },
-              ...(f.kind === "claims" ? [] : [{ header: "Location signs", render: (c: GeoCaseRow) => <Signs signs={c.signs} />,
+              ...(f.kind === "claims" || f.kind === "photos" ? [] : [{ header: "Location signs", render: (c: GeoCaseRow) => <Signs signs={c.signs} />,
                 value: (c: GeoCaseRow) => c.signs.map((s) => s.label).join("; ") }]),
-              ...(f.kind === "location" ? [] : [{ header: "Claim signs", render: (c: GeoCaseRow) => c.claim_signs.length
+              ...(f.kind === "" || f.kind === "photos" ? [{ header: "Selfie signs", render: (c: GeoCaseRow) => <PhotoSigns signs={c.photo_signs} />,
+                value: (c: GeoCaseRow) => c.photo_signs.map((s) => s.label).join("; ") }] : []),
+              ...(f.kind === "location" || f.kind === "photos" ? [] : [{ header: "Claim signs", render: (c: GeoCaseRow) => c.claim_signs.length
                 ? <><ClaimSigns signs={c.claim_signs} /><span className="cell-sub">Rs {c.claim_amount.toLocaleString("en-IN")} claimed</span></> : null,
                 value: (c: GeoCaseRow) => c.claim_signs.map((s) => s.label).join("; ") }]),
               { header: "Other signs", render: (c) => <span className="small">{c.other_signs.join(", ")}</span>, value: (c) => c.other_signs.join("; ") },

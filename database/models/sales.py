@@ -272,3 +272,32 @@ class SalesClaim(Base):
     evidence: Mapped[str | None] = mapped_column(Text)                       # JSON {code: why}
     imported_by: Mapped[str | None] = mapped_column(String(100))
     imported_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=now_utc)
+
+
+class SalesPhoto(Base):
+    """An attendance selfie's fingerprint (the photo itself is never stored) and its warning signs. Kept keep_months."""
+    __tablename__ = "sales_photo"
+    __table_args__ = (UniqueConstraint("url", name="uq_sales_photo_url"), Index("ix_sales_photo_status", "status"),
+                      Index("ix_sales_photo_day_code", "day", "code"), Index("ix_sales_photo_sha", "sha256"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(String(600), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="SELFIE")
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    att_time: Mapped[str | None] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="NEW")      # NEW | DONE | FAILED | SKIPPED
+    error: Mapped[str | None] = mapped_column(String(200))
+    tries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    phash: Mapped[str | None] = mapped_column(String(16))                               # 64-bit perceptual hash (hex)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    size_kb: Mapped[int | None] = mapped_column(Integer)
+    faces: Mapped[int | None] = mapped_column(Integer)
+    brightness: Mapped[float | None] = mapped_column(Float)
+    sharpness: Mapped[float | None] = mapped_column(Float)
+    exif_time: Mapped[str | None] = mapped_column(String(19))                          # "YYYY-MM-DD HH:MM:SS" written by the camera
+    flags: Mapped[str | None] = mapped_column(String(300))
+    evidence: Mapped[str | None] = mapped_column(Text)
+    fetched_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

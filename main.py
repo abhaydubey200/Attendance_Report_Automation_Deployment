@@ -522,6 +522,23 @@ def cmd_sales_monthly(args: argparse.Namespace) -> int:
     return 0 if r["status"] == "SUCCESS" else 3
 
 
+def cmd_sales_photos(args: argparse.Namespace) -> int:
+    """Module 2 selfie checks: download waiting selfies from Bizom, fingerprint them in memory (never stored), check them."""
+    from sales import photos
+
+    total = {"fetched": 0, "done": 0, "failed": 0, "skipped": 0}
+    while True:
+        r = photos.fetch(_engine(), args.batch)
+        for k in total:
+            total[k] += r.get(k, 0) or 0
+        print(f"  batch: {r.get('fetched', 0)} photos | done {r.get('done', 0)} | failed {r.get('failed', 0)} | skipped {r.get('skipped', 0)}"
+              f" | flagged so far {r.get('flagged')}", flush=True)
+        if not args.all or not r.get("fetched") or r.get("note"):
+            break
+    print(f"Selfie checks: {total} | signs: {r.get('signs')}")
+    return 0
+
+
 def cmd_cleanup(args: argparse.Namespace) -> int:
     from daily import jobs, monthly
 
@@ -633,6 +650,11 @@ def build_parser() -> argparse.ArgumentParser:
     smo.add_argument("--month", help="YYYY-MM (default: previous month)")
     smo.add_argument("--manual", action="store_true")
     smo.set_defaults(func=cmd_sales_monthly)
+
+    sph = sub.add_parser("sales-photos", help="Field Sales (Bizom): check waiting attendance selfies (download, fingerprint, check)")
+    sph.add_argument("--batch", type=int, default=1000, help="photos per batch (default 1000)")
+    sph.add_argument("--all", action="store_true", help="keep going until no photo is waiting")
+    sph.set_defaults(func=cmd_sales_photos)
 
     cl = sub.add_parser("cleanup", help="remove a month's daily rows after its archive and a later backup are verified")
     cl.add_argument("--month", required=True, help="YYYY-MM")

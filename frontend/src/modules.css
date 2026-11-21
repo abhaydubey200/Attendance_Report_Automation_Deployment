@@ -116,3 +116,12 @@
 @media (max-width: 900px) { .sales-module .geo-layout { grid-template-columns: minmax(0, 1fr); } .sales-module .geo-map { height: 380px; } }
 
 .sales-module .cell-sub { display: block; font-size: .8rem; color: var(--muted); margin-top: 2px; max-width: 46ch; }
+
+/* selfie checks */
+.sales-module .photo-row { display: flex; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); align-items: flex-start; flex-wrap: wrap; }
+.sales-module .photo-row:first-child { border-top: 0; }
+.sales-module .photo-pair { display: flex; gap: .5rem; flex-wrap: wrap; }
+.sales-module .photo-thumb { margin: 0; width: 120px; }
+.sales-module .photo-thumb img { width: 120px; height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #f1f5f9; display: block; }
+.sales-module .photo-thumb figcaption { font-size: .75rem; margin-top: 3px; line-height: 1.25; }
+.sales-module .photo-info { flex: 1 1 260px; min-width: 0; }

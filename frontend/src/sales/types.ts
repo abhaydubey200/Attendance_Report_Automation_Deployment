@@ -66,7 +66,8 @@ export interface SalesRules {
   geo_km_ratio: number; geo_km_extra: number; geo_start_away_km: number; geo_start_history_days: number; geo_start_min_days: number;
   geo_end_away_km: number; geo_offbeat_min: number; geo_together_m: number; geo_together_minutes: number; geo_together_share: number;
   geo_together_min_calls: number; claim_high_ratio: number; claim_high_extra: number; claim_high_min_peers: number;
-  claim_short_market_minutes: number; claim_base_km: number;
+  claim_short_market_minutes: number; claim_base_km: number; photo_downloads: boolean; photo_batch: number; photo_same_bits: number;
+  photo_dark: number; photo_blurry: number; photo_time_hours: number;
 }
 
 export interface SalesEmailSettings {
@@ -117,7 +118,7 @@ export interface SalesMonthMail { month: string; label: string; mode: "test" | "
 
 // ---------------------------------------------------------------- location checks
 export type GeoLevel = "high" | "medium" | "low";
-export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" | "claim" }
+export interface GeoSign { code: string; label: string; level: GeoLevel; why: string; evidence: string; kind: "location" | "day" | "claim" | "photo" }
 export interface GeoPoint { lat: number; lng: number; time: string | null }
 export interface GeoCall {
   seq: number; start: string | null; end: string | null; duration_s: number | null; lat: number | null; lng: number | null;
@@ -129,11 +130,11 @@ export interface GeoDayMap {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; status: SalesStatus;
   attendance_time: string | null; eod_time: string | null; km: number | null; market_minutes: number | null; photo_url: string | null;
   attendance: GeoPoint | null; day_end: GeoPoint | null; usual_start: { lat: number; lng: number; days: number; limit_km: number } | null;
-  calls: GeoCall[]; signs: GeoSign[]; case: GeoCase; claims: ClaimLine[];
+  calls: GeoCall[]; signs: GeoSign[]; case: GeoCase; claims: ClaimLine[]; photos: PhotoItem[];
 }
 export interface GeoCaseRow {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; signs: GeoSign[]; other_signs: string[];
-  high: number; case: GeoCase; claim_signs: GeoSign[]; claim_amount: number;
+  high: number; case: GeoCase; claim_signs: GeoSign[]; claim_amount: number; photo_signs: GeoSign[];
 }
 export interface GeoCases { from: string; to: string; cases: GeoCaseRow[]; hods: string[]; labels: Record<string, string> }
 export interface SalesGeoSummary { people: number; signs: { code: string; label: string; level: GeoLevel; n: number }[]; points: boolean; calls: boolean }
@@ -147,4 +148,16 @@ export interface ClaimLine {
 export interface ClaimsOverview {
   from: string; to: string; lines: number; amount: number; flagged_lines: number; flagged_amount: number; people: number;
   signs: { code: string; label: string; level: GeoLevel; why: string; n: number; amount: number }[]; claims: ClaimLine[]; shown: number;
+}
+
+// ---------------------------------------------------------------- selfie checks
+export interface PhotoItem {
+  id: number; url: string; code: string; name: string; date: string; att_time: string | null; status: string; error: string | null;
+  faces: number | null; width: number | null; height: number | null; size_kb: number | null; exif_time: string | null; signs: GeoSign[];
+  matches: { id: number; url: string; code: string; name: string; date: string }[];
+}
+export interface PhotosOverview {
+  from: string; to: string; photos: number; checked: number; flagged: number; people: number;
+  queue: { waiting: number; done: number; failed: number; skipped: number };
+  signs: { code: string; label: string; level: GeoLevel; why: string; n: number }[]; items: PhotoItem[]; shown: number;
 }

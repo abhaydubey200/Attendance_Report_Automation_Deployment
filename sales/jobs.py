@@ -119,6 +119,13 @@ def run_daily(settings: Settings, engine, day: date | None = None, send: bool | 
             raise
         if status == FAILED:
             summary["alert"] = _alert(settings, engine, f"Field Sales daily {day:%d-%b-%Y}: failed", summary.get("problem") or "")
+        else:
+            try:                                          # selfie checks: never fail the daily run over a photo
+                from sales import photos
+                res = photos.fetch(engine)
+                summary["photos"] = {k: res.get(k) for k in ("fetched", "done", "failed", "skipped", "flagged")}
+            except Exception as exc:
+                summary["photos"] = f"photo check skipped: {type(exc).__name__}: {exc}"[:300]
     return {"run_id": run_id, "status": status, **summary}
 
 

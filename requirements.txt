@@ -27,3 +27,6 @@ tzdata==2026.6          # IANA timezone data for zoneinfo on Windows
 # Testing
 pytest==9.2.0
 httpx==0.28.1           # FastAPI TestClient
+opencv-python-headless==4.14.0.94   # Field Sales selfie checks (face detection)
+Pillow==13.0.0                      # Field Sales selfie checks (reading photos)
+numpy==2.5.4                        # Field Sales selfie checks

@@ -192,6 +192,12 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
             if v is not None:
                 per[code][k].append(float(v))
     norm = {c: {k: _robust(v) for k, v in fs.items() if len(v) >= 4} for c, fs in per.items()}
+    # people often start later on fixed days (meetings, market days): the usual attendance time per weekday, when known
+    wd: dict[tuple[str, int], list[float]] = defaultdict(list)
+    for (code, d), f in rows.items():
+        if f.get("att_min") is not None:
+            wd[(code, d.weekday())].append(float(f["att_min"]))
+    norm_wd = {k: _robust(v) for k, v in wd.items() if len(v) >= 4}
     keys = list(rows)
     z = np.zeros((len(keys), len(FEATURES)))
     for i, key in enumerate(keys):
@@ -200,7 +206,7 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
             v = f.get(feat)
             if v is None or feat not in nc:
                 continue
-            med, mad = nc[feat]
+            med, mad = norm_wd.get((key[0], key[1].weekday()), nc[feat]) if feat == "att_min" else nc[feat]
             z[i, j] = max(-10.0, min(10.0, (float(v) - med) / max(mad, SCALE_FLOOR[feat])))
             if feat == "place_km":                     # only being far from the usual places is unusual
                 z[i, j] = max(0.0, z[i, j])
@@ -220,7 +226,8 @@ def rescore(session: Session, end: date | None = None, rules: SalesRules | None 
         for j in np.argsort(-np.abs(z[i])):
             feat = FEATURES[j]
             if abs(z[i, j]) >= 3 and feat in nc and rows[(code, d)].get(feat) is not None:
-                reasons.append(_reason(feat, float(rows[(code, d)][feat]), nc[feat][0]))
+                usual_med = norm_wd.get((code, d.weekday()), nc[feat])[0] if feat == "att_min" else nc[feat][0]
+                reasons.append(_reason(feat, float(rows[(code, d)][feat]), usual_med))
         unusual = bool(pct[i] >= 0.98 and reasons) and "UNUSUAL_DAY" not in rules.disabled_signs
         unusual_n += unusual
         s = signs.get((code, d), [])

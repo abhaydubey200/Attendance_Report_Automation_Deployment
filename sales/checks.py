@@ -172,3 +172,33 @@ def proof(session: Session, day: date, items: list[dict], limit: int = 40, clien
         if own:
             client.close()
     return out
+
+
+# ---------------------------------------------------------------- trend and repeats for the email highlights
+def context(session: Session, day: date, codes: set[str] | None) -> dict:
+    """The previous uploaded day's attendance % for the same people, and who is absent several uploaded days in a row."""
+    from sales.report import pct_of
+    ups = list(session.scalars(select(SalesDayUpload).where(SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date <= day)
+                               .order_by(SalesDayUpload.report_date.desc()).limit(7)))
+    if not ups or ups[0].report_date != day:
+        return {}
+    rows_of = {u.report_date: [r for r in session.scalars(select(SalesEmployeeDay).where(SalesEmployeeDay.upload_id == u.upload_id))
+                               if codes is None or r.code in codes] for u in ups}
+    out: dict = {}
+    if len(ups) > 1:
+        prev = ups[1].report_date
+        out["prev_date"], out["prev_pct"] = prev, pct_of(rows_of[prev])
+    streak: dict[str, int] = {}
+    names = {}
+    for r in rows_of[day]:
+        if r.status == "ABSENT":
+            n = 1
+            for u in ups[1:]:
+                st = next((x.status for x in rows_of[u.report_date] if x.code == r.code), None)
+                if st != "ABSENT":
+                    break
+                n += 1
+            if n >= 3:
+                streak[r.code], names[r.code] = n, r.name
+    out["streaks"] = sorted(((names[c], n) for c, n in streak.items()), key=lambda x: -x[1])
+    return out

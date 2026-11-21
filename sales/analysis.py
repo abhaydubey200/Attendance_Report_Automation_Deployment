@@ -44,6 +44,7 @@ WARNINGS: dict[str, tuple[str, str, str]] = {
     "DAY_NOT_CLOSED": ("Day not closed", "low", "Did not end the day in Bizom; it closed automatically at 23:59."),
     "BEAT_JUMP": ("Visits outside the planned beat", "low", "Several outlets visited outside today's route."),
     "CALLS_AFTER_HOURS": ("Visits logged late in the evening", "low", "Outlet visits logged after working hours."),
+    "ODD_HOUR": ("Attendance marked at an odd hour", "medium", "Attendance marked very early in the morning or late in the evening."),
 }
 LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -133,6 +134,8 @@ def warnings(p: PersonDay, rules: SalesRules, have_eod: bool, have_calls: bool) 
             f.append("HIGH_KM")
         elif p.km == 0 and active:
             f.append("ZERO_KM")
+    if a is not None and (a < minutes_of(rules.odd_hour_before) or a >= minutes_of(rules.odd_hour_after)):
+        f.append("ODD_HOUR")
     if p.attendance_variance_m is not None and p.attendance_variance_m > rules.attendance_far_m:
         f.append("FAR_ATTENDANCE")
     if p.photo is False:

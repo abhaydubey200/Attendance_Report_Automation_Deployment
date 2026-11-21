@@ -543,6 +543,25 @@ def cmd_sales_photos(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sales_backfill(args: argparse.Namespace) -> int:
+    """Module 2: load many past days of Bizom exports from a folder as training data - no emails are prepared."""
+    from pathlib import Path
+
+    from sales import backfill
+
+    folder = Path(args.folder)
+    if not folder.is_dir():
+        print(f"Folder not found: {folder}")
+        return 2
+    r = backfill.load(_engine(), folder, f"cli:{getpass.getuser()}", replace=args.replace)
+    print(f"History files {r['history_files']} | days found {r['days_found']} | loaded {r['days_loaded']} | skipped {r['days_skipped']}")
+    for p in r["problems"][:20]:
+        print("  -", p)
+    print(f"Scores: {r['scores']} | clean-up: {r['purge']}")
+    print("Next: 'main.py sales-photos --all' checks the new selfies (downloads them once, keeps only fingerprints).")
+    return 0
+
+
 def cmd_cleanup(args: argparse.Namespace) -> int:
     from daily import jobs, monthly
 
@@ -660,6 +679,11 @@ def build_parser() -> argparse.ArgumentParser:
     sph.add_argument("--all", action="store_true", help="keep going until no photo is waiting")
     sph.add_argument("--recount", action="store_true", help="look again at selfies flagged 'no face' / 'too dark or blurry'")
     sph.set_defaults(func=cmd_sales_photos)
+
+    sbf = sub.add_parser("sales-backfill", help="Field Sales (Bizom): load a folder of past exports as training data (no emails)")
+    sbf.add_argument("folder", help="folder with the Bizom exports (sub-folders included)")
+    sbf.add_argument("--replace", action="store_true", help="also recount days that are already loaded")
+    sbf.set_defaults(func=cmd_sales_backfill)
 
     cl = sub.add_parser("cleanup", help="remove a month's daily rows after its archive and a later backup are verified")
     cl.add_argument("--month", required=True, help="YYYY-MM")

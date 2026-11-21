@@ -39,6 +39,12 @@ GEO: dict[str, tuple[str, str, str]] = {
     "GEO_AWAY_AT_HQ": ("Away from base on an HQ day", "high",
                        "Bizom shows the day as work at HQ, but attendance was marked far from all of the person's usual places."),
     "GEO_START_AWAY": ("Attendance away from the usual start", "medium", "Attendance was marked far from where this person usually starts."),
+    "GEO_SAME_POINT": ("Same exact GPS point as another person", "high",
+                       "Attendance was marked at exactly the same GPS point (to about 10 cm) as someone else that day - real phones almost "
+                       "never agree that closely; typical of a fake-GPS app or one phone used for two people."),
+    "GEO_GPS_FROZEN": ("GPS point never changes", "medium",
+                       "Attendance was marked at exactly the same GPS point (to about 10 cm) as on several earlier days - a real phone's "
+                       "position varies by a few metres every day; typical of a fake-GPS app or a stuck location."),
     "GEO_END_AWAY": ("Day ended away from the market", "low", "The day was ended far from the last call."),
     "GEO_OFF_BEAT": ("Calls outside the day's beat", "low", "Several calls were on a different beat from the rest of the day."),
     "GEO_SHARED_PHONE": ("Same phone as another person", "high", "Attendance was marked from the same phone as someone else that day."),
@@ -199,6 +205,16 @@ def check_day(session: Session, day: date, rules: SalesRules | None = None) -> d
         devices[dev].append(code)
     names = {r.code: r.name for r in rows}
     together = _together(calls, rules)
+    exact = lambda la, lo: (round(la, 6), round(lo, 6))  # noqa: E731
+    same_point: dict[tuple, set[str]] = defaultdict(set)
+    for (code, kind), x in locs.items():
+        if kind == "ATT":
+            same_point[exact(x.lat, x.lng)].add(code)
+    since = day - timedelta(days=30)
+    earlier: dict[str, Counter] = defaultdict(Counter)
+    for code, la, lo in session.execute(select(SalesLocation.code, SalesLocation.lat, SalesLocation.lng).where(
+            SalesLocation.kind == "ATT", SalesLocation.day >= since, SalesLocation.day < day)):
+        earlier[code][exact(la, lo)] += 1
     stats: Counter = Counter()
     for r in rows:
         flags: dict[str, str] = {}
@@ -211,6 +227,15 @@ def check_day(session: Session, day: date, rules: SalesRules | None = None) -> d
             if r.code in together:
                 other, share = together[r.code]
                 flags["GEO_TOGETHER"] = f"{share:.0%} of calls at the same place and time as {names.get(other, other)}."
+            att = locs.get((r.code, "ATT"))
+            if att is not None:
+                pt = exact(att.lat, att.lng)
+                others = sorted(names.get(c, c) for c in same_point[pt] - {r.code})
+                if others:
+                    flags["GEO_SAME_POINT"] = f"Exactly the same GPS point as {', '.join(others[:3])} ({pt[0]:.6f}, {pt[1]:.6f})."
+                n = earlier[r.code][pt]
+                if n >= rules.gps_frozen_days:
+                    flags["GEO_GPS_FROZEN"] = f"Exactly the same GPS point as on {n} of the last 30 days."
         order = sorted((k for k in flags if k not in rules.disabled_signs), key=lambda k: (LEVEL[GEO[k][1]], k))
         r.geo_flags = ",".join(order) or None
         r.geo_evidence = json.dumps({k: flags[k] for k in order}) if order else None

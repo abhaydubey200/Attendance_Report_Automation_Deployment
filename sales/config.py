@@ -46,7 +46,7 @@ class SalesRules(BaseModel):
     beat_jump_min: int = 3
     # location checks (sales.geo) - shown in the app; in emails only once geo_in_emails is switched on
     geo_in_emails: bool = True                    # 2026-11-21: the user asked for the checks in the emails
-    keep_months: int = 6                          # locations, photo links and phone codes are deleted after this
+    keep_months: int = 12                         # locations, photo links and phone codes are deleted after this (12 since 2026-11-22: training)
     geo_away_outlet_m: float = 300.0              # call made this far from the outlet's own location
     geo_away_outlet_min: int = 2                  # ... on at least this many calls
     geo_same_spot_m: float = 100.0                # all calls within this distance of their middle point
@@ -77,6 +77,9 @@ class SalesRules(BaseModel):
     photo_confirm_points: int = 70
     # warning signs switched off after the calibration review showed they are wrong most of the time
     disabled_signs: list[str] = Field(default_factory=list)
+    odd_hour_before: str = "07:00"                # attendance marked before this ...
+    odd_hour_after: str = "20:00"                 # ... or at / after this is an odd hour
+    gps_frozen_days: int = 4                      # the exact same GPS point (to ~10 cm) on this many earlier days (last 30)
     photo_dark: float = 40.0                      # average brightness (0-255) below this = too dark
     photo_blurry: float = 15.0                    # sharpness below this = too blurry to judge
     photo_time_hours: float = 2.0                 # time written in the photo this far from the attendance time

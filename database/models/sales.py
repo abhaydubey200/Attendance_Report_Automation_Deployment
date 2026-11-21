@@ -268,3 +268,18 @@ class SalesPhoto(Base):
     flags: Mapped[str | None] = mapped_column(String(300))
     evidence: Mapped[str | None] = mapped_column(Text)
     fetched_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SalesDayScore(Base):
+    """The learned scores of one person-day: how unusual it is for that person (0-1), whether it counts as an unusual day,
+    the risk score 0-100 (all warning signs + unusual-day score) and the plain-language reasons."""
+    __tablename__ = "sales_day_score"
+    __table_args__ = (UniqueConstraint("code", "day", name="uq_sales_day_score"), Index("ix_sales_day_score_day", "day"), {"schema": SCHEMA})
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    anomaly: Mapped[float | None] = mapped_column(Float)
+    unusual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    risk: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reasons: Mapped[str | None] = mapped_column(Text)

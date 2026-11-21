@@ -8,7 +8,7 @@ import { Icon } from "../components/icons";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
 import { StaffEditor } from "./more";
-import { HistoryImportCard } from "./geo";
+import { HistoryImportCard, RiskBadge } from "./geo";
 import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffRow, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
@@ -245,6 +245,7 @@ export function SalesDayPage() {
               { header: "KM", render: (p) => p.km ?? "", value: (p) => p.km },
               { header: "Day end", render: (p) => p.eod },
               { header: "Warning signs", render: (p) => <Flags p={p} />, value: (p) => p.flags.map((f) => f.label).join("; ") },
+              { header: "Risk", render: (p) => (day.data?.risk?.[p.code] ? <RiskBadge risk={day.data.risk[p.code]} /> : null), value: (p) => day.data?.risk?.[p.code] ?? 0 },
               { header: "Location", render: (p) => <span className="sales-flags">{(day.data?.geo?.[p.code] ?? []).map((l) => <span key={l} className="badge badge-warn">{l}</span>)}</span>,
                 value: (p) => (day.data?.geo?.[p.code] ?? []).join("; ") },
               { header: "", sortable: false, render: (p) => (["PRESENT", "LATE", "HALF_DAY"].includes(p.status)
@@ -456,7 +457,7 @@ export function SalesSettingsPage() {
         </Card>
         <Card title="Location checks" actions={<button type="button" className="btn btn-primary btn-small" disabled={busy}
           onClick={() => void run(() => api.put("/v1/sales/settings/rules", rules), "Saved. They apply to the next upload (upload again with replace to recheck a day).")}>Save</button>}>
-          <label className="check"><input type="checkbox" checked={rules.geo_in_emails} onChange={(e) => setRules({ ...rules, geo_in_emails: e.target.checked })} /> Show location signs in the emails (off = app only)</label>
+          <label className="check"><input type="checkbox" checked={rules.geo_in_emails} onChange={(e) => setRules({ ...rules, geo_in_emails: e.target.checked })} /> Location &amp; selfie checks in the emails, dashboards and Excel (each team head sees only their team)</label>
           <div className="form-grid">
             <Field label="Keep locations and photo links (months)">{num("keep_months")}</Field>
             <Field label="Call away from the outlet (metres)">{num("geo_away_outlet_m")}</Field>

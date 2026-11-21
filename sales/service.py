@@ -97,6 +97,8 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     geo.store_day(session, up, result.people, found.get(bizom.CALLS, (None, None, None))[2])
     from sales import photos
     photos.register_day(session, up)                      # selfies to check (downloaded later by the photo job)
+    from sales import ml
+    ml.rescore(session, day)                              # learned usual places / unusual days / risk scores
     geo.check_day(session, day)
     geo.purge(session)
     mail.plan(session, up)

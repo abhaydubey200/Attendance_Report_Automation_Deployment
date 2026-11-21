@@ -32,6 +32,16 @@ def _upload_or_404(db: Session, d: date):
     return up
 
 
+def _scores(db: Session, d: date) -> dict:
+    from sales import ml
+    return ml.scores(db, d)
+
+
+def _checks(db: Session, d: date) -> list[dict]:
+    from sales import checks
+    return checks.day_checks(db, d, None)
+
+
 def _day(db: Session, up) -> dict:
     s = json.loads(up.summary)
     rows = service.rows_for(db, up.upload_id)
@@ -42,7 +52,8 @@ def _day(db: Session, up) -> dict:
             "rows": view["people"], "warnings": view["warnings"], "teams": view["teams"],
             "mail": [mail.item_dict(i) for i in mail.items_for(db, up.report_date)],
             "geo": {r.code: [geo.GEO[k][0] for k in r.geo_flags.split(",") if k in geo.GEO] for r in rows if r.geo_flags},
-            "geo_summary": geo.summary(db, up.report_date)}
+            "geo_summary": geo.summary(db, up.report_date),
+            "risk": {c: s.risk for c, s in _scores(db, up.report_date).items() if s.risk}}
 
 
 # ---------------------------------------------------------------- days
@@ -74,14 +85,16 @@ def day(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), 
 @router.get("/days/{report_date}/excel")
 def day_excel(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     up = _upload_or_404(db, report_date)
-    v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "hr", "HR", up.report_date)
+    v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "hr", "HR", up.report_date,
+                           _checks(db, up.report_date))
     return Response(report.excel(v), media_type=XLSX, headers={"Content-Disposition": f'attachment; filename="{v["stem"]}.xlsx"'})
 
 
 @router.get("/days/{report_date}/dashboard")
 def day_dashboard(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     up = _upload_or_404(db, report_date)
-    v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "company", "HR", up.report_date)
+    v = report.build_view(service.rows_for(db, up.upload_id), json.loads(up.summary), "company", "HR", up.report_date,
+                           _checks(db, up.report_date))
     return Response(report.dashboard(v), media_type="text/html", headers={
         "Content-Disposition": f'attachment; filename="{v["stem"]}_dashboard.html"', "Content-Security-Policy": DASHBOARD_CSP})
 

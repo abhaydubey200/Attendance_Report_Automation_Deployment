@@ -68,7 +68,7 @@ def handler(request: httpx.Request) -> httpx.Response:
 @pytest.fixture
 def checked(engine, monkeypatch):
     real = photos.count_faces
-    monkeypatch.setattr(photos, "count_faces", lambda g: 0 if abs(np.asarray(g).mean() - np.asarray(Image.open(io.BytesIO(IMAGES["f_noface.jpg"])).convert("L")).mean()) < 0.5 else 1)
+    monkeypatch.setattr(photos, "count_faces", lambda g, *rest: 0 if abs(np.asarray(g).mean() - np.asarray(Image.open(io.BytesIO(IMAGES["f_noface.jpg"])).convert("L")).mean()) < 0.5 else 1)
     D = lambda d: date(2026, 11, d)  # noqa: E731
     items = [(HOST + "a_day10.jpg", "SL00001", D(10), "09:00"), (HOST + "a_day11.jpg", "SL00001", D(11), "09:00"),
              (HOST + "b_near.jpg", "SL00002", D(12), "09:10"), (HOST + "c_clean.jpg", "SL00003", D(12), "09:00"),

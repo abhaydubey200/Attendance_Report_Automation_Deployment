@@ -30,3 +30,5 @@ httpx==0.28.1           # FastAPI TestClient
 opencv-python-headless==4.14.0.94   # Field Sales selfie checks (face detection)
 Pillow==13.0.0                      # Field Sales selfie checks (reading photos)
 numpy==2.5.4                        # Field Sales selfie checks
+scikit-learn==1.9.1                 # Field Sales location model (usual places, unusual days)
+scipy==1.18.1                       # needed by scikit-learn

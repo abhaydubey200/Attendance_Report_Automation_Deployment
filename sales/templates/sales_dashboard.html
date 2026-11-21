@@ -50,6 +50,11 @@
       <div class="tablewrap"><table class="grid" style="font-size:13px"><thead><tr><th>Zonal head</th><th>HOD</th><th>People</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="teams"></tbody></table></div></div>
     {% if not v.teams %}<div class="card"><div class="card-h"><h3>Status</h3></div><ul class="wl" id="stl"></ul></div>{% endif %}
   </section>
+  <section class="card" style="margin-top:16px" id="checksCard" hidden>
+    <div class="card-h"><h3>Location &amp; selfie checks <span class="muted">– highest risk first; map and selfies in the HR Portal</span></h3></div>
+    <div class="tablewrap" style="max-height:520px"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Risk</th><th>Employee</th><th>Manager</th><th>Warning signs</th><th>Why</th></tr></thead><tbody id="checks"></tbody></table></div>
+  </section>
   <section class="card" style="margin-top:16px">
     <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3></div>
     <div class="bar" id="chips"></div>
@@ -108,6 +113,17 @@ document.addEventListener("click", (e) => {
 });
 $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
 render();
+})();
+(function () {
+  const D = JSON.parse(document.getElementById("data").textContent), C = D.checks || [];
+  if (!C.length) return;
+  const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const col = (l) => l === "high" ? "#b91c1c" : l === "medium" ? "#b45309" : "#475569";
+  document.getElementById("checksCard").hidden = false;
+  document.getElementById("checks").innerHTML = C.map((c) => `<tr><td class="num"><b style="color:#fff;background:${c.risk >= 60 ? "#b91c1c" : c.risk >= 30 ? "#d97706" : "#64748b"};padding:2px 8px;border-radius:999px">${c.risk}</b></td>
+    <td><b>${esc(c.name)}</b> <span class="code">(${esc(c.code)})</span></td><td>${esc(c.manager)}</td>
+    <td>${c.signs.map((s) => `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;margin:1px 3px 1px 0;color:${col(s.level)};background:#f8fafc;border:1px solid #e6e8ef">${esc(s.kind)}: ${esc(s.label)}</span>`).join("")}</td>
+    <td style="font-size:12px">${esc(c.why)}</td></tr>`).join("");
 })();
 </script>
 </body>

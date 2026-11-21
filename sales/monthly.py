@@ -89,6 +89,15 @@ def build_view(session: Session, month: str, codes: set[str] | None, view: str, 
                     "reasons": reasons, "avg_market": hm(round(sum(mk) / len(mk))) if mk else "",
                     "warnings": [{"label": WARNINGS[k][0], "level": WARNINGS[k][1], "days": n} for k, n in fl.most_common() if k in WARNINGS],
                     "perfect": c["PRESENT"] > 0 and not (c["ABSENT"] or c["LATE"] or c["HALF_DAY"] or c["LEAVE"]) and p["flag_days"] == 0})
+    from sales import checks
+    start_m, end_m = bounds(month)
+    pat = checks.month_patterns(session, start_m, end_m, codes, REPEAT_DAYS)
+    for p in out:
+        x = pat.get(p["code"])
+        p["checks"] = x or {"location_days": 0, "selfie_days": 0, "unusual_days": 0, "max_risk": 0, "top": [], "reasons": []}
+        p["reasons"] += [r for r in p["checks"]["reasons"]]
+        if p["checks"]["reasons"]:
+            p["perfect"] = False
     out.sort(key=lambda p: (-len(p["reasons"]), -p["absent"], -p["flag_days"], p["name"]))
     weeks = []
     for n, (wk, c) in enumerate(sorted(week_c.items()), start=1):
@@ -263,6 +272,22 @@ def excel(v: dict) -> bytes:
             wa.write(i, j, "" if val is None else val, flag if j == 6 else cell)
     if not v["attention"]:
         wa.write(1, 0, "Nobody this month.", note)
+
+    chk = [p for p in v["people"] if p.get("checks") and (p["checks"]["location_days"] or p["checks"]["selfie_days"] or p["checks"]["unusual_days"])]
+    if chk:
+        wk = wb.add_worksheet("Location & selfie checks")
+        for j, (h, w) in enumerate([("Code", 10), ("Name", 26), ("Team head", 22), ("Days with location signs", 12), ("Days with selfie signs", 12),
+                                    ("Unusual days", 10), ("Highest risk (0-100)", 11), ("Most frequent signs", 50)]):
+            wk.write(0, j, h, head)
+            wk.set_column(j, j, w)
+        chk.sort(key=lambda p: (-p["checks"]["max_risk"], -p["checks"]["location_days"] - p["checks"]["selfie_days"]))
+        for i, p in enumerate(chk, start=1):
+            c = p["checks"]
+            for j, val in enumerate([p["code"], p["name"], p["team_head"], c["location_days"], c["selfie_days"], c["unusual_days"],
+                                     c["max_risk"], "; ".join(c["top"])]):
+                wk.write(i, j, val, flag if j == 7 and c["reasons"] else cell)
+        wk.write(len(chk) + 2, 0, "Map and selfies of each day: HR Portal > Field Sales > Needs checking.", note)
+        wk.freeze_panes(1, 2)
 
     wp = wb.add_worksheet("People")
     cols = [("Code", "code", 10), ("Name", "name", 26), ("Role", "designation", 8), ("Team head", "team_head", 22), ("Days", "days", 6),

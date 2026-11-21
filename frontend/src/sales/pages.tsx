@@ -481,7 +481,8 @@ export function SalesSettingsPage() {
           <label className="check"><input type="checkbox" checked={rules.photo_downloads} onChange={(e) => setRules({ ...rules, photo_downloads: e.target.checked })} /> Download and check selfies from Bizom (only fingerprints are kept)</label>
           <div className="form-grid">
             <Field label="Selfies checked per run">{num("photo_batch")}</Field>
-            <Field label="Nearly identical: bits that may differ (0-7)">{num("photo_same_bits")}</Field>
+            <Field label="Same as another person: bits that may differ (0-7)">{num("photo_same_bits")}</Field>
+            <Field label="Reused by the same person: bits that may differ (0-7)">{num("photo_reuse_bits")}</Field>
             <Field label="Too dark below (brightness 0-255)">{num("photo_dark")}</Field>
             <Field label="Too blurry below (sharpness)">{num("photo_blurry")}</Field>
             <Field label="Photo time vs attendance (hours)">{num("photo_time_hours")}</Field>

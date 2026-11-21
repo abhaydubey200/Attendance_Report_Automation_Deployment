@@ -8,7 +8,7 @@ import { api } from "../api/client";
 import { useAction, useApi } from "../api/useApi";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
-import type { GeoCall, GeoCase, GeoCaseRow, GeoCases, GeoDayMap, GeoLevel, GeoSign } from "./types";
+import type { GeoCall, GeoCase, GeoCaseRow, GeoCases, GeoDayMap, GeoLevel, GeoSign, LearningSummary } from "./types";
 import { DayPhotosCard, PhotoSigns } from "./photos";
 
 const LEVEL_KIND: Record<GeoLevel, "fail" | "warn" | "info"> = { high: "fail", medium: "warn", low: "info" };
@@ -230,7 +230,8 @@ export function SalesCasesPage() {
           <label className="field inline"><span className="field-label">From</span><input type="date" value={f.start || d?.from || ""} onChange={(e) => set({ start: e.target.value })} /></label>
           <label className="field inline"><span className="field-label">To</span><input type="date" value={f.end || d?.to || ""} onChange={(e) => set({ end: e.target.value })} /></label>
         </Toolbar>} />
-      <Notice kind="info">Warning signs are for checking, not proof. They show in the app only, not in the emails.</Notice>
+      <Notice kind="info">Warning signs are for checking, not proof. Every review (Checked – OK / Action taken) teaches the risk score which signs are reliable.</Notice>
+      <LearningPanel />
       {data.error && <ErrorNotice error={data.error} />}
       {data.loading || !d ? <Loading /> : (
         <Card>
@@ -245,7 +246,8 @@ export function SalesCasesPage() {
           </Toolbar>
           <DataTable rows={d.cases} rowKey={(c) => `${c.date}|${c.code}`} search exportName={`field_sales_needs_checking_${d.from}_${d.to}`}
             empty="Nobody to check for these filters." columns={[
-              { header: "Risk", render: (c) => <RiskBadge risk={c.risk} />, value: (c) => c.risk },
+              { header: "Risk", render: (c) => <><RiskBadge risk={c.risk} />{c.learning && c.case.status === "OPEN" && <span className="cell-sub" title="This case has warning signs with few reviews yet - your review teaches the risk score">helps the model learn</span>}</>,
+                value: (c) => c.risk },
               { header: "Date", render: (c) => formatDate(c.date), value: (c) => c.date },
               { header: "Employee", render: (c) => <Link to={`/sales/map?${qs({ date: c.date, code: c.code })}`}><strong>{c.name}</strong> <span className="muted">{c.code}</span></Link>, value: (c) => `${c.name} ${c.code}` },
               { header: "Team head", render: (c) => c.manager },
@@ -284,6 +286,34 @@ export function HistoryImportCard() {
         <ActionMessages error={error} message={message} />
         <button type="submit" className="btn btn-primary btn-auto" disabled={busy || !file}>{busy ? "Importing…" : "Import history"}</button>
       </form>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------- how the risk score is learning from reviews
+function LearningPanel() {
+  const data = useApi<LearningSummary>("/v1/sales/learning");
+  const [open, setOpen] = useState(false);
+  const d = data.data;
+  if (!d) return null;
+  const reviewed = d.signs.filter((s) => s.reviewed > 0);
+  return (
+    <Card title="How the risk score is learning" actions={<button type="button" className="btn btn-ghost btn-small" onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"}</button>}>
+      <p className="small">
+        {d.mode === "model"
+          ? <>A model trained on <b>{d.model?.trained_on}</b> reviews sets the risk score{d.model?.auc ? <> (accuracy check: AUC {d.model.auc})</> : null}.</>
+          : <>Learning from <b>{d.labels}</b> review{d.labels === 1 ? "" : "s"}. A full model takes over after {d.needed_for_model.reviews} reviews with at least {d.needed_for_model.each_outcome} of each outcome.</>}
+        {" "}Cases marked <i>helps the model learn</i> have signs with few reviews; they are shown a little higher so the score learns faster.
+      </p>
+      {open && (
+        <DataTable rows={reviewed.length ? d.signs : d.signs.slice(0, 12)} rowKey={(s) => s.code} columns={[
+          { header: "Warning sign", render: (s) => s.label, value: (s) => s.label },
+          { header: "Level", render: (s) => <span className={`badge badge-${LEVEL_KIND[s.level]}`}>{s.level}</span>, value: (s) => s.level },
+          { header: "Reviews", render: (s) => s.reviewed ? `${s.reviewed} (${s.action} action, ${s.ok} OK)` : "–", value: (s) => s.reviewed },
+          { header: "Right at the start", render: (s) => `${s.start}%`, value: (s) => s.start },
+          { header: "Right now (learned)", render: (s) => <b style={{ color: s.learned > s.start ? "#b91c1c" : s.learned < s.start ? "#15803d" : undefined }}>{s.learned}%</b>, value: (s) => s.learned },
+        ]} />
+      )}
     </Card>
   );
 }

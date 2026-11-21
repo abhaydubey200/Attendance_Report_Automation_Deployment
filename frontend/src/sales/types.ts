@@ -135,7 +135,7 @@ export interface GeoDayMap {
 }
 export interface GeoCaseRow {
   date: string; code: string; name: string; designation: string; manager: string; hod: string; signs: GeoSign[]; other_signs: string[];
-  high: number; case: GeoCase; photo_signs: GeoSign[]; risk: number;
+  high: number; case: GeoCase; photo_signs: GeoSign[]; risk: number; explore: number; learning: boolean;
 }
 export interface GeoCases { from: string; to: string; cases: GeoCaseRow[]; hods: string[]; labels: Record<string, string> }
 export interface SalesGeoSummary { people: number; signs: { code: string; label: string; level: GeoLevel; n: number }[]; points: boolean; calls: boolean }
@@ -151,4 +151,12 @@ export interface PhotosOverview {
   from: string; to: string; photos: number; checked: number; flagged: number; people: number;
   queue: { waiting: number; done: number; failed: number; skipped: number };
   signs: { code: string; label: string; level: GeoLevel; why: string; n: number }[]; items: PhotoItem[]; shown: number;
+}
+
+// ---------------------------------------------------------------- learning from reviews
+export interface LearningSummary {
+  labels: number; updated_at: string | null; mode: "feedback" | "model";
+  model: { trained_on: number; auc: number | null; trained_at: string } | null;
+  needed_for_model: { reviews: number; each_outcome: number };
+  signs: { code: string; label: string; level: GeoLevel; reviewed: number; action: number; ok: number; start: number; learned: number; weight: number | null }[];
 }

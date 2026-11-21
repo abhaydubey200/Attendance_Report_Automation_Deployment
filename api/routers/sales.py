@@ -490,3 +490,18 @@ def photos_overview(start: date | None = None, end: date | None = None, sign: st
 @router.post("/photos/run")
 def photos_run(body: PhotoRunIn, _: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), engine=Depends(get_engine)) -> dict:
     return photos.fetch(engine, max(1, min(body.limit, 1000)))
+
+
+# ---------------------------------------------------------------- learning from reviews
+@router.get("/learning")
+def learning_summary(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    from sales import learning
+    return learning.summary(db)
+
+
+@router.post("/learning/relearn")
+def learning_relearn(_: Principal = Depends(require(Perm.MANAGE_SETTINGS)), db: Session = Depends(get_db)) -> dict:
+    from sales import learning, ml
+    res = learning.learn(db)
+    ml.rerisk(db)
+    return res

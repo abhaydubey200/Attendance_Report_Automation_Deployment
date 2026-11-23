@@ -102,6 +102,8 @@ def test_allowed_links():
     assert photos.allowed("https://outletimages.s3.ap-southeast-1.amazonaws.com/x/y.jpeg")
     assert photos.allowed("https://bizompictures.s3-ap-southeast-1.amazonaws.com/y.jpg")
     assert photos.allowed("https://s3.ap-southeast-1.amazonaws.com/outletimages/y.jpg")
+    assert photos.allowed("https://omspics.s3.ap-southeast-1.amazonaws.com/x/y.jpg")             # Bizom's older selfie bucket
+    assert not photos.allowed("https://s3.ap-southeast-1.amazonaws.com/files.mobisy.com/Bizom-Next/android/TUS/fallback.png")
     for bad in ("http://outletimages.s3.ap-southeast-1.amazonaws.com/x.jpg", "https://evil.example.com/x.jpg",
                 "https://outletimages.s3.ap-southeast-1.amazonaws.com.evil.com/x.jpg", "https://s3.ap-southeast-1.amazonaws.com/other/x.jpg",
                 "https://user:pw@outletimages.s3.ap-southeast-1.amazonaws.com/x.jpg", "file:///etc/passwd"):

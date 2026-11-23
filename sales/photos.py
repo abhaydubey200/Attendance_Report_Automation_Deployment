@@ -43,7 +43,8 @@ PHOTO: dict[str, tuple[str, str, str]] = {
 LEVEL = {"high": 0, "medium": 1, "low": 2}
 NEW, DONE, FAILED, SKIPPED = "NEW", "DONE", "FAILED", "SKIPPED"
 MAX_BYTES = 15 * 1024 * 1024
-_BUCKET_HOST = re.compile(r"^(outletimages|bizompictures)\.s3[.-]ap-southeast-1\.amazonaws\.com$")
+# Bizom's image buckets; 'omspics' holds the selfies of Nov 2025 - Mar 2026 (seen in Bizom's own exports, 2026-11-23)
+_BUCKET_HOST = re.compile(r"^(outletimages|bizompictures|omspics)\.s3[.-]ap-southeast-1\.amazonaws\.com$")
 _PATH_HOSTS = {"s3.ap-southeast-1.amazonaws.com", "s3-ap-southeast-1.amazonaws.com"}
 
 
@@ -53,7 +54,7 @@ def allowed(url: str) -> bool:
     if u.scheme != "https" or u.username or u.password or (u.port not in (None, 443)):
         return False
     host = (u.hostname or "").lower()
-    return bool(_BUCKET_HOST.match(host)) or (host in _PATH_HOSTS and re.match(r"^/(outletimages|bizompictures)/", u.path) is not None)
+    return bool(_BUCKET_HOST.match(host)) or (host in _PATH_HOSTS and re.match(r"^/(outletimages|bizompictures|omspics)/", u.path) is not None)
 
 
 # ---------------------------------------------------------------- registering selfies to check

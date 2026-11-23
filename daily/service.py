@@ -17,7 +17,7 @@ from daily.analysis import FileError
 from daily.excel_report import build_excel
 from daily.render import dashboard_html
 from daily.settings_store import get_email_settings, get_rules
-from database.models.daily import DayUpload, EmployeeDay
+from database.models.daily import DayUpload, EmployeeDay, MailItem
 from ingestion.checksum import sha256_bytes
 from ingestion.file_inspector import inspect_file, safe_filename
 from ingestion.file_reader import ReadError, read_raw
@@ -195,7 +195,7 @@ def _stored(settings: Settings, path: str | None, name: str | None) -> Incoming 
 
 
 def process_files(session: Session, settings: Settings, files: list[tuple[str, bytes]], actor: str,
-                  replace: bool = False, kinds: list[str | None] | None = None) -> DayUpload:
+                  replace: bool = False, kinds: list[str | None] | None = None, day: date | None = None) -> DayUpload:
     """Attendance Summary, Permission Report and/or On Duty Report of ONE day. A file of another kind already uploaded
     for that day is kept and merged; uploading the same kind again needs ``replace``."""
     if not files:
@@ -214,6 +214,9 @@ def process_files(session: Session, settings: Settings, files: list[tuple[str, b
         if hrms_date is not None:
             if hrms_date in inc.dates:
                 inc.report_date = hrms_date      # a multi-day report that includes the day is fine
+            continue
+        if day is not None and day in inc.dates:
+            inc.report_date = day                # the day asked for (history update of a multi-day report)
             continue
         if inc.report_date is None:
             # A report covering several days, uploaded without the Attendance Summary: use the one of its days that
@@ -269,6 +272,45 @@ def process_files(session: Session, settings: Settings, files: list[tuple[str, b
                             "replaced": existing.upload_id if existing else None})
     session.flush()
     return upload
+
+
+def _requests_of(od: onduty.OnDutyDay, d: date) -> list:
+    return sorted((q for q in od.requests if q.day == d), key=lambda q: (q.code, q.start or "", q.status, q.kind))
+
+
+def apply_onduty_report(session: Session, settings: Settings, filename: str, data: bytes, actor: str) -> dict:
+    """A Pocket HRMS On Duty Report covering several days (e.g. last month's history), uploaded on its own: every day
+    in it that already has its Attendance Summary uploaded is re-analysed with it (the stored Attendance Summary and
+    Permission Report of that day are kept). A day whose stored On Duty requests are exactly the same is left alone.
+    No email is sent. Unsent emails of a changed day are prepared again (Approve emails) so they show the new data."""
+    from daily import mail
+
+    inc = identify(settings, filename, data)
+    if inc.kind != "ONDUTY":
+        raise FileError(f"{inc.filename} is a {SOURCE_LABEL[inc.kind]}, not an On Duty Report.")
+    cfg = get_email_settings(session, settings)
+    out: dict = {"file": inc.filename, "requests": len(inc.onduty_day.requests), "dates": len(inc.dates),
+                 "updated": [], "unchanged": [], "no_attendance": [], "emails_prepared_again": []}
+    for d in sorted(inc.dates):
+        up = current_upload(session, d)
+        if up is None:
+            out["no_attendance"].append(d.isoformat())
+            continue
+        if up.onduty_path:
+            old = _stored(settings, up.onduty_path, up.onduty_filename)
+            if _requests_of(old.onduty_day, d) == _requests_of(inc.onduty_day, d):
+                out["unchanged"].append(d.isoformat())
+                continue
+        new = process_files(session, settings, [(filename, data)], actor, replace=True, kinds=["ONDUTY"], day=d)
+        out["updated"].append(d.isoformat())
+        waiting = session.scalar(select(MailItem.id).where(MailItem.report_date == d, ~MailItem.recipient_key.like("MONTHLY:%"),
+                                                           MailItem.status.in_(mail.sendable_statuses(cfg))).limit(1))
+        if waiting is not None:
+            mail.build_plan(session, settings, new, actor)
+            out["emails_prepared_again"].append(d.isoformat())
+    record_activity(session, "ONDUTY_HISTORY", "SUCCESS", username=actor,
+                    detail={k: (len(v) if isinstance(v, list) else v) for k, v in out.items()})
+    return out
 
 
 def process_upload(session: Session, settings: Settings, filename: str, data: bytes, actor: str, replace: bool = False) -> DayUpload:

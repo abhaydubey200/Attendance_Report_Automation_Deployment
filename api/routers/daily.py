@@ -37,9 +37,11 @@ def _day(db: Session, report_date: date) -> DayUpload:
 
 def _day_payload(db: Session, up: DayUpload, include_rows: bool = True) -> dict:
     insights = json.loads(up.insights)
+    # every upload of this date (a day re-analysed later, e.g. with an On Duty Report, keeps its sent emails)
     emails = [{"scope": e.scope, "recipients": e.recipients, "status": e.status, "mode": e.mode, "error": e.error,
                "sent_at": e.sent_at.isoformat(), "sent_by": e.sent_by}
-              for e in db.scalars(select(EmailLog).where(EmailLog.upload_id == up.upload_id).order_by(EmailLog.id))]
+              for e in db.scalars(select(EmailLog).join(DayUpload, DayUpload.upload_id == EmailLog.upload_id)
+                                  .where(DayUpload.report_date == up.report_date).order_by(EmailLog.id))]
     out = {"upload_id": up.upload_id, "report_date": up.report_date.isoformat(), "file": up.original_filename,
            "permission_file": up.permission_filename, "onduty_file": up.onduty_filename,
            "uploaded_by": up.uploaded_by, "uploaded_at": up.uploaded_at.isoformat(), "employees": up.employees,
@@ -106,6 +108,20 @@ async def upload(master: UploadFile | None = File(None), hrms: UploadFile | None
             return {"master_import": master_result, "report_date": None, "mail": [], "auto_sent": False,
                     "send_note": "Employee master updated. Upload the attendance files to prepare the emails."}
     payload = [(f.filename or "upload.xlsx", await f.read(limit)) for f, _ in chosen]
+    if [k for _, k in chosen] == ["ONDUTY"]:
+        try:
+            inc = service.identify(settings, payload[0][0], payload[0][1])
+        except FileError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+        if inc.kind == "ONDUTY" and len(inc.dates) > 1:
+            res = service.apply_onduty_report(db, settings, payload[0][0], payload[0][1], principal.username)
+            note = (f"On Duty Report ({res['requests']} requests, {res['dates']} dates): {len(res['updated'])} day(s) updated, "
+                    f"{len(res['unchanged'])} already up to date"
+                    + (f", {len(res['no_attendance'])} without an Attendance Summary (upload those days first)" if res["no_attendance"] else "")
+                    + ". No emails were sent" + (f"; the waiting emails of {', '.join(res['emails_prepared_again'])} were prepared again"
+                                                 if res["emails_prepared_again"] else "") + ".")
+            return {"report_date": None, "mail": [], "auto_sent": False, "master_import": master_result, "send_note": note,
+                    "onduty_history": res}
     try:
         up, items, note = service.upload_files_and_send(db, settings, payload, principal.username, replace,
                                                          send_mode or None, [k for _, k in chosen])
@@ -125,7 +141,8 @@ def days(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depe
     out = []
     for up in db.scalars(select(DayUpload).where(DayUpload.is_current.is_(True)).order_by(DayUpload.report_date.desc()).limit(400)):
         s = json.loads(up.insights)["scopes"]["ALL"]["summary"]
-        sent = db.scalars(select(EmailLog.status).where(EmailLog.upload_id == up.upload_id)).all()
+        sent = db.scalars(select(EmailLog.status).join(DayUpload, DayUpload.upload_id == EmailLog.upload_id)
+                          .where(DayUpload.report_date == up.report_date)).all()
         out.append({"report_date": up.report_date.isoformat(), "employees": up.employees, "attendance_pct": s["attendance_pct"],
                     "has_hrms": bool(up.stored_path), "has_permission": bool(up.permission_path), "has_onduty": bool(up.onduty_path),
                     "absent": s["counts"]["ABSENT"], "late": s["late"], "emails": len(sent),

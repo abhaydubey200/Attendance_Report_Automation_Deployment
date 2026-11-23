@@ -65,6 +65,14 @@ def test_unusual_day_risk_and_emails(day):
         assert ch[0]["risk"] >= ch[-1]["risk"] and {c["code"] for c in ch} >= {"SL00001", "SL00005"}
         assert {c["code"] for c in checks.day_checks(s, end, {"SL00005"})} == {"SL00005"}
         item = next(i for i in mail.items_for(s, end) if i.recipient_key == "hod2@example.com")
+        # Esha's signs compare the day with what was LEARNED: not in a HOD email until HR's reviews prove them ...
+        html, text, files = mail.render(s, item)
+        assert "Esha Fine (risk" not in html
+        from sales import learning
+        st = learning.state(s)
+        st.setdefault("signs", {}).update({"UNUSUAL_DAY": {"action": 9, "ok": 1}, "GEO_START_AWAY": {"action": 9, "ok": 1}})
+        learning._save(s, st)
+        # ... then they are (right 9 of 10 times, 8+ reviews)
         html, text, files = mail.render(s, item)
         # short email: highlights only (at most 6 lines); everything else in the attachments
         assert "Highlights" in html and "Highest risk: Esha Fine (risk" in html and "Asha" not in html and html.count("border-bottom:1px solid #f1f3f8") <= 6

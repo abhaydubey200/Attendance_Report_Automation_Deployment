@@ -72,8 +72,9 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     if existing and not replace:
         raise AlreadyUploaded(day)
     staff = list(session.scalars(select(SalesEmployee)))
+    from sales import staffcheck
     result = analysis.analyse(att, found.get(bizom.EOD, (None, None, None))[2], found.get(bizom.CALLS, (None, None, None))[2],
-                              staff, get_rules(session))
+                              staff, get_rules(session), staffcheck.never_users(session, day))
     if existing:
         existing.is_current = False
         for old in session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status.in_(mail.REPLACEABLE))):
@@ -98,6 +99,16 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
             present_type=p.present_type))
     session.flush()
     geo.store_day(session, up, result.people, found.get(bizom.CALLS, (None, None, None))[2])
+    # self-check: Bizom's attendance file read again by a separate reader and compared person by person
+    from sales import verify
+    rules = get_rules(session)
+    left_out = {e.code for e in staff if analysis._match(rules.exclude_codes, e.code)
+                or (not rules.include_promoters and analysis.is_promoter(e.code, e.designation, rules))}
+    vres = verify.check(day, found[bizom.ATTENDANCE][1], list(session.scalars(select(SalesEmployeeDay).where(
+        SalesEmployeeDay.upload_id == up.upload_id))), {e.code: e for e in staff}, result.summary.get("off_day"), left_out)
+    summary = json.loads(up.summary)
+    summary["verify"] = vres
+    up.summary = json.dumps(summary)
     from sales import photos
     photos.register_day(session, up)                      # selfies to check (downloaded later by the photo job)
     from sales import ml

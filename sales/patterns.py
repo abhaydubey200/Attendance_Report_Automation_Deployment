@@ -85,7 +85,8 @@ def _dates(ds: list[date], n: int = 8) -> str:
 def history(session: Session, upto: date, codes: set[str] | None, days_back: int = 120) -> dict[str, list[Day]]:
     """Each person's uploaded days (current uploads only), oldest first, up to `upto`."""
     from sales.geo import GEO
-    high_geo = {k for k, v in GEO.items() if v[1] == "high"}
+    from sales.trust import JUDGMENT
+    high_geo = {k for k, v in GEO.items() if v[1] == "high" and k not in JUDGMENT}   # measured location facts only
     q = (select(SalesDayUpload.report_date, SalesEmployeeDay.code, SalesEmployeeDay.status, SalesEmployeeDay.leave_type,
                 SalesEmployeeDay.attendance_time, SalesEmployeeDay.market_minutes, SalesEmployeeDay.flags, SalesEmployeeDay.geo_flags)
          .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
@@ -201,4 +202,44 @@ def day_patterns(session: Session, day: date, codes: set[str] | None, supervisor
         ps = [p for p in ps if p["code"] not in before]
         if ps:
             out[code] = ps
+    return out
+
+
+def team_trend(session: Session, day: date, codes: set[str] | None, weeks: int = 4) -> list[dict]:
+    """Attendance % per team head for the last `weeks` rolling weeks (7 days each, ending on `day`), oldest first, from the
+    uploaded days (week offs / holidays are left out, as everywhere). A team head needs 3+ people to be shown."""
+    from collections import Counter
+
+    from database.models.sales import SalesEmployee
+    from sales.report import manager_label
+    start = day - timedelta(days=7 * weeks - 1)
+    q = (select(SalesDayUpload.report_date, SalesEmployeeDay.code, SalesEmployeeDay.status, SalesEmployeeDay.manager_name)
+         .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
+         .where(SalesDayUpload.is_current.is_(True), SalesDayUpload.report_date >= start, SalesDayUpload.report_date <= day))
+    staff = {e.code: e.manager_name for e in session.scalars(select(SalesEmployee))}
+    c: dict[str, list[Counter]] = defaultdict(lambda: [Counter() for _ in range(weeks)])
+    people: dict[str, set[str]] = defaultdict(set)
+    for d, code, st, mgr in session.execute(q):
+        if codes is not None and code not in codes:
+            continue
+        th = manager_label(staff.get(code) or mgr) or "No team head"
+        w = weeks - 1 - (day - d).days // 7
+        c[th][w][st] += 1
+        people[th].add(code)
+
+    def pct(x: Counter) -> float | None:
+        due = sum(x.values()) - x["WEEK_OFF"]
+        return round(100 * (x["PRESENT"] + x["LATE"] + 0.5 * x["HALF_DAY"]) / due, 1) if due else None
+    out = []
+    for th, ws in c.items():
+        if len(people[th]) < 3:
+            continue
+        p = [pct(x) for x in ws]
+        before = [x for x in p[:-1] if x is not None]
+        avg = round(sum(before) / len(before), 1) if before else None
+        out.append({"team_head": th, "people": len(people[th]), "weeks": p,
+                    "week_ranges": [f"{(day - timedelta(days=7 * (weeks - 1 - i) + 6)):%d-%b}–{(day - timedelta(days=7 * (weeks - 1 - i))):%d-%b}"
+                                    for i in range(weeks)],
+                    "before_avg": avg, "change": round(p[-1] - avg, 1) if p[-1] is not None and avg is not None else None})
+    out.sort(key=lambda x: (x["change"] if x["change"] is not None else 0, x["team_head"]))
     return out

@@ -169,7 +169,9 @@ class DayResult:
     summary: dict
 
 
-def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules) -> DayResult:
+def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules,
+            not_bizom_users: set[str] = frozenset()) -> DayResult:
+    """not_bizom_users: staff who have never been in Bizom's file since joining (sales.staffcheck) - not counted absent."""
     master = {e.code: e for e in staff}
     by_code, by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {}, {})
     people: list[PersonDay] = []
@@ -203,8 +205,8 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                       eod_location=e.eod_location if e and st in WORKING else None,
                       photo_url=r.photo_url or (e.photo_url if e else None), present_type=r.present_type)
         people.append(p)
-    not_marked = not_yet = 0
-    off_day = None
+    not_marked = not_yet = not_users = 0
+    off_day, unconfirmed, marked, expected = None, False, 0, 0
     if rules.not_marked_is_absent:
         day = att.report_date
         missing = []
@@ -216,24 +218,44 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
             if m.date_of_joining and m.date_of_joining > day:
                 not_yet += 1                          # had not joined yet on this day: not absent
                 continue
+            if code in not_bizom_users:
+                not_users += 1                        # never marks attendance in Bizom: on HR's list, not counted absent
+                continue
             missing.append(m)
         marked = sum(1 for p in people if p.status in WORKING)
         expected = marked + len(missing)
-        if rules.sunday_off and day.weekday() == 6:
-            off_day = "Sunday"
-        elif expected and marked < rules.off_day_below * expected:
-            off_day = f"Holiday (only {marked} of {expected} marked attendance)"
+        off_day, unconfirmed = off_day_of(day, marked, expected, rules)
         for m in missing:
             people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
                                     zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True,
-                                    status=WEEK_OFF if off_day else ABSENT, leave_type=("Sunday" if off_day == "Sunday" else "Holiday")
-                                    if off_day else None))
+                                    status=WEEK_OFF if off_day else ABSENT, leave_type=off_leave(off_day)))
             not_marked += 1
     for p in people:
         p.flags = warnings(p, rules, eod is not None, calls is not None)
     res = DayResult(people, summarise(people, att, eod, calls, not_marked, excluded, left_but_marked))
-    res.summary["off_day"], res.summary["not_yet_joined"] = off_day, not_yet
+    res.summary["off_day"], res.summary["not_yet_joined"], res.summary["not_bizom_users"] = off_day, not_yet, not_users
+    res.summary["off_day_unconfirmed"] = bool(rules.not_marked_is_absent and unconfirmed)
+    res.summary["marked"], res.summary["expected"] = (marked, expected) if rules.not_marked_is_absent else (None, None)
     return res
+
+
+def off_leave(off_day: str | None) -> str | None:
+    return None if not off_day else "Sunday" if off_day == "Sunday" else "Holiday"
+
+
+def off_day_of(day, marked: int, expected: int, rules: SalesRules) -> tuple[str | None, bool]:
+    """(off-day label or None, still to be confirmed by HR). HR's calendar wins; a Sunday is off; a day when fewer than
+    `off_day_below` of the staff marked attendance LOOKS like a holiday - treated as one, but the emails wait for HR."""
+    iso = day.isoformat()
+    if iso in rules.working_days:
+        return None, False
+    if iso in rules.holidays:
+        return f"Holiday – {rules.holidays[iso]}" if rules.holidays[iso] else "Holiday", False
+    if rules.sunday_off and day.weekday() == 6:
+        return "Sunday", False
+    if expected and marked < rules.off_day_below * expected:
+        return f"Holiday? (only {marked} of {expected} marked attendance)", True
+    return None, False
 
 
 def pct(people: list[PersonDay]) -> float | None:

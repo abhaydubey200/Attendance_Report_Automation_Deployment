@@ -164,6 +164,11 @@ def highlights(v: dict) -> list[dict]:
         h.append({"level": pats[0]["patterns"][0]["level"],
                   "text": f"Repeat patterns ({len(pats)}): " + "; ".join(short(x) for x in pats[:3])
                           + (f"; and {len(pats) - 3} more" if len(pats) > 3 else "") + ". Dates in the attachments."})
+    tt = [t for t in (v["ctx"].get("team_trend") or []) if t["change"] is not None]
+    if v["view"] != "team" and len(tt) > 1 and tt[0]["change"] <= -10:
+        t = tt[0]
+        h.append({"level": "medium", "text": f"Biggest drop: {t['team_head']}'s team ({t['people']} people) {t['weeks'][-1]:g}% in the week "
+                                              f"{t['week_ranges'][-1]}, {t['before_avg']:g}% on average in the 3 weeks before."})
     streaks = v["ctx"].get("streaks") or []
     if streaks:
         h.append({"level": "high", "text": "Absent several days in a row: " +
@@ -186,6 +191,11 @@ def highlights(v: dict) -> list[dict]:
         reused = [x["name"] for x in v["checks"] if any(s["label"].startswith(("Selfie reused", "Same selfie")) for s in x["signs"])]
         if reused:
             h.append({"level": "high", "text": f"Selfie reused (confirmed by image comparison): {', '.join(reused[:4])}."})
+    si = v["ctx"].get("staff_issues") or {}
+    if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
+        h.append({"level": "medium", "text": f"Staff list to fix: {len(si.get('possibly_left', []))} possibly left (not in Bizom for "
+                                              f"{si.get('working_days_checked')} working days), {len(si.get('never_in_bizom', []))} never mark "
+                                              f"attendance in Bizom, {len(si.get('doj_wrong', []))} joining date looks wrong. Proof in the Excel."})
     if v["view"] == "hr" and v["data"] and (v["data"].get("not_in_staff_list") or v["data"].get("left_but_marked")):
         h.append({"level": "low", "text": f"Data to fix: {len(v['data'].get('not_in_staff_list', []))} not on the staff list, "
                                            f"{len(v['data'].get('left_but_marked', []))} marked attendance though Left."})
@@ -210,6 +220,9 @@ def email_text(v: dict) -> str:
              f"Needs checking {len(v['flagged'])}" + (f" | Location & selfie checks {len(v['checks'])}" if v["checks"] else ""), ""]
     if v["highlights"]:
         lines += ["Highlights:"] + [f"- {x['text']}" for x in v["highlights"]] + [""]
+    if v.get("feedback"):
+        lines += ["Was this right? Your answer makes the checks more accurate:"] + [
+            f"- {f['name']} ({f['sign'].lower()}): right {f['right']} | not right {f['wrong']}" for f in v["feedback"]] + [""]
     lines += ["Full lists, selfies and map links: the attached dashboard (open in Chrome or Edge) and Excel.",
               "Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
     return "\n".join(lines)
@@ -294,6 +307,22 @@ def excel(v: dict) -> bytes:
         wpat.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
         wpat.freeze_panes(1, 2)
 
+    tt = v["ctx"].get("team_trend") or []
+    if len(tt) > 1:
+        wt4 = wb.add_worksheet("Team heads - 4 weeks")
+        cols = [("Team head", 28), ("People", 8)] + [(r, 13) for r in tt[0]["week_ranges"]] + [("3 weeks before (avg)", 13), ("Change (points)", 11)]
+        for j, (h_, w) in enumerate(cols):
+            wt4.write(0, j, h_, head)
+            wt4.set_column(j, j, w)
+        for i, t in enumerate(tt, start=1):
+            vals = [t["team_head"], t["people"]] + ["" if x is None else x for x in t["weeks"]] + \
+                   ["" if t["before_avg"] is None else t["before_avg"], "" if t["change"] is None else t["change"]]
+            for j, val in enumerate(vals):
+                wt4.write(i, j, val, lvl["high"] if j == len(vals) - 1 and isinstance(val, float) and val <= -10 else cell)
+        wt4.write(len(tt) + 2, 0, "Attendance % per rolling week (7 days ending on the report day); week offs and holidays are not counted. "
+                                  "Biggest drop first.", note)
+        wt4.freeze_panes(1, 1)
+
     if v["checks"]:
         wc = wb.add_worksheet("Location & selfie checks")
         cols = [("Risk (0-100)", 9), ("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Type", 10), ("Warning sign", 34), ("Why", 70)]
@@ -364,6 +393,24 @@ def excel(v: dict) -> bytes:
             wl.write(i, j, "" if val is None else val, st.get(p["status"], cell) if k == "status_label" else cell)
     wl.autofilter(0, 0, len(v["people"]), len(cols) - 1)
     wl.freeze_panes(1, 2)
+
+    si = v["ctx"].get("staff_issues") or {}
+    if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
+        ws2 = wb.add_worksheet("Staff list to fix")
+        cols = [("Problem", 26), ("Code", 10), ("Name", 26), ("Team head", 22), ("HOD", 20), ("Proof", 90), ("Action", 44)]
+        for j, (h_, w) in enumerate(cols):
+            ws2.write(0, j, h_, head)
+            ws2.set_column(j, j, w)
+        i = 1
+        for key, label, action in (("possibly_left", "Possibly left", "Confirm with the team head; mark Left on the staff list if gone."),
+                                   ("never_in_bizom", "Never marks attendance in Bizom", "Remove from the Field Sales list, or ask them to mark in Bizom."),
+                                   ("doj_wrong", "Joining date looks wrong", "Correct the date of joining on the staff list.")):
+            for x in si.get(key, []):
+                for j, val in enumerate([label, x["code"], x["name"], x["manager"], x["hod"], x["proof"], action]):
+                    ws2.write(i, j, val, wrap)
+                i += 1
+        ws2.write(i + 1, 0, "People who never mark attendance in Bizom are not counted absent; the others are, until the list is fixed.", note)
+        ws2.freeze_panes(1, 3)
 
     if v["view"] == "hr" and v["data"]:
         wd = wb.add_worksheet("Data issues")

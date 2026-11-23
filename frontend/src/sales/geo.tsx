@@ -323,6 +323,8 @@ function LearningPanel() {
         {" "}Cases marked <i>helps the model learn</i> have signs with few reviews; they are shown a little higher so the score learns faster.
         {" "}<Link to="/sales/calibration">Calibration review</Link> measures each sign quickly.
       </p>
+      {d.email_rule && <p className="small"><b>HOD emails:</b> {d.email_rule}
+        {" "}Not proven yet: {d.signs.filter((s) => s.judgment && !s.in_emails).map((s) => s.label).join(", ") || "none"}.</p>}
       {d.signs.some((s) => s.suggest_off) && <Notice kind="warn">Wrong most of the time when checked: {d.signs.filter((s) => s.suggest_off).map((s) => s.label).join(", ")}. Consider switching {d.signs.filter((s) => s.suggest_off).length === 1 ? "it" : "them"} off.</Notice>}
       <ActionMessages error={error} message={message} />
       {open && (
@@ -331,6 +333,8 @@ function LearningPanel() {
           { header: "Level", render: (s) => <span className={`badge badge-${LEVEL_KIND[s.level]}`}>{s.level}</span>, value: (s) => s.level },
           { header: "Reviews", render: (s) => s.reviewed ? `${s.reviewed} (${s.action} action, ${s.ok} OK)` : "–", value: (s) => s.reviewed },
           { header: "Right at the start", render: (s) => `${s.start}%`, value: (s) => s.start },
+          { header: "In HOD emails", render: (s) => <span className={`badge badge-${s.in_emails ? "ok" : "warn"}`} title={s.email_status}>{s.in_emails ? "Yes" : "HR only"}</span>,
+            value: (s) => (s.in_emails ? 1 : 0) },
           { header: "Right now (learned)", render: (s) => <b style={{ color: s.learned > s.start ? "#b91c1c" : s.learned < s.start ? "#15803d" : undefined }}>{s.learned}%</b>, value: (s) => s.learned },
           { header: "", sortable: false, render: (s) => (s.switched_off
             ? <>{"Switched off "}{canSwitch && <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => void toggle(s.code, false)}>Switch on</button>}</>
@@ -343,7 +347,7 @@ function LearningPanel() {
 
 // ---------------------------------------------------------------- calibration review
 export function SalesCalibrationPage() {
-  const data = useApi<Calibration>("/v1/sales/calibration?n=50");
+  const data = useApi<Calibration>("/v1/sales/calibration?n=100");
   const reasons = useApi<LearningSummary>("/v1/sales/learning").data?.reasons ?? {};
   const [pick, setPick] = useState<Record<string, string>>({});
   const { busy, error, message, run } = useAction();

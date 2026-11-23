@@ -7,7 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useConfirm } from "../components/feedback";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
-import type { SalesEmailLogRow, SalesEmployeeReport, SalesJobs, SalesMailItem, SalesMonthList, SalesMonthMail, SalesReport, SalesStaffRow } from "./types";
+import type { SalesEmailLogRow, SalesEmployeeReport, SalesHolidays, SalesJobs, SalesMailItem, SalesMonthList, SalesMonthMail, SalesReport, SalesStaffRow } from "./types";
 import { STATUS_COLOR } from "./types";
 
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v}%`);
@@ -260,6 +260,7 @@ export function SalesAutomationPage() {
           <iframe className="email-frame" sandbox="" title="Email preview" src={apiUrl(`/v1/sales/mail/${preview}/preview`)} />
         </Card>
       )}
+      <HolidaysCard />
       <Card title="Job history">
         <DataTable rows={j?.runs ?? []} rowKey={(r) => String(r.id)} empty="No runs yet." columns={[
           { header: "Started", render: (r) => formatDateTime(r.started_at), value: (r) => r.started_at },
@@ -271,6 +272,56 @@ export function SalesAutomationPage() {
         ]} />
       </Card>
     </>
+  );
+}
+
+// ---------------------------------------------------------------- Holiday calendar (HR confirms; the app never decides)
+export function HolidaysCard() {
+  const h = useApi<SalesHolidays>("/v1/sales/holidays");
+  const { busy, error, message, run } = useAction();
+  const { hasPermission } = useAuth();
+  const can = hasPermission("MANAGE_SETTINGS");
+  const [day, setDay] = useState("");
+  const [name, setName] = useState("");
+  async function decide(d: string, kind: "holiday" | "working" | "clear", n = "") {
+    await run(() => api.put(`/v1/sales/holidays/${d}`, { kind, name: n }),
+      kind === "holiday" ? `${formatDate(d)} saved as a holiday.` : kind === "working" ? `${formatDate(d)} saved as a working day.` : `${formatDate(d)} cleared.`);
+    h.reload();
+  }
+  const d = h.data;
+  return (
+    <Card title="Holidays (field sales)">
+      <ActionMessages error={error} message={message} />
+      {!d ? <Loading /> : (
+        <>
+          <p className="muted small">{d.rule} On a holiday, people who did not mark attendance count as off, not absent.</p>
+          {d.waiting.length > 0 && (
+            <Notice kind="warn">
+              <b>Waiting for HR – the emails of these days are held:</b>
+              <ul className="plain">{d.waiting.map((w) => (
+                <li key={w.date}>{formatDate(w.date)} ({w.weekday}) – only {w.marked} of {w.expected} marked attendance{" "}
+                  {can && <><button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => void decide(w.date, "holiday", "")}>Holiday</button>{" "}
+                    <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => void decide(w.date, "working")}>Working day</button></>}
+                </li>))}</ul>
+            </Notice>
+          )}
+          <DataTable rows={[...d.holidays.map((x) => ({ ...x, kind: "Holiday" })), ...d.working_days.map((x) => ({ date: x, name: "", kind: "Working day" }))]
+            .sort((a, b) => a.date.localeCompare(b.date))} rowKey={(r) => r.date} empty="No days confirmed yet." columns={[
+            { header: "Date", render: (r) => formatDate(r.date), value: (r) => r.date },
+            { header: "Confirmed as", render: (r) => r.kind },
+            { header: "Name", render: (r) => r.name },
+            { header: "", render: (r) => (can ? <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => void decide(r.date, "clear")}>Remove</button> : null) },
+          ]} />
+          {can && (
+            <form className="toolbar" onSubmit={(e) => { e.preventDefault(); if (day) void decide(day, "holiday", name).then(() => { setDay(""); setName(""); }); }}>
+              <label className="field inline"><span className="field-label">Add a holiday</span><input type="date" value={day} onChange={(e) => setDay(e.target.value)} /></label>
+              <label className="field inline"><span className="field-label">Name</span><input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="e.g. Diwali" /></label>
+              <button type="submit" className="btn btn-primary btn-small" disabled={busy || !day}>Save</button>
+            </form>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 

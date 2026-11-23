@@ -71,7 +71,7 @@ export interface SalesRules {
 
 export interface SalesEmailSettings {
   mode: "test" | "live"; approval_required: boolean; auto_send: boolean; test_recipient: string | null; director_name: string; director_emails: string[];
-  hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean;
+  hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean; pilot_live?: string[];
 }
 
 export const STATUS_COLOR: Record<SalesStatus, string> = {
@@ -110,6 +110,14 @@ export interface SalesJobRun {
   started_by: string; started_at: string; finished_at: string | null; seconds: number | null;
 }
 
+export interface SalesStaffIssue { code: string; name: string; manager: string; hod: string; proof: string }
+export interface SalesStaffIssues { upto: string | null; working_days_checked: number; possibly_left: SalesStaffIssue[]; never_in_bizom: SalesStaffIssue[]; doj_wrong: SalesStaffIssue[] }
+export interface SalesHolidays {
+  holidays: { date: string; name: string }[];
+  working_days: string[];
+  waiting: { date: string; weekday: string; marked: number | null; expected: number | null }[];
+  rule: string;
+}
 export interface SalesJobs { inbox: string; waiting: string[]; auto_send: boolean; mode: "test" | "live"; runs: SalesJobRun[] }
 
 export interface SalesMonthList { months: { month: string; label: string; days: number; emails: number }[]; default: string }
@@ -159,7 +167,8 @@ export interface LearningSummary {
   model: { trained_on: number; auc: number | null; trained_at: string } | null;
   needed_for_model: { reviews: number; each_outcome: number };
   signs: { code: string; label: string; level: GeoLevel; reviewed: number; action: number; ok: number; start: number; learned: number; weight: number | null;
-    switched_off: boolean; suggest_off: boolean }[];
+    switched_off: boolean; suggest_off: boolean; judgment?: boolean; in_emails?: boolean; email_status?: string }[];
+  email_rule?: string;
   reasons: Record<string, string>;
 }
 export interface Calibration { from: string; to: string; cases: GeoCaseRow[]; reviewed_with_reason: number; target: number; sign_kinds: number }

@@ -541,7 +541,8 @@ def test_email_has_action_column(engine, settings):
         lead = next(i for i in items if i.recipient_key == "lead.a@example.com")
         html, text, _ = mail.render(s, settings, lead)
     assert ">Action</th>" in html and "Follow up; apply leave or regularise in Pocket HRMS" in html
-    assert "-> Follow up" in text and "Download it and open it in Chrome or Edge" in html
+    assert "-> Follow up" in text
+    assert "Attached" not in html and "Chrome or Edge" not in html            # no attachments note in the email body
 
 
 def test_prepare_again_does_not_pile_up_already_sent_rows(engine, settings):

@@ -99,6 +99,8 @@ def read_raw(data: bytes, file_type: str, sheet: str | None = None) -> tuple[lis
             rows = [[_cell_to_str(v) for v in r] for r in wb[name].iter_rows(values_only=True)]
         finally:
             wb.close()
+    elif file_type == "html":
+        rows, sheets = _html_rows(_decode(data)), []
     else:
         raise ReadError(f"Unsupported file type {file_type}.")
     if len(rows) > MAX_ROWS + 50:
@@ -124,3 +126,60 @@ def read_for_dataset(data: bytes, file_type: str, dataset_id: str, sheet: str | 
         return read_table(data, file_type, sheet, header_row)
     rows, sheets = read_raw(data, file_type, sheet)
     return reshaper(rows, 1, sheets)
+
+
+def _html_rows(text: str) -> list[list[str]]:
+    """The rows of every <table> in an HTML report saved as .xls (Pocket HRMS). Only cell text is kept: tags,
+    scripts and styles are dropped, nothing is executed or fetched."""
+    from html.parser import HTMLParser
+
+    class _Rows(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.rows: list[list[str]] = []
+            self.row: list[str] | None = None
+            self.cell: list[str] | None = None
+            self.skip = 0
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style"):
+                self.skip += 1
+            elif tag == "tr":
+                self._end_row()
+                self.row = []
+            elif tag in ("td", "th"):
+                self._end_cell()
+                if self.row is None:
+                    self.row = []
+                self.cell = []
+            elif tag == "br" and self.cell is not None:
+                self.cell.append(" ")
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "style"):
+                self.skip = max(0, self.skip - 1)
+            elif tag in ("td", "th"):
+                self._end_cell()
+            elif tag == "tr":
+                self._end_row()
+
+        def handle_data(self, data):
+            if self.cell is not None and not self.skip:
+                self.cell.append(data)
+
+        def _end_cell(self):
+            if self.cell is not None and self.row is not None:
+                self.row.append(" ".join("".join(self.cell).split()))
+            self.cell = None
+
+        def _end_row(self):
+            self._end_cell()
+            if self.row is not None:
+                self.rows.append(self.row)
+            self.row = None
+
+    parser = _Rows()
+    parser.feed(text)
+    parser.close()
+    parser._end_row()
+    return parser.rows

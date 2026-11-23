@@ -20,7 +20,7 @@ _MACRO_EXTS = {".xlsm", ".xlsb", ".xltm"}
 @dataclass
 class InspectionResult:
     ok: bool
-    file_type: str | None = None          # "csv" | "xlsx"
+    file_type: str | None = None          # "csv" | "xlsx" | "html" (an HTML table saved as .xls)
     errors: list[str] = field(default_factory=list)
 
 
@@ -68,5 +68,15 @@ def inspect_file(filename: str, data: bytes, allowed_extensions: tuple[str, ...]
         if b"\x00" in data[:4096]:
             return InspectionResult(False, errors=["The CSV contains binary data; save it as UTF-8 CSV."])
         return InspectionResult(True, file_type="csv")
+
+    if ext == ".xls":
+        # Pocket HRMS saves some reports (e.g. the On Duty Report) as an HTML table named .xls. Only that is read;
+        # a real binary .xls is refused (it would need another reader) - open it in Excel and save it as .xlsx.
+        if data.startswith(_OLE_MAGIC) or data.startswith(_ZIP_MAGIC):
+            return InspectionResult(False, errors=["This is a binary Excel 97-2003 (.xls) workbook; open it in Excel and save it as .xlsx."])
+        head = data[:2048].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+        if not head.startswith(b"<") or b"<table" not in data[:200_000].lower():
+            return InspectionResult(False, errors=["The .xls file is not a readable report; open it in Excel and save it as .xlsx."])
+        return InspectionResult(True, file_type="html")
 
     return InspectionResult(False, errors=[f"Unsupported file type '{ext}'."])

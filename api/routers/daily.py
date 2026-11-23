@@ -41,7 +41,7 @@ def _day_payload(db: Session, up: DayUpload, include_rows: bool = True) -> dict:
                "sent_at": e.sent_at.isoformat(), "sent_by": e.sent_by}
               for e in db.scalars(select(EmailLog).where(EmailLog.upload_id == up.upload_id).order_by(EmailLog.id))]
     out = {"upload_id": up.upload_id, "report_date": up.report_date.isoformat(), "file": up.original_filename,
-           "permission_file": up.permission_filename,
+           "permission_file": up.permission_filename, "onduty_file": up.onduty_filename,
            "uploaded_by": up.uploaded_by, "uploaded_at": up.uploaded_at.isoformat(), "employees": up.employees,
            "insights": insights, "emails": emails}
     if include_rows:
@@ -80,23 +80,25 @@ def _import_master(db: Session, settings: Settings, principal: Principal, name: 
 
 @router.post("/days/upload")
 async def upload(master: UploadFile | None = File(None), hrms: UploadFile | None = File(None), permission: UploadFile | None = File(None),
+                 onduty: UploadFile | None = File(None),
                  files: list[UploadFile] | None = File(None), file: UploadFile | None = File(None),
                  replace: bool = Form(False), send_mode: str = Form(""),
                  principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), settings: Settings = Depends(get_settings),
                  db: Session = Depends(get_db)) -> dict:
-    """Up to three datasets at once: the employee master (optional, imported first so routing uses it),
-    the Pocket HRMS Attendance Summary and the Pocket HRMS Permission Report of one day.
+    """Up to four datasets at once: the employee master (optional, imported first so routing uses it), and the
+    Pocket HRMS Attendance Summary, Permission Report and On Duty Report of one day.
     send_mode: 'auto' = send the emails right away, 'manual' = wait on Approve emails, '' = Settings default."""
     if send_mode not in ("", service.AUTO, service.MANUAL):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "send_mode must be 'auto' or 'manual'.")
     limit = settings.uploads.max_file_size_mb * 1024 * 1024 + 1
-    slotted = [(f, kind) for f, kind in ((hrms, "HRMS"), (permission, "PERMISSION")) if f is not None]
+    slotted = [(f, kind) for f, kind in ((hrms, "HRMS"), (permission, "PERMISSION"), (onduty, "ONDUTY")) if f is not None]
     generic = [(f, None) for f in (files or []) + ([file] if file else []) if f is not None]
     chosen = slotted + generic
     if master is None and not chosen:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Choose a file to upload.")
-    if len(chosen) > 2:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Upload at most two files: the Attendance Summary and the Permission Report.")
+    if len(chosen) > 3:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            "Upload at most three files: the Attendance Summary, the Permission Report and the On Duty Report.")
     master_result = None
     if master is not None:
         master_result = _import_master(db, settings, principal, master.filename or "employees.xlsx", await master.read(limit))
@@ -125,7 +127,7 @@ def days(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depe
         s = json.loads(up.insights)["scopes"]["ALL"]["summary"]
         sent = db.scalars(select(EmailLog.status).where(EmailLog.upload_id == up.upload_id)).all()
         out.append({"report_date": up.report_date.isoformat(), "employees": up.employees, "attendance_pct": s["attendance_pct"],
-                    "has_hrms": bool(up.stored_path), "has_permission": bool(up.permission_path),
+                    "has_hrms": bool(up.stored_path), "has_permission": bool(up.permission_path), "has_onduty": bool(up.onduty_path),
                     "absent": s["counts"]["ABSENT"], "late": s["late"], "emails": len(sent),
                     "email_failed": sum(1 for x in sent if x == "FAILED"), "uploaded_at": up.uploaded_at.isoformat()})
     return out

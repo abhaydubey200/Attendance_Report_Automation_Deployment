@@ -25,7 +25,7 @@ logging:
 
 uploads:
   max_file_size_mb: 25
-  allowed_extensions: [".xlsx", ".csv"]
+  allowed_extensions: [".xlsx", ".csv", ".xls"]   # .xls: only Pocket HRMS's HTML-table exports (On Duty Report)
 
 session:
   idle_timeout_minutes: 30

@@ -1,5 +1,5 @@
-"""Upload one day (Pocket HRMS Attendance Summary + Permission Report) -> analyse -> store -> plan one email per
-recipient (daily.mail). Pocket HRMS is the only data source."""
+"""Upload one day (Pocket HRMS Attendance Summary + Permission Report + On Duty Report) -> analyse -> store -> plan one
+email per recipient (daily.mail). Pocket HRMS is the only data source."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.config import Rules, Settings
-from daily import analysis, employees, permissions
+from daily import analysis, employees, onduty, permissions
 from daily.analysis import FileError
 from daily.excel_report import build_excel
 from daily.render import dashboard_html
@@ -36,21 +36,36 @@ class AlreadyUploaded(Exception):
         self.report_date, self.upload_id, self.kinds = report_date, upload_id, kinds or []
 
 
-SOURCE_LABEL = {"HRMS": "Pocket HRMS Attendance Summary", "PERMISSION": "Pocket HRMS Permission Report"}
+SOURCE_LABEL = {"HRMS": "Pocket HRMS Attendance Summary", "PERMISSION": "Pocket HRMS Permission Report",
+                "ONDUTY": "Pocket HRMS On Duty Report"}
+EXTRA_KINDS = ("PERMISSION", "ONDUTY")     # reports that may cover several days; they go with a day's Attendance Summary
+# DayUpload columns of each file kind: (filename, stored path, sha256)
+FILE_COLS = {"HRMS": ("original_filename", "stored_path", "sha256"),
+             "PERMISSION": ("permission_filename", "permission_path", "permission_sha256"),
+             "ONDUTY": ("onduty_filename", "onduty_path", "onduty_sha256")}
 
 
 @dataclass
 class Incoming:
-    kind: str                     # HRMS | PERMISSION
+    kind: str                     # HRMS | PERMISSION | ONDUTY
     filename: str
     data: bytes
-    report_date: date | None      # None: a Permission Report covering several days (or none)
+    report_date: date | None      # None: a Permission / On Duty Report covering several days (or none)
     hrms_rows: list[dict] | None = None
     permission_day: permissions.PermissionDay | None = None
+    onduty_day: onduty.OnDutyDay | None = None
+
+    @property
+    def dates(self) -> set[date]:
+        if self.kind == "PERMISSION":
+            return self.permission_day.dates
+        if self.kind == "ONDUTY":
+            return self.onduty_day.dates
+        return {self.report_date} if self.report_date else set()
 
 
 def identify(settings: Settings, filename: str, data: bytes) -> Incoming:
-    """Recognise a Pocket HRMS Attendance Summary or Permission Report by its columns."""
+    """Recognise a Pocket HRMS Attendance Summary, Permission Report or On Duty Report by its columns."""
     check = inspect_file(filename, data, tuple(settings.uploads.allowed_extensions), settings.uploads.max_file_size_mb * 1024 * 1024)
     if not check.ok:
         raise FileError(f"{filename}: " + " ".join(check.errors))
@@ -66,19 +81,29 @@ def identify(settings: Settings, filename: str, data: bytes) -> Incoming:
         dates = day.dates
         return Incoming("PERMISSION", safe_filename(filename), data, next(iter(dates)) if len(dates) == 1 else None,
                         permission_day=day)
+    if onduty.looks_like_onduty(raw_rows):
+        try:
+            od = onduty.parse_rows(raw_rows)
+        except permissions.PermissionError_ as exc:
+            raise FileError(f"{filename}: {exc}") from exc
+        dates = od.dates
+        return Incoming("ONDUTY", safe_filename(filename), data, next(iter(dates)) if len(dates) == 1 else None, onduty_day=od)
+    if check.file_type == "html":
+        raise FileError(f"{filename}: this .xls is not a Pocket HRMS On Duty Report. Save other reports as .xlsx.")
     if any({"employee_id", "user_name"} <= {str(c).strip().lower() for c in row} for row in raw_rows[:15]):
         raise FileError(f"{filename}: this is a Bizom file. Bizom is no longer used - Pocket HRMS is the only source.")
     try:
         rows = reshape_attendance_summary(raw_rows, 1, sheets).rows
     except ReadError as exc:
-        raise FileError(f"{filename}: {exc} Upload the Pocket HRMS 'Attendance Summary' or 'Permission Report'.") from exc
+        raise FileError(f"{filename}: {exc} Upload the Pocket HRMS 'Attendance Summary', 'Permission Report' or "
+                        f"'On Duty Report'.") from exc
     return Incoming("HRMS", safe_filename(filename), data, analysis.report_date_of(rows), hrms_rows=rows)
 
 
 def read_file(settings: Settings, filename: str, data: bytes) -> list[dict]:
     inc = identify(settings, filename, data)
     if inc.kind != "HRMS":
-        raise FileError("This is the Permission Report, not the Pocket HRMS Attendance Summary.")
+        raise FileError(f"This is the {SOURCE_LABEL[inc.kind]}, not the Pocket HRMS Attendance Summary.")
     return inc.hrms_rows or []
 
 
@@ -125,13 +150,16 @@ def apply_master(session: Session, report_date: date, results: list,
                   "missing_from_file": absent_from_file, "out_of_scope": skipped}
 
 
-def _analyse(session: Session, hrms: Incoming | None, perm: Incoming | None, rules: Rules):
+def _analyse(session: Session, hrms: Incoming | None, perm: Incoming | None, rules: Rules, od: Incoming | None = None):
     if hrms is None:
-        raise FileError("Upload the Pocket HRMS Attendance Summary of this day first (the Permission Report goes with it).")
+        raise FileError("Upload the Pocket HRMS Attendance Summary of this day first (the Permission Report and the "
+                        "On Duty Report go with it).")
     report_date, results, excluded = analysis.classify(hrms.hrms_rows or [], rules)
-    sources: dict = {"hrms": True, "permission_file": perm is not None}
+    sources: dict = {"hrms": True, "permission_file": perm is not None, "onduty_file": od is not None}
     if perm is not None:
         sources["permissions"] = analysis.apply_permissions(results, perm.permission_day, report_date, rules)
+    if od is not None:
+        sources["onduty"] = analysis.apply_onduty(results, od.onduty_day, report_date, rules)
     results, match = apply_master(session, report_date, results, rules.out_of_scope_categories)
     if not results:
         raise FileError("No employees left to report for this day (all excluded or marked as Left).")
@@ -147,7 +175,8 @@ def _store_rows(session: Session, upload_id: int, results) -> None:
                                 shift_name=r.shift, in_time=r.in_time, out_time=r.out_time, punches=r.punches,
                                 work_minutes=r.work_minutes, leave_type=r.leave_type, day_portion=r.day_portion,
                                 status=r.status, late_minutes=r.late_minutes, early_minutes=r.early_minutes,
-                                flags=",".join(r.flags) or None, source=r.source, permission=r.permission))
+                                flags=",".join(r.flags) or None, source=r.source, permission=r.permission,
+                                on_duty=r.on_duty))
 
 
 def _store_file(settings: Settings, inc: Incoming) -> tuple[str, str]:
@@ -167,8 +196,8 @@ def _stored(settings: Settings, path: str | None, name: str | None) -> Incoming 
 
 def process_files(session: Session, settings: Settings, files: list[tuple[str, bytes]], actor: str,
                   replace: bool = False, kinds: list[str | None] | None = None) -> DayUpload:
-    """Attendance Summary and/or Permission Report of ONE day. A file of the other kind already uploaded for
-    that day is kept and merged; uploading the same kind again needs ``replace``."""
+    """Attendance Summary, Permission Report and/or On Duty Report of ONE day. A file of another kind already uploaded
+    for that day is kept and merged; uploading the same kind again needs ``replace``."""
     if not files:
         raise FileError("Choose a file to upload.")
     incoming = [identify(settings, name, data) for name, data in files]
@@ -177,50 +206,61 @@ def process_files(session: Session, settings: Settings, files: list[tuple[str, b
             raise FileError(f"{inc.filename} is a {SOURCE_LABEL[inc.kind]}, but it was put in the {SOURCE_LABEL[wanted]} box.")
     kinds = [i.kind for i in incoming]
     if len(set(kinds)) != len(kinds):
-        raise FileError("Upload one Attendance Summary and/or one Permission Report per day.")
-    perm_only = [i for i in incoming if i.kind == "PERMISSION" and i.report_date is None]
-    if perm_only and len(incoming) == 1:
-        # A report covering several days, uploaded on its own: use the one of its days that has attendance uploaded.
-        known = [d for d in sorted(perm_only[0].permission_day.dates) if current_upload(session, d) is not None]
-        if len(known) != 1:
-            raise FileError(f"{perm_only[0].filename}: the Permission Report covers {len(perm_only[0].permission_day.dates)} "
-                            f"dates - upload it together with that day's Attendance Summary.")
-        perm_only[0].report_date = known[0]
-    dates = {i.report_date for i in incoming if i.report_date is not None}
+        raise FileError("Upload at most one Attendance Summary, one Permission Report and one On Duty Report per day.")
     hrms_date = next((i.report_date for i in incoming if i.kind == "HRMS"), None)
-    if hrms_date and any(i.kind == "PERMISSION" and hrms_date in i.permission_day.dates for i in incoming):
-        dates = {hrms_date}                     # a multi-day Permission Report that includes the day is fine
-    if len(dates) > 1:
+    for inc in incoming:
+        if inc.kind not in EXTRA_KINDS:
+            continue
+        if hrms_date is not None:
+            if hrms_date in inc.dates:
+                inc.report_date = hrms_date      # a multi-day report that includes the day is fine
+            continue
+        if inc.report_date is None:
+            # A report covering several days, uploaded without the Attendance Summary: use the one of its days that
+            # has attendance uploaded.
+            known = [d for d in sorted(inc.dates) if current_upload(session, d) is not None]
+            if len(known) != 1:
+                raise FileError(f"{inc.filename}: the {SOURCE_LABEL[inc.kind]} covers {len(inc.dates)} "
+                                f"date(s) - upload it together with that day's Attendance Summary.")
+            inc.report_date = known[0]
+    if any(i.report_date is None for i in incoming):
+        raise FileError("The files are for different dates: " + ", ".join(
+            f"{i.filename} = {i.report_date:%d-%b-%Y}" if i.report_date else f"{i.filename} = other dates" for i in incoming))
+    dates = {i.report_date for i in incoming}
+    if len(dates) != 1:
         raise FileError("The files are for different dates: " + ", ".join(f"{i.filename} = {i.report_date:%d-%b-%Y}" for i in incoming))
     report_date = dates.pop()
     existing = current_upload(session, report_date)
     if existing and not replace:
-        clash = [k for k in kinds if (existing.stored_path if k == "HRMS" else existing.permission_path)]
+        clash = [k for k in kinds if getattr(existing, FILE_COLS[k][1])]
         if clash:
             raise AlreadyUploaded(report_date, existing.upload_id, clash)
     by_kind = {i.kind: i for i in incoming}
-    hrms_in, perm_in = by_kind.get("HRMS"), by_kind.get("PERMISSION")
-    hrms = hrms_in or (_stored(settings, existing.stored_path, existing.original_filename) if existing else None)
-    perm = perm_in or (_stored(settings, existing.permission_path, existing.permission_filename) if existing else None)
 
+    def use(kind: str) -> Incoming | None:
+        if kind in by_kind:
+            return by_kind[kind]
+        if existing is None:
+            return None
+        name_col, path_col, _ = FILE_COLS[kind]
+        return _stored(settings, getattr(existing, path_col), getattr(existing, name_col))
+
+    hrms, perm, od = use("HRMS"), use("PERMISSION"), use("ONDUTY")
     rules = get_rules(session, settings)
-    _, results, insights = _analyse(session, hrms, perm, rules)
+    _, results, insights = _analyse(session, hrms, perm, rules, od)
     if existing:
         existing.is_current = False
     upload = DayUpload(report_date=report_date, is_current=True, employees=len(results), insights=json.dumps(insights),
                        rules=rules.model_dump_json(), uploaded_by=actor)
-    if hrms_in:
-        upload.stored_path, upload.sha256 = _store_file(settings, hrms_in)
-        upload.original_filename = hrms_in.filename
-    elif existing:
-        upload.stored_path, upload.sha256, upload.original_filename = existing.stored_path, existing.sha256, existing.original_filename
-    if perm_in:
-        perm_in.report_date = report_date
-        upload.permission_path, upload.permission_sha256 = _store_file(settings, perm_in)
-        upload.permission_filename = perm_in.filename
-    elif existing:
-        upload.permission_path, upload.permission_sha256 = existing.permission_path, existing.permission_sha256
-        upload.permission_filename = existing.permission_filename
+    for kind, (name_col, path_col, sha_col) in FILE_COLS.items():
+        if kind in by_kind:
+            path, sha = _store_file(settings, by_kind[kind])
+            setattr(upload, path_col, path)
+            setattr(upload, sha_col, sha)
+            setattr(upload, name_col, by_kind[kind].filename)
+        elif existing:
+            for col in (name_col, path_col, sha_col):
+                setattr(upload, col, getattr(existing, col))
     session.add(upload)
     session.flush()
     _store_rows(session, upload.upload_id, results)
@@ -240,8 +280,8 @@ def recalculate(session: Session, settings: Settings, report_date: date, actor: 
     upload = current_upload(session, report_date)
     if upload is None:
         raise LookupError("No upload for that date.")
-    files = [(name, Path(path).read_bytes()) for name, path in ((upload.original_filename, upload.stored_path),
-                                                                 (upload.permission_filename, upload.permission_path)) if path]
+    files = [(getattr(upload, name_col) or Path(getattr(upload, path_col)).name, Path(getattr(upload, path_col)).read_bytes())
+             for name_col, path_col, _ in FILE_COLS.values() if getattr(upload, path_col)]
     return process_files(session, settings, files, actor, replace=True)
 
 
@@ -257,7 +297,7 @@ def rows_for(session: Session, upload_id: int) -> list[dict]:
                     "manager": e.reporting_manager or "", "source": e.source or "HRMS", "permission": e.permission or "",
                     "in_time": e.in_time, "out_time": e.out_time, "punches": e.punches, "work_minutes": e.work_minutes,
                     "work_hours": round(e.work_minutes / 60, 2) if e.work_minutes is not None else None,
-                    "leave_type": e.leave_type, "day_portion": e.day_portion, "status": e.status,
+                    "on_duty": e.on_duty or "", "leave_type": e.leave_type, "day_portion": e.day_portion, "status": e.status,
                     "status_label": analysis.STATUS_LABEL[e.status], "late_minutes": e.late_minutes,
                     "early_minutes": e.early_minutes, "flags": (e.flags or "").split(",") if e.flags else []})
     return out

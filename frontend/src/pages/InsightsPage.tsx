@@ -128,7 +128,7 @@ export function InsightsPage() {
           </div>
           {day.data && (
             <p className="muted small">
-              Files: {day.data.file ? `Pocket HRMS (${day.data.file})` : "Pocket HRMS not uploaded"} · {day.data.permission_file ? `Permission Report (${day.data.permission_file})` : "Permission Report not uploaded"}
+              Files: {day.data.file ? `Pocket HRMS (${day.data.file})` : "Pocket HRMS not uploaded"} · {day.data.permission_file ? `Permission Report (${day.data.permission_file})` : "Permission Report not uploaded"} · {day.data.onduty_file ? `On Duty Report (${day.data.onduty_file})` : "On Duty Report not uploaded"}
             </p>
           )}
 
@@ -217,6 +217,7 @@ export function InsightsPage() {
               { header: "Left early", render: (r) => (r.early_minutes ? `${formatMinutes(r.early_minutes)} hrs short` : "") },
               { header: "Leave", render: (r) => r.leave_type ?? "" },
               { header: "Permission", render: (r) => r.permission ?? "" },
+              { header: "On duty", render: (r) => r.on_duty ?? "" },
             ]} />
           </Card>
 

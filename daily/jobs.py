@@ -38,7 +38,7 @@ from ingestion.checksum import sha256_bytes
 
 IST = timezone(timedelta(hours=5, minutes=30))      # India has no daylight saving
 RUNNING, SUCCESS, PARTIAL, FAILED, SKIPPED = "RUNNING", "SUCCESS", "PARTIAL", "FAILED", "SKIPPED"
-FILE_TYPES = (".xlsx", ".csv")
+FILE_TYPES = (".xlsx", ".csv", ".xls")
 
 
 def yesterday_ist() -> date:
@@ -141,7 +141,7 @@ def scan_inbox(settings: Settings, inbox: Path) -> tuple[list[InboxFile], list[s
         except FileError as exc:
             rejected.append(str(exc))
             continue
-        dates = inc.permission_day.dates if inc.kind == "PERMISSION" else {inc.report_date}
+        dates = inc.dates
         files.append(InboxFile(p, inc.kind, data, sha256_bytes(data), dates))
     return files, rejected
 
@@ -180,12 +180,15 @@ def _daily(s: Session, settings: Settings, day: date, inbox: Path, mode: str | N
         summary["rejected_files"] = rejected
     att = [f for f in files if f.kind == "HRMS" and day in f.dates]
     perm = [f for f in files if f.kind == "PERMISSION" and day in f.dates]
+    od = [f for f in files if f.kind == "ONDUTY" and day in f.dates]
     existing = service.current_upload(s, day)
     new = []
     if att and (existing is None or existing.sha256 != att[-1].sha):
         new.append(att[-1])
     if perm and (existing is None or existing.permission_sha256 != perm[-1].sha):
         new.append(perm[-1])
+    if od and (existing is None or existing.onduty_sha256 != od[-1].sha):
+        new.append(od[-1])
     if existing is None and not att:
         summary["problem"] = f"No Pocket HRMS Attendance Summary for {day:%d-%b-%Y} in {inbox}."
         return FAILED, summary
@@ -198,6 +201,7 @@ def _daily(s: Session, settings: Settings, day: date, inbox: Path, mode: str | N
         summary["processed"] = []
     summary["employees"] = up.employees
     summary["permission_report"] = bool(up.permission_path)
+    summary["onduty_report"] = bool(up.onduty_path)
     cfg = get_email_settings(s, settings)
     if not up.permission_path and (settings.jobs.permission_required or cfg.wait_for_permission):
         why = "jobs.permission_required" if settings.jobs.permission_required else "Settings: wait for the Permission Report"

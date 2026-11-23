@@ -201,4 +201,9 @@ def context(session: Session, day: date, codes: set[str] | None) -> dict:
             if n >= 3:
                 streak[r.code], names[r.code] = n, r.name
     out["streaks"] = sorted(((names[c], n) for c, n in streak.items()), key=lambda x: -x[1])
+    # repeat patterns over each person's own days (plain counts, every one with its dates) - sales.patterns
+    from sales import patterns
+    rules = get_rules(session)
+    sup = {r.code for r in rows_of[day] if (r.designation or "").upper() in {d.upper() for d in rules.supervisor_designations}}
+    out["patterns"] = patterns.day_patterns(session, day, {r.code for r in rows_of[day]}, sup)
     return out

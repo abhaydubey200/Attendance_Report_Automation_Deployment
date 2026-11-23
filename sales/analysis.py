@@ -104,11 +104,15 @@ def _status(r: AttendanceRow) -> tuple[str, str | None]:
     return ABSENT, None
 
 
-def _eod_lookup(eod: list[EodRow]) -> tuple[dict, dict]:
-    by_name_time = {(norm_name(e.name), e.attendance_time): e for e in eod if e.marked}
-    names = Counter(norm_name(e.name) for e in eod if e.marked)
-    by_name = {norm_name(e.name): e for e in eod if e.marked and names[norm_name(e.name)] == 1}
-    return by_name_time, by_name
+def _eod_lookup(eod: list[EodRow]) -> tuple[dict, dict, dict]:
+    """EMP_CODE first (Employee_ID in newer exports); the name only for rows without a code, and only when unique."""
+    codes = Counter(e.code for e in eod if e.marked and e.code)
+    by_code = {e.code: e for e in eod if e.marked and e.code and codes[e.code] == 1}
+    no_code = [e for e in eod if e.marked and not e.code]
+    by_name_time = {(norm_name(e.name), e.attendance_time): e for e in no_code}
+    names = Counter(norm_name(e.name) for e in no_code)
+    by_name = {norm_name(e.name): e for e in no_code if names[norm_name(e.name)] == 1}
+    return by_code, by_name_time, by_name
 
 
 def warnings(p: PersonDay, rules: SalesRules, have_eod: bool, have_calls: bool) -> list[str]:
@@ -167,7 +171,7 @@ class DayResult:
 
 def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules) -> DayResult:
     master = {e.code: e for e in staff}
-    by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {})
+    by_code, by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {}, {})
     people: list[PersonDay] = []
     seen: set[str] = set()
     excluded = Counter()
@@ -186,7 +190,7 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
         if m is not None and m.status == "LEFT":
             left_but_marked.append(f"{r.name} ({r.code})")
         st, leave = _status(r)
-        e = by_name_time.get((norm_name(r.name), r.attendance_time)) or by_name.get(norm_name(r.name))
+        e = by_code.get(r.code) or by_name_time.get((norm_name(r.name), r.attendance_time)) or by_name.get(norm_name(r.name))
         p = PersonDay(code=r.code, name=(m.name if m else r.name), designation=(m.designation if m and m.designation else r.designation),
                       zone=(m.zone if m and m.zone else r.zone), manager_name=(m.manager_name if m and m.manager_name else r.manager),
                       zonal_name=m.zonal_name if m else None, hod_name=m.hod_name if m else None, in_master=m is not None,
@@ -199,19 +203,37 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                       eod_location=e.eod_location if e and st in WORKING else None,
                       photo_url=r.photo_url or (e.photo_url if e else None), present_type=r.present_type)
         people.append(p)
-    not_marked = 0
+    not_marked = not_yet = 0
+    off_day = None
     if rules.not_marked_is_absent:
+        day = att.report_date
+        missing = []
         for code, m in master.items():
             if code in seen or m.status != "ACTIVE" or _match(rules.exclude_codes, code):
                 continue
             if not rules.include_promoters and is_promoter(code, m.designation, rules):
                 continue
-            people.append(PersonDay(code=code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
-                                    zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True, status=ABSENT))
+            if m.date_of_joining and m.date_of_joining > day:
+                not_yet += 1                          # had not joined yet on this day: not absent
+                continue
+            missing.append(m)
+        marked = sum(1 for p in people if p.status in WORKING)
+        expected = marked + len(missing)
+        if rules.sunday_off and day.weekday() == 6:
+            off_day = "Sunday"
+        elif expected and marked < rules.off_day_below * expected:
+            off_day = f"Holiday (only {marked} of {expected} marked attendance)"
+        for m in missing:
+            people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
+                                    zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True,
+                                    status=WEEK_OFF if off_day else ABSENT, leave_type=("Sunday" if off_day == "Sunday" else "Holiday")
+                                    if off_day else None))
             not_marked += 1
     for p in people:
         p.flags = warnings(p, rules, eod is not None, calls is not None)
-    return DayResult(people, summarise(people, att, eod, calls, not_marked, excluded, left_but_marked))
+    res = DayResult(people, summarise(people, att, eod, calls, not_marked, excluded, left_but_marked))
+    res.summary["off_day"], res.summary["not_yet_joined"] = off_day, not_yet
+    return res
 
 
 def pct(people: list[PersonDay]) -> float | None:

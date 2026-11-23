@@ -10,6 +10,7 @@ PyJWT==2.15.1
 pandas==3.1.1
 pydantic==2.14.3
 openpyxl==3.1.5
+pypdf==7.1.1                        # reading HR's yearly holiday list (PDF)
 XlsxWriter==3.3.1
 Jinja2==3.1.6
 

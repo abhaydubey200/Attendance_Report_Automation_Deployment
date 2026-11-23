@@ -210,3 +210,12 @@ def test_history_report_updates_every_uploaded_day_without_sending(engine, setti
         waiting = s.query(MailItem).filter(MailItem.report_date == DAY, MailItem.status == mail.PENDING).all()
         assert waiting and all(i.upload_id == service.current_upload(s, DAY).upload_id for i in waiting)
         assert s.query(EmailLog).filter(EmailLog.recipients != "x").count() == 0                # nothing new was sent
+
+
+def test_month_permission_report_without_the_day_goes_with_it(engine, settings):
+    """A Permission Report covering other days of the month (not this one) is attached and applies nothing - as before."""
+    with session_scope(engine) as s:
+        other_days = permission_file([("E2", "10/11/2026", "09:30", "11:30", "Approved"), ("E3", "11/11/2026", "16:00", "18:00", "Pending")])
+        up = service.process_files(s, settings, [("s.xlsx", summary_file(CASES)), ("p.xlsx", other_days)], "tester")
+        assert up.report_date == DAY and json.loads(up.insights)["sources"]["permissions"]["today"] == 0
+        assert service.recalculate(s, settings, DAY, "tester").permission_filename == "p.xlsx"

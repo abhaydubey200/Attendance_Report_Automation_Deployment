@@ -43,10 +43,18 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "hod_name": ("hod", "hodname", "headofdepartment"),
     "hod_email": ("hodemail", "hodmail", "hodmailid", "hodemailid", "emailidhod", "emailhod", "mailidhod"),
     "date_of_joining": ("dateofjoining", "doj", "joiningdate"),
+    "holiday_state": ("state", "holidaystate", "holidayregion", "statename", "workstate"),
     "status": ("status", "employeestatus", "userstatus"),
     "exit_date": ("exitdate", "dateofleaving", "lastworkingday", "dol", "leavingdate"),
 }
 FIELDS = list(ALIASES)
+
+
+def _state(v: str) -> str | None:
+    from daily.holiday_list import STATE_ALIASES, STATES
+    v = re.sub(r"\s+", " ", str(v or "")).strip()
+    s = STATE_ALIASES.get(v.lower(), v)
+    return s if s in STATES else None
 
 
 def _date(v: str) -> date | None:
@@ -111,6 +119,13 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
                     continue
             elif f == "status":
                 v = "LEFT" if v.lower() in ("left", "inactive", "resigned", "exit", "terminated") else "ACTIVE"
+            elif f == "holiday_state":
+                st = _state(v)
+                if st is None:
+                    problems.append(f"Row {n} ({code}): state '{v}' is not known - left as it was.")
+                    continue
+                v = st
+                values["holiday_state_by"] = f"Staff list import ({actor})"
             values[f] = v
         if values.get("exit_date") and "status" not in values:
             values["status"] = "LEFT"
@@ -138,7 +153,9 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
 
 
 def to_dict(e: SalesEmployee) -> dict:
-    return {f: (getattr(e, f).isoformat() if isinstance(getattr(e, f), date) else getattr(e, f)) for f in ["code"] + FIELDS}
+    d = {f: (getattr(e, f).isoformat() if isinstance(getattr(e, f), date) else getattr(e, f)) for f in ["code"] + FIELDS}
+    d["holiday_state_by"] = e.holiday_state_by
+    return d
 
 
 def summary(session: Session) -> dict:
@@ -156,7 +173,7 @@ def summary(session: Session) -> dict:
 def export_xlsx(session: Session) -> bytes:
     staff = list(session.scalars(select(SalesEmployee).order_by(SalesEmployee.code)))
     heads = ["Emp Code", "Name", "Designation", "Zone", "HQ", "Channel", "Reporting Manager", "Reporting Manager Email", "ASM/RSM",
-             "ASM/RSM Email", "Zonal Head", "Zonal Head Email", "HOD", "HOD Email", "Date of Joining", "Status", "Exit Date"]
+             "ASM/RSM Email", "Zonal Head", "Zonal Head Email", "HOD", "HOD Email", "Date of Joining", "State", "Status", "Exit Date"]
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False})
     ws = wb.add_worksheet("Field Sales Staff")
@@ -211,6 +228,11 @@ def _clean_values(data: dict) -> dict:
             if d is None:
                 raise StaffError("Date of joining: use YYYY-MM-DD.")
             v = d
+        if v and f == "holiday_state":
+            st = _state(v)
+            if st is None:
+                raise StaffError(f"Unknown state '{v}'.")
+            v = st
         out[f] = v
     return out
 
@@ -237,6 +259,8 @@ def update(session: Session, code: str, data: dict, actor: str) -> SalesEmployee
     values = _clean_values(data)
     if "name" in values and not values["name"]:
         raise StaffError("The name cannot be empty.")
+    if "holiday_state" in values and values["holiday_state"] != e.holiday_state:
+        values["holiday_state_by"] = f"HR ({actor})" if values["holiday_state"] else None
     for f, v in values.items():
         setattr(e, f, v)
     e.updated_by, e.source = actor, "edited in the app"

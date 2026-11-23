@@ -9,7 +9,7 @@ import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, 
 import { formatDate, formatDateTime } from "../format";
 import { StaffEditor } from "./more";
 import { HistoryImportCard, RiskBadge } from "./geo";
-import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffIssues, SalesStaffRow, SalesStatus } from "./types";
+import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffIssues, SalesStaffRow, SalesStates, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v}%`);
@@ -328,6 +328,52 @@ export function SalesMailPage() {
 }
 
 // ---------------------------------------------------------------- Staff list
+function HolidayStatesCard() {
+  const d = useApi<SalesStates>("/v1/sales/staff/states");
+  const { busy, error, message, run } = useAction();
+  const { hasPermission } = useAuth();
+  const can = hasPermission("MANAGE_EMPLOYEES");
+  const [show, setShow] = useState<"todo" | "all">("todo");
+  if (!d.data) return null;
+  const s = d.data.summary;
+  async function acceptSure() {
+    await run(() => api.post<{ accepted: number; field_sales: { days_changed: number } }>("/v1/sales/staff/states/accept", {}),
+      (r) => `Accepted ${r.accepted} suggestion(s); ${r.field_sales.days_changed} day(s) recounted.`);
+    d.reload();
+  }
+  async function setState(code: string, state: string) {
+    await run(() => api.put(`/v1/sales/staff/${code}/state`, { state: state || null }), state ? `${code}: ${state}.` : `${code}: state removed.`);
+    d.reload();
+  }
+  const rows = d.data.people.filter((p) => show === "all" || !p.state || (p.suggestion && !p.agrees));
+  return (
+    <Card title="Holiday state (which page of HR's holiday list applies)" actions={<Toolbar>
+      <select aria-label="Show" value={show} onChange={(e) => setShow(e.target.value as "todo" | "all")}><option value="todo">To decide</option><option value="all">Everyone</option></select>
+      {can && s.sure > 0 && <button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => void acceptSure()}>Accept {s.sure} sure suggestion(s)</button>}
+    </Toolbar>}>
+      <p className="muted small">Suggested from where each person usually marks attendance (nearest known town). "Sure" only when no town of a
+        different holiday list is close; people near a border, far from any town or without GPS are for HR to choose. Only a confirmed state is used.</p>
+      <ActionMessages error={error} message={message} />
+      <div className="kpi-grid">
+        <KpiCard label="Confirmed" value={s.confirmed} hint={`of ${s.people}`} tone={s.confirmed === s.people ? "ok" : "info"} />
+        <KpiCard label="Sure suggestions" value={s.sure} hint="one click to accept" />
+        <KpiCard label="HR to choose" value={s.unsure + s.no_gps} hint={`${s.unsure} near a border · ${s.no_gps} no GPS`} tone={s.unsure + s.no_gps ? "warn" : "ok"} />
+        {s.disagree > 0 && <KpiCard label="GPS disagrees" value={s.disagree} hint="confirmed state differs from where they work" tone="warn" />}
+      </div>
+      <DataTable rows={rows} rowKey={(r) => r.code} search exportName="field_sales_holiday_states" empty="Nothing to decide." columns={[
+        { header: "Employee", render: (r) => <><strong>{r.name}</strong> <span className="muted">{r.code}</span><div className="muted small">{r.manager}</div></>, value: (r) => r.name },
+        { header: "Suggested", render: (r) => r.suggestion ? <><span className={`badge badge-${r.suggestion.sure ? "ok" : "warn"}`}>{r.suggestion.state}</span>
+          <div className="muted small">{r.suggestion.why}</div></> : <span className="muted">No GPS</span>, value: (r) => r.suggestion?.state ?? "" },
+        { header: "Holiday state", render: (r) => can ? (
+          <select aria-label={`Holiday state of ${r.name}`} value={r.state ?? ""} disabled={busy} onChange={(e) => void setState(r.code, e.target.value)}>
+            <option value="">– not set –</option>{d.data!.states.map((x) => <option key={x}>{x}</option>)}</select>)
+          : (r.state ?? "–"), value: (r) => r.state ?? "" },
+        { header: "Set by", render: (r) => <span className="small">{r.state_by ?? ""}{r.state && r.suggestion && !r.agrees && <div className="badge badge-warn">GPS says {r.suggestion.state}</div>}</span> },
+      ]} />
+    </Card>
+  );
+}
+
 function StaffIssuesCard() {
   const d = useApi<SalesStaffIssues>("/v1/sales/staff/issues").data;
   if (!d || (!d.possibly_left.length && !d.never_in_bizom.length && !d.doj_wrong.length)) return null;
@@ -392,6 +438,7 @@ export function SalesStaffPage() {
             <KpiCard label="No email route" value={s.no_route} tone={s.no_route ? "warn" : "ok"} hint="only in the Director / HR emails" />
           </div>
           <StaffIssuesCard />
+          <HolidayStatesCard />
           {editing && <StaffEditor key={editing === "new" ? "new" : editing.code} row={editing} onDone={() => { setEditing(null); data.reload(); }} />}
           <Card title="Staff">
             <DataTable rows={data.data?.staff ?? []} rowKey={(e) => e.code} search exportName="field_sales_staff" columns={[

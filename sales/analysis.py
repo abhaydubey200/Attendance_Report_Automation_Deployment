@@ -170,8 +170,11 @@ class DayResult:
 
 
 def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules,
-            not_bizom_users: set[str] = frozenset()) -> DayResult:
-    """not_bizom_users: staff who have never been in Bizom's file since joining (sales.staffcheck) - not counted absent."""
+            not_bizom_users: set[str] = frozenset(), person_holidays: dict[str, str] | None = None,
+            company_holiday: str | None = None) -> DayResult:
+    """not_bizom_users: staff who have never been in Bizom's file since joining (sales.staffcheck) - not counted absent.
+    person_holidays: code -> holiday name from HR's yearly list for that person's confirmed state (sales.holiday_states)."""
+    person_holidays = person_holidays or {}
     master = {e.code: e for e in staff}
     by_code, by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {}, {})
     people: list[PersonDay] = []
@@ -222,9 +225,15 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                 not_users += 1                        # never marks attendance in Bizom: on HR's list, not counted absent
                 continue
             missing.append(m)
+        regional = [m for m in missing if m.code in person_holidays]          # holiday on their state's list: not due
+        missing = [m for m in missing if m.code not in person_holidays]
+        for m in regional:
+            people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
+                                    zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True, status=WEEK_OFF,
+                                    leave_type=f"Holiday – {person_holidays[m.code]}"[:40]))
         marked = sum(1 for p in people if p.status in WORKING)
         expected = marked + len(missing)
-        off_day, unconfirmed = off_day_of(day, marked, expected, rules)
+        off_day, unconfirmed = off_day_of(day, marked, expected, rules, company_holiday)
         for m in missing:
             people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
                                     zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True,
@@ -234,6 +243,8 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
         p.flags = warnings(p, rules, eod is not None, calls is not None)
     res = DayResult(people, summarise(people, att, eod, calls, not_marked, excluded, left_but_marked))
     res.summary["off_day"], res.summary["not_yet_joined"], res.summary["not_bizom_users"] = off_day, not_yet, not_users
+    res.summary["state_holidays"] = dict(Counter(person_holidays[p.code] for p in res.people
+                                              if p.code in person_holidays and p.status == WEEK_OFF and (p.leave_type or "").startswith("Holiday")))
     res.summary["off_day_unconfirmed"] = bool(rules.not_marked_is_absent and unconfirmed)
     res.summary["marked"], res.summary["expected"] = (marked, expected) if rules.not_marked_is_absent else (None, None)
     return res
@@ -243,7 +254,7 @@ def off_leave(off_day: str | None) -> str | None:
     return None if not off_day else "Sunday" if off_day == "Sunday" else "Holiday"
 
 
-def off_day_of(day, marked: int, expected: int, rules: SalesRules) -> tuple[str | None, bool]:
+def off_day_of(day, marked: int, expected: int, rules: SalesRules, company_holiday: str | None = None) -> tuple[str | None, bool]:
     """(off-day label or None, still to be confirmed by HR). HR's calendar wins; a Sunday is off; a day when fewer than
     `off_day_below` of the staff marked attendance LOOKS like a holiday - treated as one, but the emails wait for HR."""
     iso = day.isoformat()
@@ -251,6 +262,8 @@ def off_day_of(day, marked: int, expected: int, rules: SalesRules) -> tuple[str 
         return None, False
     if iso in rules.holidays:
         return f"Holiday – {rules.holidays[iso]}" if rules.holidays[iso] else "Holiday", False
+    if company_holiday:                                     # on every page of HR's yearly holiday list
+        return f"Holiday – {company_holiday}", False
     if rules.sunday_off and day.weekday() == 6:
         return "Sunday", False
     if expected and marked < rules.off_day_below * expected:

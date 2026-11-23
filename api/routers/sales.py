@@ -219,6 +219,7 @@ class StaffIn(BaseModel):
     hod_name: str | None = None
     hod_email: str | None = None
     date_of_joining: str | None = None
+    holiday_state: str | None = None
 
 
 @router.post("/staff")
@@ -576,3 +577,46 @@ def staff_issues(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Sessio
     if last is None:
         return {"upto": None, "working_days_checked": 0, "possibly_left": [], "never_in_bizom": [], "doj_wrong": []}
     return staffcheck.issues(db, last)
+
+
+
+# ---------------------------------------------------------------- holiday state of each person (HR's yearly holiday list)
+class StateIn(BaseModel):
+    state: str | None = None
+
+
+@router.get("/staff/states")
+def staff_states(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    from daily import holiday_list
+    from sales import holiday_states
+    rows = holiday_states.suggestions(db)
+    return {"people": rows, "states": holiday_list.STATES,
+            "summary": {"people": len(rows), "confirmed": sum(1 for r in rows if r["state"]),
+                        "sure": sum(1 for r in rows if not r["state"] and r["suggestion"] and r["suggestion"]["sure"]),
+                        "unsure": sum(1 for r in rows if not r["state"] and r["suggestion"] and not r["suggestion"]["sure"]),
+                        "no_gps": sum(1 for r in rows if not r["state"] and not r["suggestion"]),
+                        "disagree": sum(1 for r in rows if r["state"] and r["suggestion"] and not r["agrees"])}}
+
+
+@router.post("/staff/states/accept")
+def staff_states_accept(principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)), db: Session = Depends(get_db)) -> dict:
+    """Accept every SURE GPS suggestion for people without a state, then re-apply the holidays of this year."""
+    from datetime import date as _date
+
+    from sales import calendar, holiday_states
+    n = holiday_states.accept_sure(db, principal.username)
+    return {"accepted": n, "field_sales": calendar.apply_year(db, _date.today().year, principal.username)}
+
+
+@router.put("/staff/{code}/state")
+def staff_state(code: str, body: StateIn, principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)), db: Session = Depends(get_db)) -> dict:
+    from datetime import date as _date
+
+    from sales import calendar, holiday_states
+    try:
+        holiday_states.set_state(db, code.upper(), body.state, principal.username)
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not on the staff list.") from None
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
+    return {"code": code.upper(), "state": body.state, "field_sales": calendar.apply_year(db, _date.today().year, principal.username)}

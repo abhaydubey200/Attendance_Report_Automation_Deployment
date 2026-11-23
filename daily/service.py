@@ -160,6 +160,9 @@ def _analyse(session: Session, hrms: Incoming | None, perm: Incoming | None, rul
         sources["permissions"] = analysis.apply_permissions(results, perm.permission_day, report_date, rules)
     if od is not None:
         sources["onduty"] = analysis.apply_onduty(results, od.onduty_day, report_date, rules)
+    from daily import holiday_list
+    sources["holiday_list"] = analysis.apply_holiday_list(results, holiday_list.head_office_holiday(session, report_date))
+    sources["holiday_list"]["list_loaded"] = str(report_date.year) in holiday_list.years(session)
     results, match = apply_master(session, report_date, results, rules.out_of_scope_categories)
     if not results:
         raise FileError("No employees left to report for this day (all excluded or marked as Left).")
@@ -212,8 +215,8 @@ def process_files(session: Session, settings: Settings, files: list[tuple[str, b
         if inc.kind not in EXTRA_KINDS:
             continue
         if hrms_date is not None:
-            if hrms_date in inc.dates:
-                inc.report_date = hrms_date      # a multi-day report that includes the day is fine
+            if hrms_date in inc.dates or inc.report_date is None:
+                inc.report_date = hrms_date      # a multi-day report goes with the day (it may hold nothing for it)
             continue
         if day is not None and day in inc.dates:
             inc.report_date = day                # the day asked for (history update of a multi-day report)

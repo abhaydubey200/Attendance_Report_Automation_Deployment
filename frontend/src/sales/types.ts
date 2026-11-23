@@ -47,7 +47,7 @@ export interface SalesStaffRow {
   code: string; name: string; designation: string | null; zone: string | null; hq: string | null; channel: string | null;
   manager_name: string | null; manager_email: string | null; asm_name: string | null; asm_email: string | null;
   zonal_name: string | null; zonal_email: string | null; hod_name: string | null; hod_email: string | null;
-  date_of_joining: string | null; status: "ACTIVE" | "LEFT"; exit_date: string | null;
+  date_of_joining: string | null; holiday_state?: string | null; holiday_state_by?: string | null; status: "ACTIVE" | "LEFT"; exit_date: string | null;
 }
 
 export interface SalesStaff {
@@ -112,6 +112,14 @@ export interface SalesJobRun {
 
 export interface SalesStaffIssue { code: string; name: string; manager: string; hod: string; proof: string }
 export interface SalesStaffIssues { upto: string | null; working_days_checked: number; possibly_left: SalesStaffIssue[]; never_in_bizom: SalesStaffIssue[]; doj_wrong: SalesStaffIssue[] }
+export interface SalesStateRow {
+  code: string; name: string; manager: string; hod: string; state: string | null; state_by: string | null; list: string | null; agrees: boolean;
+  suggestion: { state: string; town: string; km: number; sure: boolean; why: string; other: string | null; points: number } | null;
+}
+export interface SalesStates {
+  people: SalesStateRow[]; states: string[];
+  summary: { people: number; confirmed: number; sure: number; unsure: number; no_gps: number; disagree: number };
+}
 export interface SalesHolidays {
   holidays: { date: string; name: string }[];
   working_days: string[];

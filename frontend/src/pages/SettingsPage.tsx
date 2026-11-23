@@ -4,6 +4,7 @@ import { useAction, useApi } from "../api/useApi";
 import type { EmailSettings, Rules, SettingsData } from "../api/types";
 import { formatTime } from "../format";
 import { ActionMessages, Card, ErrorNotice, Field, Loading, Notice, PageHeader } from "../components/ui";
+import { HolidayListCard } from "../components/HolidayListCard";
 
 function RulesForm({ initial }: { initial: Rules }) {
   const [r, setR] = useState<Rules>(initial);
@@ -152,6 +153,7 @@ export function SettingsPage() {
           {data.data.email.mode === "test" && <Notice kind="warn">Email is in test mode: emails are prepared and saved to the outbox, but not delivered.</Notice>}
           <EmailForm key={JSON.stringify(data.data.email)} initial={data.data.email} secrets={data.data.secrets ?? {}} />
           <RulesForm initial={data.data.rules} />
+          <HolidayListCard module="head-office" />
         </>
       )}
     </>

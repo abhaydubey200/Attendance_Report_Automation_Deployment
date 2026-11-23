@@ -190,6 +190,24 @@ def _excuse_window(r: EmployeeResult, start: int, end: int, late_after: int, sta
     return excused
 
 
+def apply_holiday_list(results: list[EmployeeResult], holiday: str | None) -> dict:
+    """HR's yearly holiday list (Delhi / Head Office page) checked against Pocket HRMS for one day. On a listed holiday, people
+    Pocket HRMS left without a punch or a Type are counted as holiday (not absent); a day Pocket HRMS marks as holiday that is
+    not on the list is only reported. Returns counts for the highlights."""
+    hrms_marked = sum(1 for r in results if r.status == "HOLIDAY")
+    out = {"holiday": holiday, "hrms_marked": hrms_marked, "added": 0}
+    if not holiday:
+        return out
+    for r in results:
+        if r.status == "HOLIDAY" and not r.day_portion:
+            r.day_portion = holiday
+        elif r.status in ("ABSENT", "NOT_TRACKED") and not r.leave_type and not r.punches:
+            r.status, r.leave_type, r.day_portion = "HOLIDAY", "HO", holiday
+            r.flags = [f for f in r.flags if f not in ("MISSING_PUNCH",)]
+            out["added"] += 1
+    return out
+
+
 # statuses an approved full-day on duty / WFH replaces (a recorded leave, half day, week off or holiday is kept)
 ON_DUTY_REPLACES = ("PRESENT", "MISSING_PUNCH", "ABSENT", "NOT_TRACKED", "ON_DUTY", "WFH")
 
@@ -507,6 +525,15 @@ def build_insights(report_date: date, results: list[EmployeeResult], rules: Rule
     elif sources is not None and sources.get("hrms") and not sources.get("permission_file"):
         scopes["ALL"]["highlights"].append({"kind": "info", "text": "Permission Report not uploaded for this day - late / early "
                                                                    "arrivals are shown without permissions."})
+    hl = (sources or {}).get("holiday_list")
+    if hl and hl.get("holiday"):
+        scopes["ALL"]["highlights"].insert(0, {"kind": "info", "text": f"Holiday: {hl['holiday']} (HR's {report_date.year} holiday list, Delhi / Head Office)."
+                                               + (f" Pocket HRMS had not marked it for {hl['added']} people - counted as holiday, not absent."
+                                                  if hl.get("added") else "")})
+    elif hl and hl.get("hrms_marked") and hl.get("list_loaded"):
+        scopes["ALL"]["highlights"].append({"kind": "warn", "text": f"Pocket HRMS marks {hl['hrms_marked']} people on holiday on "
+                                                                    f"{report_date:%d-%b-%Y}, but it is not in HR's {report_date.year} holiday list "
+                                                                    f"(Delhi / Head Office) - please check."})
     od = (sources or {}).get("onduty")
     if od and od["today"]:
         done = [f"{od['on_duty']} on duty" if od["on_duty"] else "", f"{od['wfh']} work from home" if od["wfh"] else "",

@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useConfirm } from "../components/feedback";
 import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, Toolbar } from "../components/ui";
 import { formatDate, formatDateTime } from "../format";
+import { HolidayListCard } from "../components/HolidayListCard";
 import type { SalesEmailLogRow, SalesEmployeeReport, SalesHolidays, SalesJobs, SalesMailItem, SalesMonthList, SalesMonthMail, SalesReport, SalesStaffRow } from "./types";
 import { STATUS_COLOR } from "./types";
 
@@ -260,6 +261,7 @@ export function SalesAutomationPage() {
           <iframe className="email-frame" sandbox="" title="Email preview" src={apiUrl(`/v1/sales/mail/${preview}/preview`)} />
         </Card>
       )}
+      <HolidayListCard module="field-sales" />
       <HolidaysCard />
       <Card title="Job history">
         <DataTable rows={j?.runs ?? []} rowKey={(r) => String(r.id)} empty="No runs yet." columns={[

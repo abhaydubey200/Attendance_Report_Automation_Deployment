@@ -52,7 +52,7 @@ def raw_attendance(data: bytes) -> dict[str, dict]:
 
 
 def check(day: date, attendance_csv: bytes | None, stored: list, staff: dict, off_day: str | None,
-          left_out: set[str] = frozenset()) -> dict:
+          left_out: set[str] = frozenset(), holiday_codes: set[str] = frozenset()) -> dict:
     """stored: SalesEmployeeDay rows of the upload; staff: code -> SalesEmployee; left_out: codes deliberately not reported
     (promoters, excluded codes). Returns {checked, mismatches: [...]}."""
     if attendance_csv is None or attendance_csv[:2] == b"PK":
@@ -72,7 +72,7 @@ def check(day: date, attendance_csv: bytes | None, stored: list, staff: dict, of
             bad.append(f"{r.code}: not in Bizom's file and not on the staff list")
         elif e.date_of_joining and e.date_of_joining > day:
             bad.append(f"{r.code}: counted before joining on {e.date_of_joining:%d-%b-%Y}")
-        elif r.status not in ABSENT_LIKE or (r.status == "WEEK_OFF") != bool(off_day):
+        elif r.status not in ABSENT_LIKE or (r.status == "WEEK_OFF") != bool(off_day or r.code in holiday_codes):
             bad.append(f"{r.code}: not in Bizom's file but stored {r.status}")
     stored_codes = {r.code for r in stored}
     missing = [c for c, x in raw.items() if c not in stored_codes and c in staff and c not in left_out]

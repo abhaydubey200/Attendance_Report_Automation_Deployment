@@ -38,6 +38,8 @@ class SalesEmployee(Base):
     hod_name: Mapped[str | None] = mapped_column(String(200))
     hod_email: Mapped[str | None] = mapped_column(String(200))
     date_of_joining: Mapped[date | None] = mapped_column(Date)
+    holiday_state: Mapped[str | None] = mapped_column(String(40))                      # which page of HR's holiday list applies
+    holiday_state_by: Mapped[str | None] = mapped_column(String(120))                  # who confirmed it (HR / GPS suggestion accepted)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")  # ACTIVE | LEFT
     exit_date: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str | None] = mapped_column(String(100))

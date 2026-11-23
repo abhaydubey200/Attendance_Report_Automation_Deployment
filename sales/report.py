@@ -116,6 +116,7 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
         "proof": proof or [],
         "ctx": ctx or {}, "company_pct": day.get("attendance_pct"),
         "off_day": day.get("off_day"),
+        "state_holidays": day.get("state_holidays") or {},
     }
     pat = (ctx or {}).get("patterns") or {}
     lv = ("high", "medium", "low")
@@ -149,6 +150,10 @@ def highlights(v: dict) -> list[dict]:
     if v.get("off_day"):
         h.append({"level": "low", "text": f"{v['off_day']}: people who did not mark attendance are counted as week off / holiday, "
                                           f"not absent ({c['PRESENT'] + c['LATE'] + c['HALF_DAY']} worked)."})
+    sh = v.get("state_holidays") or {}
+    if sh and not v.get("off_day"):
+        h.append({"level": "low", "text": "State holiday (HR's holiday list): " + ", ".join(f"{n} ({k} people)" for n, k in sh.items())
+                                          + " - not counted as absent."})
     if c["ABSENT"]:
         if v["view"] == "team":
             names = ", ".join(p["name"] for p in v["not_marked"][:5]) + (f" and {c['ABSENT'] - 5} more" if c["ABSENT"] > 5 else "")

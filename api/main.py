@@ -98,6 +98,8 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None, f
 
     for router in (auth.router, overview_router.router, daily.router, mail_router.router, automation.router, database_router.router, reports_router.router, employees_router.router, settings_router.router, sales_router.router):
         app.include_router(router, prefix=API_PREFIX)
+    from api.routers import holidays as holidays_router          # HR's yearly holiday list (PDF), both modules
+    app.include_router(holidays_router.router, prefix=API_PREFIX)
     from api.routers import feedback as feedback_router          # signed 'Was this right?' links from the emails (outside /api)
     app.include_router(feedback_router.router)
 

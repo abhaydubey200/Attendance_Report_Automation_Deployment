@@ -72,9 +72,12 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     if existing and not replace:
         raise AlreadyUploaded(day)
     staff = list(session.scalars(select(SalesEmployee)))
-    from sales import staffcheck
+    from daily import holiday_list
+    from sales import holiday_states, staffcheck
+    holidays = holiday_states.person_holidays(session, day, staff)
     result = analysis.analyse(att, found.get(bizom.EOD, (None, None, None))[2], found.get(bizom.CALLS, (None, None, None))[2],
-                              staff, get_rules(session), staffcheck.never_users(session, day))
+                              staff, get_rules(session), staffcheck.never_users(session, day), holidays,
+                              holiday_list.company_holiday(session, day))
     if existing:
         existing.is_current = False
         for old in session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status.in_(mail.REPLACEABLE))):
@@ -105,7 +108,8 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     left_out = {e.code for e in staff if analysis._match(rules.exclude_codes, e.code)
                 or (not rules.include_promoters and analysis.is_promoter(e.code, e.designation, rules))}
     vres = verify.check(day, found[bizom.ATTENDANCE][1], list(session.scalars(select(SalesEmployeeDay).where(
-        SalesEmployeeDay.upload_id == up.upload_id))), {e.code: e for e in staff}, result.summary.get("off_day"), left_out)
+        SalesEmployeeDay.upload_id == up.upload_id))), {e.code: e for e in staff}, result.summary.get("off_day"), left_out,
+        set(holidays))
     summary = json.loads(up.summary)
     summary["verify"] = vres
     up.summary = json.dumps(summary)

@@ -169,7 +169,9 @@ class DayResult:
     summary: dict
 
 
-def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules) -> DayResult:
+def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules,
+            not_bizom_users: set[str] = frozenset()) -> DayResult:
+    """not_bizom_users: staff who have never been in Bizom's file since joining (sales.staffcheck) - not counted absent."""
     master = {e.code: e for e in staff}
     by_code, by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {}, {})
     people: list[PersonDay] = []
@@ -203,7 +205,7 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                       eod_location=e.eod_location if e and st in WORKING else None,
                       photo_url=r.photo_url or (e.photo_url if e else None), present_type=r.present_type)
         people.append(p)
-    not_marked = not_yet = 0
+    not_marked = not_yet = not_users = 0
     off_day, unconfirmed, marked, expected = None, False, 0, 0
     if rules.not_marked_is_absent:
         day = att.report_date
@@ -215,6 +217,9 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
                 continue
             if m.date_of_joining and m.date_of_joining > day:
                 not_yet += 1                          # had not joined yet on this day: not absent
+                continue
+            if code in not_bizom_users:
+                not_users += 1                        # never marks attendance in Bizom: on HR's list, not counted absent
                 continue
             missing.append(m)
         marked = sum(1 for p in people if p.status in WORKING)
@@ -228,7 +233,7 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
     for p in people:
         p.flags = warnings(p, rules, eod is not None, calls is not None)
     res = DayResult(people, summarise(people, att, eod, calls, not_marked, excluded, left_but_marked))
-    res.summary["off_day"], res.summary["not_yet_joined"] = off_day, not_yet
+    res.summary["off_day"], res.summary["not_yet_joined"], res.summary["not_bizom_users"] = off_day, not_yet, not_users
     res.summary["off_day_unconfirmed"] = bool(rules.not_marked_is_absent and unconfirmed)
     res.summary["marked"], res.summary["expected"] = (marked, expected) if rules.not_marked_is_absent else (None, None)
     return res

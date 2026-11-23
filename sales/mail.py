@@ -93,8 +93,11 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
     if item.role not in trust.FULL_ROLES:
         found = trust.for_email(found, learning.state(session))      # unproven judgment signs: HR only
     proof = checks.proof(session, up.report_date, found) if item.role in checks.PROOF_ROLES else None
-    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof,
-                             checks.context(session, up.report_date, codes))
+    ctx = checks.context(session, up.report_date, codes)
+    if c["view"] == "hr":
+        from sales import staffcheck
+        ctx["staff_issues"] = staffcheck.issues(session, up.report_date)
+    view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof, ctx)
     files = []
     if cfg.attach_excel:
         files.append(Attachment(f"{view['stem']}.xlsx", report.excel(view), XLSX))

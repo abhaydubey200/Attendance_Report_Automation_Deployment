@@ -186,6 +186,11 @@ def highlights(v: dict) -> list[dict]:
         reused = [x["name"] for x in v["checks"] if any(s["label"].startswith(("Selfie reused", "Same selfie")) for s in x["signs"])]
         if reused:
             h.append({"level": "high", "text": f"Selfie reused (confirmed by image comparison): {', '.join(reused[:4])}."})
+    si = v["ctx"].get("staff_issues") or {}
+    if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
+        h.append({"level": "medium", "text": f"Staff list to fix: {len(si.get('possibly_left', []))} possibly left (not in Bizom for "
+                                              f"{si.get('working_days_checked')} working days), {len(si.get('never_in_bizom', []))} never mark "
+                                              f"attendance in Bizom, {len(si.get('doj_wrong', []))} joining date looks wrong. Proof in the Excel."})
     if v["view"] == "hr" and v["data"] and (v["data"].get("not_in_staff_list") or v["data"].get("left_but_marked")):
         h.append({"level": "low", "text": f"Data to fix: {len(v['data'].get('not_in_staff_list', []))} not on the staff list, "
                                            f"{len(v['data'].get('left_but_marked', []))} marked attendance though Left."})
@@ -364,6 +369,24 @@ def excel(v: dict) -> bytes:
             wl.write(i, j, "" if val is None else val, st.get(p["status"], cell) if k == "status_label" else cell)
     wl.autofilter(0, 0, len(v["people"]), len(cols) - 1)
     wl.freeze_panes(1, 2)
+
+    si = v["ctx"].get("staff_issues") or {}
+    if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
+        ws2 = wb.add_worksheet("Staff list to fix")
+        cols = [("Problem", 26), ("Code", 10), ("Name", 26), ("Team head", 22), ("HOD", 20), ("Proof", 90), ("Action", 44)]
+        for j, (h_, w) in enumerate(cols):
+            ws2.write(0, j, h_, head)
+            ws2.set_column(j, j, w)
+        i = 1
+        for key, label, action in (("possibly_left", "Possibly left", "Confirm with the team head; mark Left on the staff list if gone."),
+                                   ("never_in_bizom", "Never marks attendance in Bizom", "Remove from the Field Sales list, or ask them to mark in Bizom."),
+                                   ("doj_wrong", "Joining date looks wrong", "Correct the date of joining on the staff list.")):
+            for x in si.get(key, []):
+                for j, val in enumerate([label, x["code"], x["name"], x["manager"], x["hod"], x["proof"], action]):
+                    ws2.write(i, j, val, wrap)
+                i += 1
+        ws2.write(i + 1, 0, "People who never mark attendance in Bizom are not counted absent; the others are, until the list is fixed.", note)
+        ws2.freeze_panes(1, 3)
 
     if v["view"] == "hr" and v["data"]:
         wd = wb.add_worksheet("Data issues")

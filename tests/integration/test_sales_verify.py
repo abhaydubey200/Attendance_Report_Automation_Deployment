@@ -60,3 +60,30 @@ def test_holiday_waits_for_hr_and_emails_follow_the_decision(engine):
         assert items and all("looks like a holiday" not in (i.note or "") for i in items)
         out = calendar.decide(s, date(2026, 10, 20), "working", "", "tester")
         assert out["off_day"] is None and out["counts"]["ABSENT"] == len(PEOPLE) - 1
+
+
+def test_staff_who_never_use_bizom_are_not_absent_and_listed_for_hr(engine):
+    from datetime import timedelta
+
+    from sales import staffcheck
+    with session_scope(engine) as s:
+        _staff(s)
+        start = date(2026, 10, 1)
+        d, n = start, 0
+        while n < 22:                                                          # 22 working days; SL00005 never in Bizom
+            if d.weekday() != 6:
+                service.process(s, [("a.csv", attendance(d.isoformat(), missing={"SL00005"} | ({"SL00004"} if n >= 5 else set())))],
+                                "tester", plan_mail=False, rescore=False)
+                n += 1
+            d += timedelta(days=1)
+        res = staffcheck.reconcile(s)
+        assert res["people"] == 1                                             # only SL00005 (SL00004 was seen on the first days)
+        last = service.current_upload(s, d - timedelta(days=1))
+        rows = {r.code: r.status for r in s.query(SalesEmployeeDay).filter_by(upload_id=last.upload_id)}
+        assert "SL00005" not in rows and rows["SL00004"] == "ABSENT"
+        issues = staffcheck.issues(s, last.report_date)
+        assert [x["code"] for x in issues["never_in_bizom"]] == ["SL00005"] and [x["code"] for x in issues["possibly_left"]] == ["SL00004"]
+        assert "last seen in Bizom on" in issues["possibly_left"][0]["proof"]
+        # the next upload already leaves SL00005 out
+        nxt = service.process(s, [("a.csv", attendance((d + timedelta(days=1)).isoformat(), missing={"SL00005"}))], "tester", plan_mail=False)
+        assert json.loads(nxt.summary)["not_bizom_users"] == 1 and json.loads(nxt.summary)["verify"]["mismatch_count"] == 0

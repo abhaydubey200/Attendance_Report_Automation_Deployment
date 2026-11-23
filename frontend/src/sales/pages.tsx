@@ -9,7 +9,7 @@ import { ActionMessages, Card, DataTable, ErrorNotice, Field, KpiCard, Loading, 
 import { formatDate, formatDateTime } from "../format";
 import { StaffEditor } from "./more";
 import { HistoryImportCard, RiskBadge } from "./geo";
-import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffRow, SalesStatus } from "./types";
+import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffIssues, SalesStaffRow, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
 
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v}%`);
@@ -328,6 +328,25 @@ export function SalesMailPage() {
 }
 
 // ---------------------------------------------------------------- Staff list
+function StaffIssuesCard() {
+  const d = useApi<SalesStaffIssues>("/v1/sales/staff/issues").data;
+  if (!d || (!d.possibly_left.length && !d.never_in_bizom.length && !d.doj_wrong.length)) return null;
+  const rows = [...d.possibly_left.map((x) => ({ ...x, problem: "Possibly left" })), ...d.never_in_bizom.map((x) => ({ ...x, problem: "Never marks attendance in Bizom" })),
+    ...d.doj_wrong.map((x) => ({ ...x, problem: "Joining date looks wrong" }))];
+  return (
+    <Card title={`Staff list to fix (${rows.length})`}>
+      <p className="muted small">From the uploaded days up to {d.upto ? formatDate(d.upto) : "–"}. People who never mark attendance in Bizom are not counted absent;
+        the others are counted absent until the list is fixed (mark them Left, or correct the date of joining).</p>
+      <DataTable rows={rows} rowKey={(r) => `${r.problem}-${r.code}`} search exportName="field_sales_staff_to_fix" columns={[
+        { header: "Problem", render: (r) => <span className={`badge badge-${r.problem === "Possibly left" ? "warn" : "info"}`}>{r.problem}</span>, value: (r) => r.problem },
+        { header: "Employee", render: (r) => <><strong>{r.name}</strong> <span className="muted">{r.code}</span></>, value: (r) => r.name },
+        { header: "Team head", render: (r) => r.manager }, { header: "HOD", render: (r) => r.hod },
+        { header: "Proof", render: (r) => <span className="small">{r.proof}</span>, value: (r) => r.proof },
+      ]} />
+    </Card>
+  );
+}
+
 export function SalesStaffPage() {
   const data = useApi<SalesStaff>("/v1/sales/staff");
   const { busy, error, message, run } = useAction();
@@ -372,6 +391,7 @@ export function SalesStaffPage() {
             <KpiCard label="With HOD email" value={s.with_email.hod ?? 0} />
             <KpiCard label="No email route" value={s.no_route} tone={s.no_route ? "warn" : "ok"} hint="only in the Director / HR emails" />
           </div>
+          <StaffIssuesCard />
           {editing && <StaffEditor key={editing === "new" ? "new" : editing.code} row={editing} onDone={() => { setEditing(null); data.reload(); }} />}
           <Card title="Staff">
             <DataTable rows={data.data?.staff ?? []} rowKey={(e) => e.code} search exportName="field_sales_staff" columns={[

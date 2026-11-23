@@ -72,8 +72,9 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     if existing and not replace:
         raise AlreadyUploaded(day)
     staff = list(session.scalars(select(SalesEmployee)))
+    from sales import staffcheck
     result = analysis.analyse(att, found.get(bizom.EOD, (None, None, None))[2], found.get(bizom.CALLS, (None, None, None))[2],
-                              staff, get_rules(session))
+                              staff, get_rules(session), staffcheck.never_users(session, day))
     if existing:
         existing.is_current = False
         for old in session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status.in_(mail.REPLACEABLE))):

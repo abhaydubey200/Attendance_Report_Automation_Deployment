@@ -110,6 +110,8 @@ export interface SalesJobRun {
   started_by: string; started_at: string; finished_at: string | null; seconds: number | null;
 }
 
+export interface SalesStaffIssue { code: string; name: string; manager: string; hod: string; proof: string }
+export interface SalesStaffIssues { upto: string | null; working_days_checked: number; possibly_left: SalesStaffIssue[]; never_in_bizom: SalesStaffIssue[]; doj_wrong: SalesStaffIssue[] }
 export interface SalesHolidays {
   holidays: { date: string; name: string }[];
   working_days: string[];

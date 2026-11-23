@@ -563,3 +563,16 @@ def holiday_decide(day: date, body: HolidayIn, principal: Principal = Depends(re
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     return {**calendar.state(db), "day": {"date": day.isoformat(), "off_day": s.get("off_day") if s else None,
                                           "attendance_pct": s.get("attendance_pct") if s else None, "uploaded": s is not None}}
+
+
+@router.get("/staff/issues")
+def staff_issues(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    """Staff list problems with proof: possibly left, never in Bizom, joining date looks wrong."""
+    from sqlalchemy import select
+
+    from database.models.sales import SalesDayUpload
+    from sales import staffcheck
+    last = db.scalar(select(SalesDayUpload.report_date).where(SalesDayUpload.is_current.is_(True)).order_by(SalesDayUpload.report_date.desc()))
+    if last is None:
+        return {"upto": None, "working_days_checked": 0, "possibly_left": [], "never_in_bizom": [], "doj_wrong": []}
+    return staffcheck.issues(db, last)

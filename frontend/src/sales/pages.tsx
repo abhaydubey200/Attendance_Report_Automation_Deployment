@@ -451,6 +451,8 @@ export function SalesSettingsPage() {
             <input value={email.director_emails.join(", ")} onChange={(e) => setEmail({ ...email, director_emails: LIST(e.target.value) })} /></Field>
           <Field label="HR email(s)"><input value={email.hr_emails.join(", ")} onChange={(e) => setEmail({ ...email, hr_emails: LIST(e.target.value) })} /></Field>
           <Field label="Always BCC"><input value={email.always_bcc.join(", ")} onChange={(e) => setEmail({ ...email, always_bcc: LIST(e.target.value) })} /></Field>
+          <Field label="Pilot: really send to" hint="Comma separated. While the mode is Test, emails to these addresses only are really sent (still after approval); everyone else stays in the outbox.">
+            <input value={(email.pilot_live ?? []).join(", ")} onChange={(e) => setEmail({ ...email, pilot_live: LIST(e.target.value) })} /></Field>
           <Field label="Team emails go to">
             <span className="check-row">{(["manager", "asm", "zonal", "hod"] as const).map((l) => (
               <label key={l} className="check"><input type="checkbox" checked={email.levels.includes(l)}

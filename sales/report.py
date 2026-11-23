@@ -215,6 +215,9 @@ def email_text(v: dict) -> str:
              f"Needs checking {len(v['flagged'])}" + (f" | Location & selfie checks {len(v['checks'])}" if v["checks"] else ""), ""]
     if v["highlights"]:
         lines += ["Highlights:"] + [f"- {x['text']}" for x in v["highlights"]] + [""]
+    if v.get("feedback"):
+        lines += ["Was this right? Your answer makes the checks more accurate:"] + [
+            f"- {f['name']} ({f['sign'].lower()}): right {f['right']} | not right {f['wrong']}" for f in v["feedback"]] + [""]
     lines += ["Full lists, selfies and map links: the attached dashboard (open in Chrome or Edge) and Excel.",
               "Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
     return "\n".join(lines)

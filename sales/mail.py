@@ -98,6 +98,9 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
         from sales import staffcheck
         ctx["staff_issues"] = staffcheck.issues(session, up.report_date)
     view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof, ctx)
+    if item.role != "HR":
+        from sales import feedback
+        view["feedback"] = feedback.links(found, up.report_date, item.recipient_key)
     files = []
     if cfg.attach_excel:
         files.append(Attachment(f"{view['stem']}.xlsx", report.excel(view), XLSX))
@@ -131,6 +134,7 @@ def send_items(session: Session, items: list[SalesMailItem], actor: str, outbox,
         if not to and not testing:
             item.status, item.note = HELD, item.note or "No address."
             continue
+        pilot = (cfg.mode == "test" and not testing and to and all(a.lower() in {p.lower() for p in cfg.pilot_live} for a in to))
         html, text, attachments = render(session, item)
         subject = item.subject
         if testing:
@@ -141,10 +145,10 @@ def send_items(session: Session, items: list[SalesMailItem], actor: str, outbox,
         msg = build_message(sender, to, subject, html, text, attachments, bcc=bcc)
         item.attempts += 1
         try:
-            res = send(_Cfg(cfg.mode, sender), msg, outbox / item.report_date.isoformat())
+            res = send(_Cfg("live" if pilot else cfg.mode, sender), msg, outbox / item.report_date.isoformat())
             item.status = TEST_SENT if testing else res.status
             item.outbox_file, item.sent_at, item.approved_by = res.outbox_file, now_utc(), actor
-            item.note = (f"Test only: sent to {testing}." if testing else
+            item.note = (f"Test only: sent to {testing}." if testing else "Pilot: really sent (test mode for everyone else)." if pilot else
                          ("Saved to the outbox (test mode - not sent)." if res.status == SAVED else None))
         except MailError as exc:
             item.status, item.note = FAILED, str(exc)[:500]

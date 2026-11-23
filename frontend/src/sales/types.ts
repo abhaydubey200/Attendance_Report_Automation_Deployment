@@ -71,7 +71,7 @@ export interface SalesRules {
 
 export interface SalesEmailSettings {
   mode: "test" | "live"; approval_required: boolean; auto_send: boolean; test_recipient: string | null; director_name: string; director_emails: string[];
-  hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean;
+  hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean; pilot_live?: string[];
 }
 
 export const STATUS_COLOR: Record<SalesStatus, string> = {

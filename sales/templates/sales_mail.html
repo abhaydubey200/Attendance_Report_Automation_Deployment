@@ -72,6 +72,19 @@
   {% else %}
   <tr><td class="pad" style="padding:10px 24px;font-size:14px;color:#15803d;font-weight:bold;">Nothing to flag on {{ v.date_long }}.</td></tr>
   {% endif %}
+  {% if v.feedback %}
+  <tr><td class="pad" style="padding:6px 24px 4px;font-size:13px;color:#33405c;">
+    <b>Was this right?</b> <span style="color:#5d6577;">Your answer makes the checks more accurate.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;margin-top:4px;">
+      {% for f in v.feedback %}
+      <tr><td style="padding:4px 0;border-bottom:1px solid #f1f3f8;">{{ f.name }} <span style="color:#5d6577;">– {{ f.sign | lower }}</span></td>
+        <td align="right" style="padding:4px 0;border-bottom:1px solid #f1f3f8;white-space:nowrap;">
+          <a href="{{ f.right }}" style="color:#b91c1c;font-weight:bold;text-decoration:none;">Right</a> &nbsp;·&nbsp;
+          <a href="{{ f.wrong }}" style="color:#15803d;font-weight:bold;text-decoration:none;">Not right</a></td></tr>
+      {% endfor %}
+    </table>
+  </td></tr>
+  {% endif %}
   <tr><td class="pad" style="padding:10px 24px 6px;">
     <div style="background:#f6f7fb;border:1px solid #e6e8ef;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#33405c;">
       <b>Full details in the attachments:</b> the dashboard (open in Chrome or Edge) and the Excel workbook have every list, the reasons,

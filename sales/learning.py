@@ -162,11 +162,15 @@ def summary(session: Session, st: dict | None = None) -> dict:
     from sales.config import get_rules
     off = set(get_rules(session).disabled_signs)
     weak = set(weak_signs(st))
+    from sales import trust
     for r in rows:
         r["switched_off"], r["suggest_off"] = r["code"] in off, r["code"] in weak and r["code"] not in off
+        r["judgment"], r["in_emails"], r["email_status"] = r["code"] in trust.JUDGMENT, trust.in_emails(st, r["code"]), trust.status(st, r["code"])
     return {"labels": st.get("labels", 0), "updated_at": st.get("updated_at"), "reasons": REASONS,
             "mode": "model" if m else "feedback", "model": {k: m[k] for k in ("trained_on", "auc", "trained_at")} if m else None,
-            "needed_for_model": {"reviews": MODEL_MIN, "each_outcome": MODEL_MIN_EACH}, "signs": rows}
+            "needed_for_model": {"reviews": MODEL_MIN, "each_outcome": MODEL_MIN_EACH}, "signs": rows,
+            "email_rule": "Measured facts always go to HODs. Signs that compare a day with what the app learned go to HODs only "
+                          "after HR's reviews show them right at least 90% of the time over 8+ reviews; until then HR sees them."}
 
 
 def last_review_day(session: Session) -> date | None:

@@ -42,7 +42,8 @@ def test_sunday_and_holiday_are_not_absences():
     assert sun.summary["off_day"] == "Sunday" and st["SL00000"] == "PRESENT" and st["SL00005"] == "WEEK_OFF"
     assert next(p for p in sun.people if p.code == "SL00005").leave_type == "Sunday"
     hol = analyse(att(date(2026, 10, 20), ["SL00000", "SL00001", "SL00002"]), None, None, people, SalesRules())   # Tuesday, 3 of 10
-    assert hol.summary["off_day"].startswith("Holiday (only 3 of 10") and status_of(hol)["SL00009"] == "WEEK_OFF"
+    assert hol.summary["off_day"].startswith("Holiday? (only 3 of 10") and status_of(hol)["SL00009"] == "WEEK_OFF"
+    assert hol.summary["off_day_unconfirmed"] is True                     # looks like a holiday: HR has to confirm
     normal = analyse(att(date(2026, 10, 21), [e.code for e in people[:6]]), None, None, people, SalesRules())   # 6 of 10
     assert normal.summary["off_day"] is None and status_of(normal)["SL00009"] == "ABSENT"
 
@@ -57,3 +58,14 @@ def test_eod_is_matched_on_code_before_name():
     res = analyse(a, eod, None, people, SalesRules())
     by = {p.code: p for p in res.people}
     assert by["SL00000"].eod_time == "18:05" and by["SL00001"].eod_time == "19:15"
+
+
+def test_hr_calendar_decides():
+    people = staff(10)
+    a = att(date(2026, 10, 20), ["SL00000", "SL00001", "SL00002"])
+    hol = analyse(a, None, None, people, SalesRules(holidays={"2026-10-20": "Diwali"}))
+    assert hol.summary["off_day"] == "Holiday – Diwali" and not hol.summary["off_day_unconfirmed"]
+    work = analyse(a, None, None, people, SalesRules(working_days=["2026-10-20"]))
+    assert work.summary["off_day"] is None and status_of(work)["SL00009"] == "ABSENT"
+    sun = analyse(att(date(2026, 11, 22), ["SL00000"]), None, None, people, SalesRules(working_days=["2026-11-22"]))
+    assert status_of(sun)["SL00005"] == "ABSENT"                            # a Sunday HR says was worked

@@ -25,7 +25,9 @@ class SalesRules(BaseModel):
     # (6 months of data: 91% of staff "not marked" on every Sunday, and on 15-Aug, 2-Oct, 20-Oct ...). On such a day the
     # people who did not mark are counted as week off / holiday, not absent; those who worked are still present.
     sunday_off: bool = True
-    off_day_below: float = 0.40                   # fewer than this share of the expected staff marked = holiday
+    off_day_below: float = 0.40                   # fewer than this share marked: looks like a holiday - HR confirms it
+    holidays: dict[str, str] = Field(default_factory=dict)       # HR's field-sales holiday calendar: "YYYY-MM-DD" -> name
+    working_days: list[str] = Field(default_factory=list)        # days HR confirmed as working days (also a Sunday worked)
     include_promoters: bool = False               # AP... codes / designation Promoter
     promoter_codes: list[str] = Field(default_factory=lambda: ["^AP"])
     # The staff import takes only these codes: HR's Employee Amendment file holds the whole company (HO / RK / NA are

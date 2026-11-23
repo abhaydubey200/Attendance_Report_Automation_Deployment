@@ -440,6 +440,9 @@ def calibration(session: Session, start: date, end: date, visible: set[str] | No
         signs = c["signs"] + c["photo_signs"]
         if signs:
             groups.setdefault(signs[0]["code"], []).append(c)
+    from sales.trust import JUDGMENT
+    # the signs that still have to be proven before they may go into HOD emails come first, about 10 of each
+    groups = OrderedDict(sorted(groups.items(), key=lambda kv: kv[0] not in JUDGMENT))
     sample: list[dict] = []
     while len(sample) < n and any(groups.values()):
         for code in list(groups):

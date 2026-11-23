@@ -85,7 +85,8 @@ def _dates(ds: list[date], n: int = 8) -> str:
 def history(session: Session, upto: date, codes: set[str] | None, days_back: int = 120) -> dict[str, list[Day]]:
     """Each person's uploaded days (current uploads only), oldest first, up to `upto`."""
     from sales.geo import GEO
-    high_geo = {k for k, v in GEO.items() if v[1] == "high"}
+    from sales.trust import JUDGMENT
+    high_geo = {k for k, v in GEO.items() if v[1] == "high" and k not in JUDGMENT}   # measured location facts only
     q = (select(SalesDayUpload.report_date, SalesEmployeeDay.code, SalesEmployeeDay.status, SalesEmployeeDay.leave_type,
                 SalesEmployeeDay.attendance_time, SalesEmployeeDay.market_minutes, SalesEmployeeDay.flags, SalesEmployeeDay.geo_flags)
          .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)

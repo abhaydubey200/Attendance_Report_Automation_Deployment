@@ -40,13 +40,24 @@ def plan(session: Session, up: SalesDayUpload) -> list[SalesMailItem]:
     by_code = {r.code: r for r in rows}
     delivered = {k for (k,) in session.execute(select(SalesMailItem.recipient_key).where(
         SalesMailItem.report_date == up.report_date, SalesMailItem.status.in_(DELIVERED)))}
+    day_summary = json.loads(up.summary or "{}")
+    hold = None
+    if (day_summary.get("verify") or {}).get("mismatch_count"):
+        v = day_summary["verify"]
+        hold = (f"Held by the self-check: {v['mismatch_count']} difference(s) between the stored day and Bizom's file "
+                f"(e.g. {v['mismatches'][0]}). Upload the day again or tell HR.")
+    elif day_summary.get("off_day_unconfirmed"):
+        hold = (f"Held: {up.report_date:%d-%b-%Y} looks like a holiday ({day_summary['off_day']}). Confirm it as a holiday or a "
+                f"working day in Field Sales > Holidays; the emails are prepared again after that.")
     items = []
     for rec in routing.recipients(set(by_code), staff, cfg):
         scope = [by_code[c] for c in rec.codes if c in by_code]
         if not scope:
             continue
         status, note = rec.status, rec.note
-        if status == HELD and cfg.test_recipient:
+        if hold:
+            status, note = HELD, hold
+        elif status == HELD and cfg.test_recipient:
             status, note = PENDING, f"Testing: {rec.note}"
         if status == PENDING and rec.key in delivered:
             status, note = DUPLICATE, "Already sent for this day."
@@ -78,6 +89,9 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
     cfg = get_email(session)
     from sales import checks
     found = checks.day_checks(session, up.report_date, codes)
+    from sales import learning, trust
+    if item.role not in trust.FULL_ROLES:
+        found = trust.for_email(found, learning.state(session))      # unproven judgment signs: HR only
     proof = checks.proof(session, up.report_date, found) if item.role in checks.PROOF_ROLES else None
     view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof,
                              checks.context(session, up.report_date, codes))

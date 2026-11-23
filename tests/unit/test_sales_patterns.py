@@ -103,5 +103,5 @@ def test_patterns_reach_the_email_excel_and_dashboard():
     assert any(h["text"].startswith("Repeat patterns (1): Asha Rao – absent on 4 of the last 5 Mondays") for h in v["highlights"])
     wb = load_workbook(_io.BytesIO(report.excel(v)), read_only=True)
     rows = [r for r in wb["Patterns"].iter_rows(values_only=True)]
-    assert rows[1][1] == "Asha Rao" and "26-Oct, 2-Nov, 9-Nov, 16-Nov" in rows[1][6]
+    assert rows[3][0] == "Code" and rows[4][1] == "Asha Rao" and "26-Oct, 2-Nov, 9-Nov, 16-Nov" in rows[4][6]
     assert "Absent on 4 of the last 5 Mondays" in report.dashboard(v).decode()

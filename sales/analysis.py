@@ -171,10 +171,15 @@ class DayResult:
 
 def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staff: list[SalesEmployee], rules: SalesRules,
             not_bizom_users: set[str] = frozenset(), person_holidays: dict[str, str] | None = None,
-            company_holiday: str | None = None) -> DayResult:
+            company_holiday: str | None = None, known: dict[str, tuple] | None = None) -> DayResult:
     """not_bizom_users: staff who have never been in Bizom's file since joining (sales.staffcheck) - not counted absent.
     person_holidays: code -> holiday name from HR's yearly list for that person's confirmed state (sales.holiday_states)."""
     person_holidays = person_holidays or {}
+    known = known or {}                     # code -> (designation, zone, manager) from the person's last day in Bizom
+
+    def det(m: SalesEmployee) -> dict:
+        k = known.get(m.code, (None, None, None))
+        return {"designation": m.designation or k[0], "zone": m.zone or k[1], "manager_name": m.manager_name or k[2]}
     master = {e.code: e for e in staff}
     by_code, by_name_time, by_name = _eod_lookup(eod.eod) if eod else ({}, {}, {})
     people: list[PersonDay] = []
@@ -228,14 +233,14 @@ def analyse(att: BizomFile, eod: BizomFile | None, calls: BizomFile | None, staf
         regional = [m for m in missing if m.code in person_holidays]          # holiday on their state's list: not due
         missing = [m for m in missing if m.code not in person_holidays]
         for m in regional:
-            people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
+            people.append(PersonDay(code=m.code, name=m.name, **det(m),
                                     zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True, status=WEEK_OFF,
                                     leave_type=f"Holiday – {person_holidays[m.code]}"[:40]))
         marked = sum(1 for p in people if p.status in WORKING)
         expected = marked + len(missing)
         off_day, unconfirmed = off_day_of(day, marked, expected, rules, company_holiday)
         for m in missing:
-            people.append(PersonDay(code=m.code, name=m.name, designation=m.designation, zone=m.zone, manager_name=m.manager_name,
+            people.append(PersonDay(code=m.code, name=m.name, **det(m),
                                     zonal_name=m.zonal_name, hod_name=m.hod_name, in_master=True,
                                     status=WEEK_OFF if off_day else ABSENT, leave_type=off_leave(off_day)))
             not_marked += 1

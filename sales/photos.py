@@ -34,8 +34,9 @@ PHOTO: dict[str, tuple[str, str, str]] = {
     "PHOTO_OTHER_PERSON": ("Same selfie as another person", "high", "This selfie is the same as, or nearly identical to, another person's selfie."),
     "PHOTO_REUSED": ("Selfie reused from another day", "high", "This selfie is the same as, or nearly identical to, one from another day."),
     "PHOTO_TIME_MISMATCH": ("Photo date does not match", "high", "The date / time written into the photo by the camera is not the attendance date / time."),
-    "PHOTO_NOT_LIVE": ("Not taken with the app camera", "medium",
-                       "A full camera photo with its own date inside, unlike the app's live selfies - it was probably picked from the gallery."),
+    "PHOTO_NOT_LIVE": ("Selfie taken well before attendance", "medium",
+                       "The time the camera wrote into the selfie is well before the attendance mark - it may have been taken earlier "
+                       "or picked from the gallery."),
     "PHOTO_NO_FACE": ("No face found", "medium", "No face could be found in a clear selfie."),
     "PHOTO_POOR": ("Too dark or blurry", "low", "The selfie is too dark or too blurry to check who it is."),
 }
@@ -138,12 +139,33 @@ def count_faces(gray, rgb=None) -> int:
     w = 480
     det = _yunet()
     if det is not None:
-        src = rgb if rgb is not None else gray.convert("RGB")
-        img = src.resize((w, max(1, int(src.height * w / src.width)))) if src.width > w else src
-        bgr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-        det.setInputSize((bgr.shape[1], bgr.shape[0]))
-        _, faces = det.detect(bgr)
-        return 0 if faces is None else len(faces)
+        src = (rgb if rgb is not None else gray.convert("RGB")).convert("RGB")
+
+        def find(img, width: int) -> int:
+            img = img.resize((width, max(1, int(img.height * width / img.width)))) if img.width > width else img
+            bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+            det.setInputSize((bgr.shape[1], bgr.shape[0]))
+            _, faces = det.detect(bgr)
+            return 0 if faces is None else len(faces)
+
+        n = find(src, w)
+        if n:
+            return n
+        # Second looks (same confidence threshold, so nothing is "found" that is not a face): contrast evened out for dark or
+        # backlit selfies, a larger copy for a small / distant face, and the photo turned (phones that store it sideways).
+        from PIL import Image
+        lab = cv2.cvtColor(np.asarray(src), cv2.COLOR_RGB2LAB)
+        lab[:, :, 0] = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(lab[:, :, 0])
+        even = Image.fromarray(cv2.cvtColor(lab, cv2.COLOR_LAB2RGB))
+        for img, width in ((even, w), (src, 800), (even, 800)):
+            n = find(img, width)
+            if n:
+                return n
+        for angle in (90, 270, 180):
+            n = find(src.rotate(angle, expand=True), w) or find(even.rotate(angle, expand=True), w)
+            if n:
+                return n
+        return 0
     g = gray.resize((w, max(1, int(gray.height * w / gray.width)))) if gray.width > w else gray
     a = np.asarray(g)
     front, profile = _detectors()
@@ -318,14 +340,11 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
             near[a] |= set(grp) - {a}
     # a picture shared by many different people is a placeholder (e.g. Bizom's "no image" picture), not a reused selfie
     placeholder = {pid for pid, others in near.items() if len({by_id[o].code for o in others} | {by_id[pid].code}) >= 6}
-    dims = Counter((p.width, p.height) for p in photos)
-    common = {d for d, n in dims.items() if n >= max(5, 0.05 * len(photos))}
     # What is normal for each person: some phones always send full camera photos, and for some people's angle / light the face
     # finder always fails - those are not signs. Flag only what is unusual for the person (needs 5+ selfies to know).
     mine: dict[str, list[SalesPhoto]] = defaultdict(list)
     for p in photos:
         mine[p.code].append(p)
-    camera_share = {c: sum(1 for x in v if x.exif_time or (x.width, x.height) not in common) / len(v) for c, v in mine.items()}
     face_share = {c: sum(1 for x in v if x.faces) / len(v) for c, v in mine.items()}
     known = {c for c, v in mine.items() if len(v) >= 5}
     stats: Counter = Counter()
@@ -357,11 +376,11 @@ def check(session: Session, rules: SalesRules | None = None) -> dict:
             if off_day or off_time:
                 f["PHOTO_TIME_MISMATCH"] = f"Photo taken {taken:%d-%b %I:%M %p}; attendance {p.day:%d-%b}" + \
                                            (f" {p.att_time}" if p.att_time else "") + "."
-            if (p.width, p.height) not in common and (p.code not in known or camera_share[p.code] <= 0.5):
-                f["PHOTO_NOT_LIVE"] = (f"Full camera photo ({p.width}x{p.height}, dated {taken:%d-%b %I:%M %p}) instead of the app's live selfie"
-                                       + (f"; usually {100 - round(100 * camera_share[p.code])}% of this person's selfies are live." if p.code in known else "."))
-        elif common and (p.width, p.height) not in common and p.size_kb and p.size_kb > 400 and (p.code not in known or camera_share[p.code] <= 0.5):
-            f["PHOTO_NOT_LIVE"] = f"{p.width}x{p.height}, {p.size_kb} KB - not the app's usual live-selfie format."
+            if not off_day and not off_time and p.att_time:
+                early = (datetime.combine(p.day, datetime.strptime(p.att_time, "%H:%M").time()) - taken).total_seconds() / 60
+                if early >= rules.photo_early_minutes:
+                    f["PHOTO_NOT_LIVE"] = (f"Camera time {taken:%I:%M %p}, attendance marked {p.att_time} - the selfie is "
+                                           f"{round(early)} min older than the attendance.")
         poor = (p.brightness is not None and p.brightness < rules.photo_dark) or (p.sharpness is not None and p.sharpness < rules.photo_blurry)
         if poor and not p.faces:                          # a soft photo whose face is still found is usable
             f["PHOTO_POOR"] = ("Too dark" if p.brightness is not None and p.brightness < rules.photo_dark else "Too blurry") + \

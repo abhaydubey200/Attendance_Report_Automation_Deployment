@@ -77,7 +77,7 @@ def process(session: Session, files: list[tuple[str, bytes]], actor: str, replac
     holidays = holiday_states.person_holidays(session, day, staff)
     result = analysis.analyse(att, found.get(bizom.EOD, (None, None, None))[2], found.get(bizom.CALLS, (None, None, None))[2],
                               staff, get_rules(session), staffcheck.never_users(session, day), holidays,
-                              holiday_list.company_holiday(session, day))
+                              holiday_list.company_holiday(session, day), staffcheck.last_known(session, day))
     if existing:
         existing.is_current = False
         for old in session.scalars(select(SalesMailItem).where(SalesMailItem.report_date == day, SalesMailItem.status.in_(mail.REPLACEABLE))):

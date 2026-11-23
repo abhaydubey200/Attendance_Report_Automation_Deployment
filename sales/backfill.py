@@ -96,6 +96,7 @@ def load(engine, folder: Path, actor: str, replace: bool = False, progress=print
     with session_scope(engine) as s:
         from sales import staffcheck
         res["not_bizom_users"] = staffcheck.reconcile(s)   # people who turned out never to use Bizom: not absent on any day
+        res["details_filled"] = staffcheck.fill_details(s)  # designation / zone of absent people from their last Bizom day
     with session_scope(engine) as s:
         for d in sorted(days):                            # second pass: every day checked with the full set of usual places
             if service.current_upload(s, d):

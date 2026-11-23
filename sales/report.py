@@ -44,6 +44,14 @@ def manager_label(name: str | None) -> str:
     return n
 
 
+def _mins(hhmm: str | None) -> int | None:
+    try:
+        h, m = (hhmm or "").split(":")[:2]
+        return int(h) * 60 + int(m)
+    except ValueError:
+        return None
+
+
 def _person(r) -> dict:
     flags = [f for f in (r.flags or "").split(",") if f]
     return {"code": r.code, "name": r.name, "designation": r.designation or "", "zone": r.zone or "", "manager": manager_label(r.manager_name),
@@ -51,6 +59,7 @@ def _person(r) -> dict:
             "not_marked": r.status == "ABSENT" and not r.bizom_status, "leave": r.leave_type or "",
             "att": t12(r.attendance_time) or "", "first": t12(r.first_activity) or "", "last": t12(r.last_activity) or "",
             "market": hm(r.market_minutes), "market_min": r.market_minutes, "km": r.km, "eod": t12(r.eod_time) or "",
+            "att_min": _mins(r.attendance_time), "eod_min": _mins(r.eod_time),
             "calls": r.calls, "productive": r.productive_calls, "short_calls": r.short_calls, "far_calls": r.far_calls,
             "order_value": r.order_value, "in_master": r.in_master,
             "flags": [{"code": f, "label": WARNINGS[f][0], "level": WARNINGS[f][1], "why": WARNINGS[f][2]} for f in flags if f in WARNINGS],
@@ -123,8 +132,13 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
     out["patterns"] = sorted([{"code": p["code"], "name": p["name"], "designation": p["designation"], "manager": p["manager"],
                                "status_label": p["status_label"], "patterns": pat[p["code"]]} for p in people if p["code"] in pat],
                              key=lambda x: (lv.index(x["patterns"][0]["level"]), -len(x["patterns"]), x["name"]))
+    by_check = {c["code"]: c["signs"] for c in (checks or [])}
     for p in people:
         p["patterns"] = pat.get(p["code"], [])
+        p["checks"] = [{"kind": s["kind"], "label": s["label"], "level": s["level"], "why": s["why"]} for s in by_check.get(p["code"], [])]
+        p["risk"] = next((c["risk"] for c in (checks or []) if c["code"] == p["code"]), None)
+        ai = ((ctx or {}).get("absent_info") or {}).get(p["code"])
+        p["last_marked"], p["absent_streak"] = (ai or {}).get("last_marked"), (ai or {}).get("streak")
     out["trend"] = _trend(out)
     out["highlights"] = highlights(out)
     return out
@@ -235,129 +249,147 @@ def email_text(v: dict) -> str:
 
 # ---------------------------------------------------------------- Excel
 def excel(v: dict) -> bytes:
+    """One workbook per email: a Summary, then one styled table per list (filter buttons, banded rows, frozen header).
+    Columns nobody has data for are left out; every sheet says what it is in its title line."""
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
     head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter", "border": 1})
-    cell = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter"})
-    wrap = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "text_wrap": True})
-    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D"})
+    cell = wb.add_format({"valign": "top"})
+    wrap = wb.add_format({"valign": "top", "text_wrap": True})
+    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D", "align": "center"})
     bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
-    note = wb.add_format({"italic": True, "font_color": "#5D6577"})
-    lvl = {k: wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": c, "bg_color": b})
+    note = wb.add_format({"italic": True, "font_color": "#5D6577", "text_wrap": True, "valign": "top"})
+    lvl = {k: wb.add_format({"bold": True, "font_color": c, "bg_color": b, "valign": "top", "text_wrap": True})
            for k, c, b in (("high", "#B91C1C", "#FEF3F2"), ("medium", "#B45309", "#FFF8EB"), ("low", "#475569", "#F1F5F9"))}
-    st = {k: wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": c}) for k, c in COLORS.items()}
+    st = {k: wb.add_format({"bold": True, "font_color": c, "valign": "top"}) for k, c in COLORS.items()}
+    pctf = {k: wb.add_format({"bold": True, "font_color": c, "num_format": "0.0", "valign": "top"})
+            for k, c in (("good", "#15803D"), ("warn", "#B45309"), ("bad", "#B91C1C"))}
+    neg = wb.add_format({"bold": True, "font_color": "#B91C1C", "num_format": "+0.0;-0.0;0", "valign": "top"})
+    pos = wb.add_format({"font_color": "#15803D", "num_format": "+0.0;-0.0;0", "valign": "top"})
 
+    def pfmt(x):
+        return None if x in (None, "") else pctf["good" if x >= 90 else "warn" if x >= 75 else "bad"]
+
+    def table(name: str, title: str, subtitle: str, cols: list[tuple[str, int]], rows: list[list], empty: str,
+              fmt=None, freeze: int = 2, height: int | None = None, footnote: str | None = None):
+        """cols: (header, width); fmt(i, j, value) -> a cell format or None (default: wrap text in wide columns)."""
+        ws = wb.add_worksheet(name[:31])
+        excel_banner(wb, ws, [w for _, w in cols], title, subtitle)
+        for j, (_, w) in enumerate(cols):
+            ws.set_column(j, j, w, wrap if w >= 30 else cell)
+        top = 3
+        if not rows:
+            ws.write(top, 0, empty, note)
+            return ws
+        clean = [["" if x is None else x for x in r] for r in rows]
+        ws.add_table(top, 0, top + len(clean), len(cols) - 1, {
+            "data": clean, "style": "Table Style Light 15", "autofilter": True, "banded_rows": True,
+            "columns": [{"header": h, "header_format": head} for h, _ in cols]})
+        ws.set_row(top, 30)
+        for i, r in enumerate(clean):
+            if height:
+                ws.set_row(top + 1 + i, height)
+            for j, x in enumerate(r):
+                f = fmt(i, j, x) if fmt else None
+                if f is not None:
+                    ws.write(top + 1 + i, j, x, f)
+        if footnote:
+            ws.write(top + len(clean) + 2, 0, footnote, note)
+        ws.freeze_panes(top + 1, freeze)
+        return ws
+
+    # ---- Summary
     ws = wb.add_worksheet("Summary")
-    excel_banner(wb, ws, [32, 14, 14, 14], f"Field sales attendance - {v['date_long']} - {v['recipient']}")
-    ws.set_column(0, 0, 36)
+    excel_banner(wb, ws, [40, 14, 14, 14], f"Field sales attendance – {v['date_long']} ({v['weekday']})", v["recipient"])
+    ws.set_column(0, 0, 44)
     ws.set_column(1, 3, 14)
     kpis = [("People", v["n"]), ("Attendance %", v["pct"] if v["pct"] is not None else "-")] + \
-           [(v["status_label"][k], v["counts"][k]) for k in v["counts"]] + [("Need checking", len(v["flagged"])),
-                                                                            ("Need checking - serious", v["flagged_high"])]
-    for i, (k, val) in enumerate(kpis, start=3):
+           [(v["status_label"][k], v["counts"][k]) for k in v["counts"]] + \
+           [("Need checking", len(v["flagged"])), ("Need checking – serious", v["flagged_high"]),
+            ("Repeat patterns (people)", len(v.get("patterns") or [])), ("Location & selfie checks (people)", len(v["checks"]))]
+    r = 4
+    ws.write(3, 0, "Figure", head)
+    ws.write(3, 1, "Value", head)
+    for i, (k, val) in enumerate(kpis, start=r):
         ws.write(i, 0, k, bold)
         ws.write(i, 1, val, big)
-    r = 4 + len(kpis)
+    r += len(kpis) + 1
+    if v.get("trend"):
+        ws.write(r, 0, f"Trend: {v['trend']}", note)
+        r += 2
     if v["warnings"]:
-        ws.write(r, 0, "Warning sign", head)
-        ws.write(r, 1, "People", head)
-        ws.write(r, 2, "Level", head)
+        for j, h_ in enumerate(("Warning sign", "People", "Level")):
+            ws.write(r, j, h_, head)
         for i, w in enumerate(v["warnings"], start=r + 1):
-            ws.write(i, 0, w["label"], cell)
-            ws.write(i, 1, w["n"], cell)
+            ws.write(i, 0, w["label"], bold)
+            ws.write(i, 1, w["n"], big)
             ws.write(i, 2, w["level"], lvl[w["level"]])
         r += 2 + len(v["warnings"])
-    ws.write(r, 0, "Warning signs are for checking with the person, not proof of anything.", note)
+    if v["highlights"]:
+        ws.write(r, 0, "Highlights (as in the email)", head)
+        for i, x in enumerate(v["highlights"], start=r + 1):
+            ws.merge_range(i, 0, i, 3, x["text"], lvl[x["level"]])
+            ws.set_row(i, 32)
+        r += 2 + len(v["highlights"])
+    ws.write(r, 0, "Warning signs are for checking with the person, not proof of anything. Each sheet has filter buttons in its header.", note)
 
     if v["teams"]:
-        wt = wb.add_worksheet("By team")
-        cols = [("HOD", "hod", 22), ("Zonal head", "zonal", 24), ("People", "people", 9), ("Attendance %", "pct", 12),
-                ("Absent", "absent", 9), ("Late", "late", 8), ("Need checking", "flagged", 12)]
-        for j, (h, _, w) in enumerate(cols):
-            wt.write(0, j, h, head)
-            wt.set_column(j, j, w)
-        for i, t in enumerate(v["teams"], start=1):
-            for j, (_, k, _) in enumerate(cols):
-                wt.write(i, j, "" if t[k] is None else t[k], cell)
-        wt.freeze_panes(1, 0)
+        table("By team", f"By team – {v['date_long']}", "Lowest attendance first",
+              [("HOD", 22), ("Zonal head", 24), ("People", 9), ("Attendance %", 12), ("Absent", 9), ("Late", 8), ("Need checking", 12)],
+              [[t["hod"], t["zonal"], t["people"], t["pct"], t["absent"], t["late"], t["flagged"]] for t in v["teams"]], "No teams.",
+              fmt=lambda i, j, x: pfmt(x) if j == 3 else None, freeze=1)
 
-    wf = wb.add_worksheet("Needs checking")
-    cols = [("Code", 10), ("Name", 26), ("Designation", 12), ("Manager", 22), ("Warning signs", 46), ("Evidence", 60)]
-    for j, (h, w) in enumerate(cols):
-        wf.write(0, j, h, head)
-        wf.set_column(j, j, w)
-    for i, p in enumerate(v["flagged"], start=1):
-        top = min((f["level"] for f in p["flags"]), key=lambda x: ("high", "medium", "low").index(x))
-        for j, val in enumerate([p["code"], p["name"], p["designation"], p["manager"], "; ".join(f["label"] for f in p["flags"]), p["evidence"]]):
-            wf.write(i, j, val, lvl[top] if j == 4 else wrap)
-    if not v["flagged"]:
-        wf.write(1, 0, "Nothing to check on this day.", note)
-    wf.freeze_panes(1, 2)
+    table("Needs checking", f"Needs checking – {v['date_long']}", "Warning signs of the day, most serious first – for checking, not proof",
+          [("Code", 10), ("Name", 26), ("Designation", 12), ("Manager", 22), ("Warning signs", 44), ("Evidence", 60)],
+          [[p["code"], p["name"], p["designation"], p["manager"], "; ".join(f["label"] for f in p["flags"]), p["evidence"]] for p in v["flagged"]],
+          "Nothing to check on this day.",
+          fmt=lambda i, j, x: lvl[min((f["level"] for f in v["flagged"][i]["flags"]), key=("high", "medium", "low").index)] if j == 4 else None)
 
     if v.get("patterns"):
-        wpat = wb.add_worksheet("Patterns")
-        cols = [("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Status on the day", 13), ("Pattern", 34),
-                ("Proof (from the uploaded days)", 90)]
-        for j, (h, w) in enumerate(cols):
-            wpat.write(0, j, h, head)
-            wpat.set_column(j, j, w)
-        i = 1
+        prow, plv = [], []
         for x in v["patterns"]:
             for p in x["patterns"]:
-                for j, val in enumerate([x["code"], x["name"], x["designation"], x["manager"], x["status_label"], p["label"], p["text"]]):
-                    wpat.write(i, j, val, lvl[p["level"]] if j == 5 else wrap)
-                i += 1
-        wpat.write(i + 1, 0, "Each pattern is a count over the person's own uploaded working days (week offs, leave and days "
-                             "without an upload are not counted); the dates are listed so each one can be checked in Bizom.", note)
-        wpat.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
-        wpat.freeze_panes(1, 2)
+                prow.append([x["code"], x["name"], x["designation"], x["manager"], x["status_label"], p["label"], p["text"]])
+                plv.append(p["level"])
+        table("Patterns", f"Repeat patterns – {v['date_long']}",
+              "Counted over each person's own uploaded working days (week offs, leave, holidays and days without an upload are not counted)",
+              [("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("On the day", 12), ("Pattern", 30), ("Proof (dates from Bizom)", 80)],
+              prow, "", fmt=lambda i, j, x: lvl[plv[i]] if j == 5 else None)
 
     tt = v["ctx"].get("team_trend") or []
     if len(tt) > 1:
-        wt4 = wb.add_worksheet("Team heads - 4 weeks")
-        cols = [("Team head", 28), ("People", 8)] + [(r, 13) for r in tt[0]["week_ranges"]] + [("3 weeks before (avg)", 13), ("Change (points)", 11)]
-        for j, (h_, w) in enumerate(cols):
-            wt4.write(0, j, h_, head)
-            wt4.set_column(j, j, w)
-        for i, t in enumerate(tt, start=1):
-            vals = [t["team_head"], t["people"]] + ["" if x is None else x for x in t["weeks"]] + \
-                   ["" if t["before_avg"] is None else t["before_avg"], "" if t["change"] is None else t["change"]]
-            for j, val in enumerate(vals):
-                wt4.write(i, j, val, lvl["high"] if j == len(vals) - 1 and isinstance(val, float) and val <= -10 else cell)
-        wt4.write(len(tt) + 2, 0, "Attendance % per rolling week (7 days ending on the report day); week offs and holidays are not counted. "
-                                  "Biggest drop first.", note)
-        wt4.freeze_panes(1, 1)
+        table("Team heads - 4 weeks", f"Team heads – last 4 weeks to {v['date_long']}",
+              "Attendance % per rolling week (7 days ending on the report day); week offs and holidays not counted; biggest drop first",
+              [("Team head", 28), ("People", 8)] + [(rg, 13) for rg in tt[0]["week_ranges"]] + [("3 weeks before (avg)", 13), ("Change (points)", 11)],
+              [[t["team_head"], t["people"], *t["weeks"], t["before_avg"], t["change"]] for t in tt], "",
+              fmt=lambda i, j, x: (neg if isinstance(x, (int, float)) and x <= -10 else pos if isinstance(x, (int, float)) and x > 0 else None)
+              if j == len(tt[0]["weeks"]) + 3 else pfmt(x) if 2 <= j < 2 + len(tt[0]["weeks"]) and isinstance(x, (int, float)) else None, freeze=1)
 
     if v["checks"]:
-        wc = wb.add_worksheet("Location & selfie checks")
-        cols = [("Risk (0-100)", 9), ("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Type", 10), ("Warning sign", 34), ("Why", 70)]
-        for j, (h, w) in enumerate(cols):
-            wc.write(0, j, h, head)
-            wc.set_column(j, j, w)
-        i = 1
+        crow, clv = [], []
         for c in v["checks"]:
             for s in c["signs"]:
-                for j, val in enumerate([c["risk"], c["code"], c["name"], c["designation"], c["manager"], s["kind"], s["label"], s["why"]]):
-                    wc.write(i, j, val, lvl[s["level"]] if j == 6 else wrap)
-                i += 1
-        wc.write(i + 1, 0, "Risk = all warning signs of the day weighted by level, plus how unusual the day is for the person (learned model). "
-                           "Map and selfies: HR Portal > Field Sales > Needs checking.", note)
-        wc.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
-        wc.freeze_panes(1, 3)
+                crow.append([c["risk"], c["code"], c["name"], c["designation"], c["manager"], s["kind"], s["label"], s["why"]])
+                clv.append(s["level"])
+        table("Location & selfie checks", f"Location & selfie checks – {v['date_long']}",
+              "Highest risk first. Risk 0-100 = the day's signs weighted by how often each was right when HR checked; map and selfies in the HR Portal",
+              [("Risk", 7), ("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Type", 10), ("Warning sign", 32), ("Why", 70)],
+              crow, "", fmt=lambda i, j, x: lvl[clv[i]] if j == 6 else None, freeze=3)
 
     if v["proof"]:
         wp = wb.add_worksheet("Proof")
-        link = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "valign": "top", "text_wrap": True})
-        top = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "top", "text_wrap": True})
         cols = [("Risk", 6), ("Employee", 24), ("Warning signs and why", 52), ("Attendance selfie", 17), ("Matching selfie", 17), ("Where", 30)]
-        for j, (h, w) in enumerate(cols):
-            wp.write(0, j, h, head)
+        excel_banner(wb, wp, [w for _, w in cols], f"Proof – {v['date_long']}", "Selfies are small copies made for this workbook; click one to open the original on Bizom")
+        link = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "valign": "top", "text_wrap": True})
+        top_ = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "top", "text_wrap": True})
+        for j, (h_, w) in enumerate(cols):
+            wp.write(3, j, h_, head)
             wp.set_column(j, j, w)
-        for i, x in enumerate(v["proof"], start=1):
+        for i, x in enumerate(v["proof"], start=4):
             wp.set_row(i, 132)
-            wp.write(i, 0, x["risk"], top)
-            wp.write(i, 1, f"{x['name']}\n{x['code']}\n{x['manager']}", top)
-            wp.write(i, 2, "\n".join(f"{s['kind']}: {s['label']}" for s in x["signs"]) + ("\n\n" + x["why"] if x["why"] else ""), top)
+            wp.write(i, 0, x["risk"], top_)
+            wp.write(i, 1, f"{x['name']}\n{x['code']}\n{x['manager']}", top_)
+            wp.write(i, 2, "\n".join(f"{s['kind']}: {s['label']}" for s in x["signs"]) + ("\n\n" + x["why"] if x["why"] else ""), top_)
             for j, (jpg, url, cap) in enumerate([(x["selfie_jpg"], x["selfie_url"], f"{v['date_long']}")] +
                                                 [(m["jpg"], m["url"], f"{m['name']} {m['date']}") for m in x["matches"][:1]], start=3):
                 if jpg:
@@ -365,69 +397,71 @@ def excel(v: dict) -> bytes:
                                                          "x_offset": 4, "y_offset": 4, "url": url, "object_position": 1})
                 elif url:
                     wp.write_url(i, j, url, link, "Open selfie")
+                else:
+                    wp.write(i, j, "no selfie", top_)
             r_lines = [x["from_usual"]] if x["from_usual"] else []
-            wp.write(i, 5, "\n".join(r_lines) or "", top)
+            wp.write(i, 5, "\n".join(r_lines) or "", top_)
             if x["att_map"]:
                 wp.write_url(i, 5, x["att_map"], link, ("\n".join(r_lines) + "\n" if r_lines else "") + "Attendance place on the map")
-        wp.write(len(v["proof"]) + 2, 0, "Selfies are small copies made for this workbook; click one to open the original on Bizom. "
-                                         "The HR Portal itself keeps no photos.", note)
-        wp.freeze_panes(1, 2)
+        wp.autofilter(3, 0, 3 + len(v["proof"]), len(cols) - 1)
+        wp.freeze_panes(4, 2)
 
-    wn = wb.add_worksheet("Absent")
-    for j, (h, w) in enumerate([("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 12), ("Manager", 24), ("Reason", 36)]):
-        wn.write(0, j, h, head)
-        wn.set_column(j, j, w)
-    for i, p in enumerate(v["not_marked"], start=1):
-        for j, val in enumerate([p["code"], p["name"], p["designation"], p["zone"], p["manager"],
-                                 "Did not mark attendance in Bizom" if p["not_marked"] else "Marked absent in Bizom"]):
-            wn.write(i, j, val, cell)
+    ai = v["ctx"].get("absent_info") or {}
+    table("Absent", f"Absent – {v['date_long']}", "Did not mark attendance in Bizom (no leave recorded); longest absence first",
+          [("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 10), ("Manager", 24), ("Last marked in Bizom", 14),
+           ("Absent working days in a row", 13), ("Reason", 30)],
+          sorted([[p["code"], p["name"], p["designation"], p["zone"], p["manager"], (ai.get(p["code"]) or {}).get("last_marked") or "not in the uploaded days",
+                   (ai.get(p["code"]) or {}).get("streak"),
+                   "Did not mark attendance in Bizom" if p["not_marked"] else "Marked absent in Bizom"] for p in v["not_marked"]],
+                 key=lambda r_: (-(r_[6] or 0), r_[1])),
+          "Nobody absent on this day.", fmt=lambda i, j, x: lvl["high"] if j == 6 and isinstance(x, int) and x >= 3 else None)
 
-    wl = wb.add_worksheet("Team list")
+    has_calls = any(p.get("calls") for p in v["people"])
     cols = [("Code", "code", 10), ("Name", "name", 26), ("Designation", "designation", 11), ("Zone", "zone", 10), ("Manager", "manager", 22),
-            ("Status", "status_label", 10), ("Leave", "leave", 14), ("Attendance time", "att", 11), ("First activity", "first", 11),
-            ("Last activity", "last", 11), ("Time in market (h:mm)", "market", 11), ("KM", "km", 8), ("Day end", "eod", 10),
-            ("Calls", "calls", 7), ("Productive", "productive", 9), ("Order value", "order_value", 11), ("Warning signs", "warn", 40)]
+            ("Status", "status_label", 10), ("Leave / holiday", "leave", 16), ("Attendance time", "att", 11), ("First activity", "first", 11),
+            ("Last activity", "last", 11), ("Time in market (h:mm)", "market", 11), ("KM", "km", 8), ("Day end", "eod", 10)]
+    if has_calls:
+        cols += [("Calls", "calls", 7), ("Productive", "productive", 9), ("Order value", "order_value", 11)]
+    cols += [("Warning signs", "warn", 34), ("Location & selfie checks", "chk", 30), ("Patterns", "pat", 30)]
     if v["view"] != "team":
         cols.insert(5, ("HOD", "hod", 18))
-    for j, (h, _, w) in enumerate(cols):
-        wl.write(0, j, h, head)
-        wl.set_column(j, j, w)
-    for i, p in enumerate(v["people"], start=1):
-        for j, (_, k, _) in enumerate(cols):
-            val = "; ".join(f["label"] for f in p["flags"]) if k == "warn" else p.get(k)
-            wl.write(i, j, "" if val is None else val, st.get(p["status"], cell) if k == "status_label" else cell)
-    wl.autofilter(0, 0, len(v["people"]), len(cols) - 1)
-    wl.freeze_panes(1, 2)
+    people = v["people"]
 
-    si = v["ctx"].get("staff_issues") or {}
-    if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
-        ws2 = wb.add_worksheet("Staff list to fix")
-        cols = [("Problem", 26), ("Code", 10), ("Name", 26), ("Team head", 22), ("HOD", 20), ("Proof", 90), ("Action", 44)]
-        for j, (h_, w) in enumerate(cols):
-            ws2.write(0, j, h_, head)
-            ws2.set_column(j, j, w)
-        i = 1
+    def val(p, k):
+        if k == "warn":
+            return "; ".join(f["label"] for f in p["flags"])
+        if k == "chk":
+            return "; ".join(f"{s['kind']}: {s['label']}" for s in p.get("checks") or [])
+        if k == "pat":
+            return "; ".join(x["label"] for x in p.get("patterns") or [])
+        return p.get(k)
+    si = [k for _, k, _ in cols].index("status_label")
+    table("Team list", f"Everyone – {v['date_long']}", f"{v['n']} people; filter any column with the buttons in the header",
+          [(h_, w) for h_, _, w in cols], [[val(p, k) for _, k, _ in cols] for p in people], "No people.",
+          fmt=lambda i, j, x: st.get(people[i]["status"]) if j == si else None)
+
+    sit = v["ctx"].get("staff_issues") or {}
+    if v["view"] == "hr" and (sit.get("possibly_left") or sit.get("never_in_bizom") or sit.get("doj_wrong")):
+        rows = []
         for key, label, action in (("possibly_left", "Possibly left", "Confirm with the team head; mark Left on the staff list if gone."),
                                    ("never_in_bizom", "Never marks attendance in Bizom", "Remove from the Field Sales list, or ask them to mark in Bizom."),
                                    ("doj_wrong", "Joining date looks wrong", "Correct the date of joining on the staff list.")):
-            for x in si.get(key, []):
-                for j, val in enumerate([label, x["code"], x["name"], x["manager"], x["hod"], x["proof"], action]):
-                    ws2.write(i, j, val, wrap)
-                i += 1
-        ws2.write(i + 1, 0, "People who never mark attendance in Bizom are not counted absent; the others are, until the list is fixed.", note)
-        ws2.freeze_panes(1, 3)
+            rows += [[label, x["code"], x["name"], x["manager"], x["hod"], x["proof"], action] for x in sit.get(key, [])]
+        table("Staff list to fix", "Staff list to fix", "People who never mark attendance in Bizom are not counted absent; the others are, until the list is fixed",
+              [("Problem", 26), ("Code", 10), ("Name", 26), ("Team head", 22), ("HOD", 20), ("Proof", 80), ("Action", 44)], rows, "", freeze=3)
 
     if v["view"] == "hr" and v["data"]:
         wd = wb.add_worksheet("Data issues")
-        wd.set_column(0, 0, 60)
-        r = 0
+        excel_banner(wb, wd, [70], "Data issues", v["date_long"])
+        wd.set_column(0, 0, 70)
+        r = 3
         for title, items in (("In Bizom but not on the field sales staff list", v["data"].get("not_in_staff_list", [])),
                              ("Marked attendance in Bizom but Left on the staff list", v["data"].get("left_but_marked", []))):
             wd.write(r, 0, f"{title} ({len(items)})", head)
             for i, x in enumerate(items, start=r + 1):
-                wd.write(i, 0, x, cell)
+                wd.write(i, 0, x)
             r += 2 + len(items)
-        wd.write(r, 0, f"'Not Marked' in the EOD report: {v['data'].get('eod_not_marked', 0)} users (names only - Bizom gives no code)", note)
+        wd.write(r, 0, f"'Not Marked' in the EOD report: {v['data'].get('eod_not_marked', 0)} users", note)
         wd.write(r + 1, 0, f"Left out: {', '.join(f'{k} {n}' for k, n in v['data'].get('excluded', {}).items()) or 'none'}", note)
     wb.close()
     return buf.getvalue()

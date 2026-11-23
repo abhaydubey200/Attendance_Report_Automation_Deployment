@@ -46,6 +46,8 @@ IMAGES = {
     "c_clean.jpg": picture(3), "c2.jpg": picture(4), "c3.jpg": picture(5), "c4.jpg": picture(6), "c5.jpg": picture(7),
     "d_camera.jpg": picture(8, size=(2448, 3264), exif_time="2026:10:30 10:08:00"),
     "e_dark.jpg": picture(9, dark=True), "f_noface.jpg": picture(10),
+    "g_early.jpg": picture(11, exif_time="2026:11:12 08:50:00"),                  # camera time 40 min before the attendance
+    "h_bigcam.jpg": picture(12, size=(2448, 3264), exif_time="2026:11:12 09:30:00"),  # full camera photo, taken live
     **{f"placeholder{i}.jpg": picture(42) for i in range(6)},
     "pdf.jpg": b"%PDF-1.4 not an image",
 }
@@ -77,6 +79,7 @@ def checked(engine, monkeypatch):
              (HOST + "c4.jpg", "SL00005", D(13), "09:00"), (HOST + "c5.jpg", "SL00005", D(14), "09:00"),
              (HOST + "d_camera.jpg", "SL00004", D(12), "09:30"), (HOST + "e_dark.jpg", "SL00005", D(12), "09:00"),
              (HOST + "f_noface.jpg", "SL00006", D(12), "09:00"), (HOST + "pdf.jpg", "SL00006", D(13), "09:00"),
+             (HOST + "g_early.jpg", "SL00008", D(12), "09:30"), (HOST + "h_bigcam.jpg", "SL00009", D(12), "09:30"),
              (HOST + "gone.jpg", "SL00006", D(14), "09:00"), (HOST + "busy.jpg", "SL00006", D(15), "09:00"),
              ("https://evil.example.com/x.jpg", "SL00007", D(12), "09:00"), ("http://outletimages.s3.ap-southeast-1.amazonaws.com/a.jpg", "SL00007", D(13), None)]
     items += [(HOST + f"placeholder{i}.jpg", f"SL0010{i}", D(12), "09:00") for i in range(6)]
@@ -108,11 +111,13 @@ def test_allowed_links():
 def test_every_sign_and_safety(checked):
     engine, res, _ = checked
     assert not any("evil" in u or u.startswith("http://") for u in REQUESTED)              # only Bizom over HTTPS
-    assert res["done"] == 17 and res["skipped"] == 2 and res["failed"] == 1 and res["placeholders"] == 6
+    assert res["done"] == 19 and res["skipped"] == 2 and res["failed"] == 1 and res["placeholders"] == 6
     with session_scope(engine) as s:
         assert flags(s, HOST + "a_day11.jpg") == {"PHOTO_REUSED", "PHOTO_OTHER_PERSON"} and flags(s, HOST + "a_day10.jpg") >= {"PHOTO_REUSED"}
         assert "PHOTO_OTHER_PERSON" in flags(s, HOST + "b_near.jpg")
-        assert flags(s, HOST + "d_camera.jpg") == {"PHOTO_NOT_LIVE", "PHOTO_TIME_MISMATCH"}
+        assert flags(s, HOST + "d_camera.jpg") == {"PHOTO_TIME_MISMATCH"}                      # another day: date mismatch
+        assert flags(s, HOST + "g_early.jpg") == {"PHOTO_NOT_LIVE"}                              # 40 min before attendance
+        assert flags(s, HOST + "h_bigcam.jpg") == set()                                          # phone's own camera size, taken live
         assert flags(s, HOST + "e_dark.jpg") == {"PHOTO_POOR"}
         assert flags(s, HOST + "f_noface.jpg") == {"PHOTO_NO_FACE"}
         assert flags(s, HOST + "c_clean.jpg") == set() and flags(s, HOST + "placeholder0.jpg") == set()
@@ -140,7 +145,7 @@ def test_retry_cases_day_page_purge_and_api(checked, settings, tmp_path):
         assert photos.overview(s, date(2026, 11, 1), date(2026, 11, 30), {"SL00003"})["flagged"] == 0
     with TestClient(create_app(settings, engine, frontend_dist=tmp_path / "x")) as api:
         ov = api.get("/api/v1/sales/photos?start=2026-11-01&end=2026-11-30").json()
-        assert ov["photos"] == 22 and any(i["matches"] for i in ov["items"])
+        assert ov["photos"] == 24 and any(i["matches"] for i in ov["items"])
     with session_scope(engine) as s:
         assert photos.purge(s, date(2026, 11, 12)) == 2
 

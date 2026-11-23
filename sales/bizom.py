@@ -177,6 +177,7 @@ class EodRow:
     location: tuple[float, float] | None = None       # where attendance was marked
     eod_location: tuple[float, float] | None = None   # where the day was ended
     photo_url: str | None = None
+    code: str | None = None                          # Employee_ID (newer exports); EMP_CODE is matched first
 
 
 @dataclass
@@ -309,7 +310,9 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
         d = _single_date([_date(g(r, "for_date")) for r in body], LABEL[kind])
         out = [EodRow(name=g(r, "user_name"), marked=g(r, "status").lower() == "marked", attendance_time=hhmm(g(r, "attendance_time")),
                       eod_time=hhmm(g(r, "eod_time")), location=latlng(g(r, "location")), eod_location=latlng(g(r, "eod_location")),
-                      photo_url=photo_link(raw(r, "attendance_image"))) for r in body if g(r, "user_name")]
+                      photo_url=photo_link(raw(r, "attendance_image")),
+                      code=(c if re.match(r"^[A-Z]{2}\d{3,}$", c := norm_code(g(r, "employee_id"))) else None))
+               for r in body if g(r, "user_name")]
         return BizomFile(kind, d, eod=out, skipped=len(body) - len(out))
 
     # CALLS: aggregate per person; coordinates only used here, in memory

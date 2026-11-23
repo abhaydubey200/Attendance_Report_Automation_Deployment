@@ -58,6 +58,11 @@
     <div class="card-h"><h3>Proof <span class="muted">– attendance selfie, the confirmed matching selfie and the place on the map</span></h3></div>
     <div id="proof" class="proof"></div>
   </section>
+  <section class="card" style="margin-top:16px" id="patCard" hidden>
+    <div class="card-h"><h3>Repeat patterns <span class="muted">– counted over each person's own uploaded working days, with the dates</span></h3></div>
+    <div class="tablewrap" style="max-height:520px"><table class="grid" style="font-size:13px">
+      <thead><tr><th>Employee</th><th>Manager</th><th>On the day</th><th>Pattern</th><th>Proof</th></tr></thead><tbody id="pats"></tbody></table></div>
+  </section>
   <section class="card" style="margin-top:16px" id="checksCard" hidden>
     <div class="card-h"><h3>Location &amp; selfie checks <span class="muted">– highest risk first; map and selfies in the HR Portal</span></h3></div>
     <div class="tablewrap" style="max-height:520px"><table class="grid" style="font-size:13px">
@@ -121,6 +126,18 @@ document.addEventListener("click", (e) => {
 });
 $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
 render();
+})();
+(function () {
+  const X = (JSON.parse(document.getElementById("data").textContent).patterns) || [];
+  if (!X.length) return;
+  const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const col = (l) => l === "high" ? "#b91c1c" : l === "medium" ? "#b45309" : "#475569";
+  document.getElementById("patCard").hidden = false;
+  document.getElementById("pats").innerHTML = X.map((x) => x.patterns.map((p, i) => `<tr>
+    <td>${i ? "" : `<b>${esc(x.name)}</b> <span class="code">(${esc(x.code)})</span>`}</td><td>${i ? "" : esc(x.manager)}</td>
+    <td>${i ? "" : esc(x.status_label)}</td>
+    <td><span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;color:${col(p.level)};background:#f8fafc;border:1px solid #e6e8ef">${esc(p.label)}</span></td>
+    <td style="font-size:12px">${esc(p.text)}</td></tr>`).join("")).join("");
 })();
 (function () {
   const D = JSON.parse(document.getElementById("data").textContent), C = D.checks || [];

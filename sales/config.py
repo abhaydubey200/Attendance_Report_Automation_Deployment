@@ -21,6 +21,11 @@ class SalesRules(BaseModel):
     late_after: str = "10:30"
     half_day_from: str = "14:00"
     not_marked_is_absent: bool = True             # active staff missing from the attendance file = absent
+    # ... except before their date of joining, and on a company off day: Bizom never records Sundays / holidays as off
+    # (6 months of data: 91% of staff "not marked" on every Sunday, and on 15-Aug, 2-Oct, 20-Oct ...). On such a day the
+    # people who did not mark are counted as week off / holiday, not absent; those who worked are still present.
+    sunday_off: bool = True
+    off_day_below: float = 0.40                   # fewer than this share of the expected staff marked = holiday
     include_promoters: bool = False               # AP... codes / designation Promoter
     promoter_codes: list[str] = Field(default_factory=lambda: ["^AP"])
     # The staff import takes only these codes: HR's Employee Amendment file holds the whole company (HO / RK / NA are
@@ -30,8 +35,10 @@ class SalesRules(BaseModel):
     # warning signs ("needs checking")
     # Supervisors rarely transact themselves (18-Nov: 34 of 39 ASE, 18 of 19 ASM, all RSM had no transaction), so the
     # market-activity checks apply to field roles only.
+    # 6 months (May-Nov 2026): key-account and some other roles also rarely transact in Bizom - 'no market activity' on 56% of
+    # KAE days, 91% of SE days, 37% of Sales Representative days (SO 8%, SR 5%) - so the sign says nothing for them.
     supervisor_designations: list[str] = Field(default_factory=lambda: ["ASE", "ASM", "SR. ASM", "TSM", "RSM", "DRSM", "ZSM", "NSM",
-                                                                         "KAM", "RM", "AM"])
+                                                                         "KAM", "RM", "AM", "KAE", "SE", "SALES REPRESENTATIVE"])
     short_market_minutes: int = 240               # in market under 4 h
     very_short_market_minutes: int = 60
     late_start_minutes: int = 240                 # first activity 4 h+ after marking attendance

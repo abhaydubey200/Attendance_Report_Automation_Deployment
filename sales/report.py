@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
@@ -114,7 +115,15 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
         "checks_high": sum(1 for c in (checks or []) if c["level"] == "high"),
         "proof": proof or [],
         "ctx": ctx or {}, "company_pct": day.get("attendance_pct"),
+        "off_day": day.get("off_day"),
     }
+    pat = (ctx or {}).get("patterns") or {}
+    lv = ("high", "medium", "low")
+    out["patterns"] = sorted([{"code": p["code"], "name": p["name"], "designation": p["designation"], "manager": p["manager"],
+                               "status_label": p["status_label"], "patterns": pat[p["code"]]} for p in people if p["code"] in pat],
+                             key=lambda x: (lv.index(x["patterns"][0]["level"]), -len(x["patterns"]), x["name"]))
+    for p in people:
+        p["patterns"] = pat.get(p["code"], [])
     out["trend"] = _trend(out)
     out["highlights"] = highlights(out)
     return out
@@ -137,6 +146,9 @@ def highlights(v: dict) -> list[dict]:
     """At most six short lines for the email; every list and the proof are in the dashboard and Excel."""
     h: list[dict] = []
     c = v["counts"]
+    if v.get("off_day"):
+        h.append({"level": "low", "text": f"{v['off_day']}: people who did not mark attendance are counted as week off / holiday, "
+                                          f"not absent ({c['PRESENT'] + c['LATE'] + c['HALF_DAY']} worked)."})
     if c["ABSENT"]:
         if v["view"] == "team":
             names = ", ".join(p["name"] for p in v["not_marked"][:5]) + (f" and {c['ABSENT'] - 5} more" if c["ABSENT"] > 5 else "")
@@ -144,6 +156,14 @@ def highlights(v: dict) -> list[dict]:
         else:
             low = next((t for t in v["teams"] if t["pct"] is not None), None)
             h.append({"level": "high", "text": f"{c['ABSENT']} absent" + (f"; lowest team {low['zonal']} ({low['pct']:g}%)." if low else ".")})
+    pats = v.get("patterns") or []
+    if pats:
+        def short(x: dict) -> str:
+            t = x["patterns"][0]["text"].split(":")[0].rstrip(".")
+            return f"{x['name']} – {t[:1].lower()}{t[1:]}"
+        h.append({"level": pats[0]["patterns"][0]["level"],
+                  "text": f"Repeat patterns ({len(pats)}): " + "; ".join(short(x) for x in pats[:3])
+                          + (f"; and {len(pats) - 3} more" if len(pats) > 3 else "") + ". Dates in the attachments."})
     streaks = v["ctx"].get("streaks") or []
     if streaks:
         h.append({"level": "high", "text": "Absent several days in a row: " +
@@ -155,7 +175,13 @@ def highlights(v: dict) -> list[dict]:
         h.append({"level": "high" if v["flagged_high"] else "medium",
                   "text": f"{len(v['flagged'])} need checking ({v['flagged_high']} serious): {top}" + (" and more." if len(v["flagged"]) > 2 else ".")})
     if v["checks"]:
-        top = "; ".join(f"{x['name']} (risk {x['risk']}) – {x['signs'][0]['label'].lower()}" for x in v["checks"][:3])
+        def reason(x: dict) -> str:
+            s = x["signs"][0]
+            # keep short proof like "(usual 84)", drop long notes; the full wording stays in the attachments
+            short = re.sub(r"\s*\([^)]{25,}\)", "", s["why"] or "").split(". ")[0]
+            why = ", ".join(w.strip().rstrip(".") for w in short.split(";")[:2] if w.strip())
+            return f"{x['name']} (risk {x['risk']}) – {why[:1].lower() + why[1:] if why else s['label'].lower()}"
+        top = "; ".join(reason(x) for x in v["checks"][:3])
         h.append({"level": v["checks"][0]["level"], "text": f"Highest risk: {top}."})
         reused = [x["name"] for x in v["checks"] if any(s["label"].startswith(("Selfie reused", "Same selfie")) for s in x["signs"])]
         if reused:
@@ -250,6 +276,24 @@ def excel(v: dict) -> bytes:
         wf.write(1, 0, "Nothing to check on this day.", note)
     wf.freeze_panes(1, 2)
 
+    if v.get("patterns"):
+        wpat = wb.add_worksheet("Patterns")
+        cols = [("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Status on the day", 13), ("Pattern", 34),
+                ("Proof (from the uploaded days)", 90)]
+        for j, (h, w) in enumerate(cols):
+            wpat.write(0, j, h, head)
+            wpat.set_column(j, j, w)
+        i = 1
+        for x in v["patterns"]:
+            for p in x["patterns"]:
+                for j, val in enumerate([x["code"], x["name"], x["designation"], x["manager"], x["status_label"], p["label"], p["text"]]):
+                    wpat.write(i, j, val, lvl[p["level"]] if j == 5 else wrap)
+                i += 1
+        wpat.write(i + 1, 0, "Each pattern is a count over the person's own uploaded working days (week offs, leave and days "
+                             "without an upload are not counted); the dates are listed so each one can be checked in Bizom.", note)
+        wpat.autofilter(0, 0, max(1, i - 1), len(cols) - 1)
+        wpat.freeze_panes(1, 2)
+
     if v["checks"]:
         wc = wb.add_worksheet("Location & selfie checks")
         cols = [("Risk (0-100)", 9), ("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("Type", 10), ("Warning sign", 34), ("Why", 70)]
@@ -340,7 +384,7 @@ def excel(v: dict) -> bytes:
 # ---------------------------------------------------------------- dashboard
 def dashboard(v: dict) -> bytes:
     data = {"people": v["people"], "warnings": v["warnings"], "teams": v["teams"], "colors": COLORS, "labels": v["status_label"],
-            "checks": v["checks"],
+            "checks": v["checks"], "patterns": v.get("patterns") or [],
             "proof": [{k: x[k] for k in ("code", "name", "manager", "risk", "signs", "why", "selfie_url", "selfie_uri", "att_map", "eod_map",
                                           "att_time", "from_usual")} | {"matches": [{k: m[k] for k in ("name", "date", "url", "uri")} for m in x["matches"]]}
                       for x in v["proof"]]}

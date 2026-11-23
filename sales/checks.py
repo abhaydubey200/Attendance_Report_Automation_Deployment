@@ -213,4 +213,5 @@ def context(session: Session, day: date, codes: set[str] | None) -> dict:
     rules = get_rules(session)
     sup = {r.code for r in rows_of[day] if (r.designation or "").upper() in {d.upper() for d in rules.supervisor_designations}}
     out["patterns"] = patterns.day_patterns(session, day, {r.code for r in rows_of[day]}, sup)
+    out["team_trend"] = patterns.team_trend(session, day, {r.code for r in rows_of[day]})
     return out

@@ -98,6 +98,16 @@ def build_view(session: Session, month: str, codes: set[str] | None, view: str, 
         p["reasons"] += [r for r in p["checks"]["reasons"]]
         if p["checks"]["reasons"]:
             p["perfect"] = False
+    # scorecard comparison: the same person's attendance % in the month before
+    y, mth = int(month[:4]), int(month[5:7])
+    prev = f"{y - 1}-12" if mth == 1 else f"{y}-{mth - 1:02d}"
+    pc: dict[str, Counter] = defaultdict(Counter)
+    for _, r in _month_rows(session, prev):
+        if codes is None or r.code in codes:
+            pc[r.code][r.status] += 1
+    for p in out:
+        p["prev_pct"] = _pct(pc[p["code"]]) if p["code"] in pc else None
+        p["change"] = round(p["pct"] - p["prev_pct"], 1) if p["pct"] is not None and p["prev_pct"] is not None else None
     out.sort(key=lambda p: (-len(p["reasons"]), -p["absent"], -p["flag_days"], p["name"]))
     weeks = []
     for n, (wk, c) in enumerate(sorted(week_c.items()), start=1):
@@ -292,7 +302,8 @@ def excel(v: dict) -> bytes:
     wp = wb.add_worksheet("People")
     cols = [("Code", "code", 10), ("Name", "name", 26), ("Role", "designation", 8), ("Team head", "team_head", 22), ("Days", "days", 6),
             ("Present", "present", 8), ("Late", "late", 6), ("Half day", "half_day", 8), ("Leave", "leave", 7), ("Week off", "week_off", 8),
-            ("Absent", "absent", 7), ("Attendance %", "pct", 11), ("Avg time in market", "avg_market", 11), ("Days needing checking", "flag_days", 10),
+            ("Absent", "absent", 7), ("Attendance %", "pct", 11), ("Last month %", "prev_pct", 10), ("Change (points)", "change", 10),
+            ("Avg time in market", "avg_market", 11), ("Days needing checking", "flag_days", 10),
             ("Warning signs (days)", "warn", 50)]
     if v["view"] != "team":
         cols.insert(4, ("HOD", "hod", 18))

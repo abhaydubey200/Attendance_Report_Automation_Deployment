@@ -111,3 +111,34 @@ def reconcile(session: Session) -> dict:
         removed += len(drop)
     session.flush()
     return {"people": len(codes), "rows_removed": removed}
+
+
+def last_known(session: Session, before: date | None = None) -> dict[str, tuple]:
+    """code -> (designation, zone, manager) from each person's most recent row in Bizom's own file (before `before`)."""
+    from sqlalchemy import func
+    q = (select(SalesEmployeeDay.code, SalesEmployeeDay.designation, SalesEmployeeDay.zone, SalesEmployeeDay.manager_name,
+                func.max(SalesDayUpload.report_date))
+         .join(SalesDayUpload, SalesDayUpload.upload_id == SalesEmployeeDay.upload_id)
+         .where(SalesDayUpload.is_current.is_(True), SalesEmployeeDay.bizom_status.is_not(None)))
+    if before is not None:
+        q = q.where(SalesDayUpload.report_date < before)
+    return {code: (des, zone, mgr) for code, des, zone, mgr, _ in session.execute(q.group_by(SalesEmployeeDay.code))}
+
+
+def fill_details(session: Session) -> int:
+    """Fill a blank designation / zone / manager on rows the app added (absent, week off, holiday) from the person's
+    last day in Bizom. Bizom's own rows are never touched."""
+    known = last_known(session)
+    n = 0
+    for r in session.scalars(select(SalesEmployeeDay).where(SalesEmployeeDay.bizom_status.is_(None))):
+        k = known.get(r.code)
+        if not k:
+            continue
+        changed = False
+        for attr, val in zip(("designation", "zone", "manager_name"), k):
+            if val and not getattr(r, attr):
+                setattr(r, attr, val)
+                changed = True
+        n += changed
+    session.flush()
+    return n

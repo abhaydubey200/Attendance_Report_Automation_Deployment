@@ -6,8 +6,9 @@
 <meta name="robots" content="noindex">
 <title>{{ v.title }} – {{ v.date_long }} – {{ v.recipient }}</title>
 <style>
-  .proof { display: grid; gap: 12px; } .pf { display: flex; gap: 14px; flex-wrap: wrap; border: 1px solid #e6e8ef; border-radius: 12px; padding: 10px; }
-  .pf figure { margin: 0; width: 128px; } .pf img { width: 128px; height: 170px; object-fit: cover; border-radius: 8px; border: 1px solid #e6e8ef; display: block; }
+  .proof { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+  .pf { display: flex; gap: 12px; border: 1px solid #e6e8ef; border-radius: 12px; padding: 10px; background: #fff; }
+  .pf figure { margin: 0; width: 96px; flex: none; } .pf img { width: 96px; height: 128px; object-fit: cover; border-radius: 8px; border: 1px solid #e6e8ef; display: block; }
   .pf figcaption { font-size: 11.5px; color: #5d6577; margin-top: 3px; } .pf .info { flex: 1 1 260px; min-width: 0; font-size: 13px; }
   .pf .rk { display: inline-block; color: #fff; padding: 1px 8px; border-radius: 999px; font-weight: 700; margin-right: 6px; }{% include "_dash_style.css" %}
   .kp { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:16px; }
@@ -25,7 +26,13 @@
   .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 10px; }
   .bar input[type=search] { font:inherit; font-size:13px; padding:7px 10px; border:1px solid #d5d9e3; border-radius:9px; min-width:200px; }
   .chip { border:1px solid #d5d9e3; background:#fff; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer; font-weight:600; }
-  .chip.on { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .chip.on { background:var(--navy); color:#fff; border-color:var(--navy); } .chip .cn { opacity:.65; font-weight:500; margin-left:2px; }
+  .filters select { font:inherit; font-size:13px; padding:7px 8px; border:1px solid #d5d9e3; border-radius:9px; max-width:300px; background:#fff; }
+  .filters input[type=search] { flex:1 1 260px; }
+  table.people th[data-k] { cursor:pointer; user-select:none; white-space:nowrap; } table.people th[data-k]:hover { text-decoration:underline; }
+  table.people th[data-k]::after { content: attr(data-dir); margin-left:4px; font-size:11px; }
+  table.people tr.has td.who b { color:#14213d; } .tag.pt { border:1px dashed currentColor; }
+  .card-h { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
   table.grid tr.p { cursor:pointer; } table.grid tr.ev td { background:#fafbfd; font-size:12.5px; color:#33405c; }
   .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; }
   .t-high { background:#fdecec; color:#b42318; } .t-medium { background:#fff3e0; color:#b45309; } .t-low { background:#f1f5f9; color:#475569; }
@@ -68,13 +75,20 @@
     <div class="tablewrap" style="max-height:520px"><table class="grid" style="font-size:13px">
       <thead><tr><th>Risk</th><th>Employee</th><th>Manager</th><th>Warning signs</th><th>Why</th></tr></thead><tbody id="checks"></tbody></table></div>
   </section>
-  <section class="card" style="margin-top:16px">
-    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3></div>
+  <section class="card" style="margin-top:16px" id="people">
+    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3><button type="button" class="chip" id="csv" title="Download the people shown below">Download list (CSV)</button></div>
     <div class="bar" id="chips"></div>
-    <div class="bar"><input type="search" id="q" placeholder="Find a person or code…" aria-label="Find a person"></div>
-    <div class="tablewrap" style="max-height:640px"><table class="grid" style="font-size:13px">
-      <thead><tr><th>Employee</th><th>Manager</th><th>Status</th><th>Marked</th><th>First – last activity</th><th>In market</th><th>KM</th><th>Day end</th><th>Warning signs</th></tr></thead>
+    <div class="bar filters">
+      <input type="search" id="q" placeholder="Search name, code, team head, zone, sign…" aria-label="Search">
+      <select id="fm" aria-label="Team head"></select>
+      <select id="fs" aria-label="Warning sign, check or pattern"></select>
+      <button type="button" class="chip" id="clr" hidden>Clear filters ✕</button>
+    </div>
+    <div class="tablewrap" style="max-height:680px"><table class="grid people" style="font-size:13px">
+      <thead><tr><th data-k="name">Employee</th><th data-k="manager">Team head</th><th data-k="status">Status</th><th data-k="att">Marked</th><th>First – last activity</th>
+        <th data-k="market">In market</th><th data-k="km">KM</th><th data-k="eod">Day end</th><th data-k="signs">Signs, checks &amp; patterns</th></tr></thead>
       <tbody id="rows"></tbody></table></div>
+    <p class="note">Click a column heading to sort, a person to see the evidence. ↻ = repeat pattern (dates in the Patterns list).</p>
   </section>
   <footer><span>Source: <i>Bizom</i> · {{ v.date_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
 </main>
@@ -85,46 +99,104 @@
 const D = JSON.parse(document.getElementById("data").textContent), P = D.people;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const S = {status: "all", warn: "", q: "", open: null};
+const LV = {high: 0, medium: 1, low: 2};
+const S = {status: "all", mgr: "", sign: "", q: "", open: null, sort: "", dir: 1};
 const n = (st) => P.filter((p) => p.status === st).length;
 const due = P.length - n("WEEK_OFF"), pct = due ? Math.round(1000 * (n("PRESENT") + n("LATE") + 0.5 * n("HALF_DAY")) / due) / 10 : null;
 const col = (v) => v === null ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
-const flagged = P.filter((p) => p.flags.length);
+const any = (p) => p.flags.length || (p.checks || []).length || (p.patterns || []).length;
+const flagged = P.filter((p) => p.flags.length || (p.checks || []).length);
+const sev = (p) => Math.min(9, ...p.flags.map((f) => LV[f.level]), ...(p.checks || []).map((c) => LV[c.level]), ...(p.patterns || []).map((x) => LV[x.level]));
 const cards = [
   ["all", "Attendance", pct === null ? "–" : pct + "%", col(pct), `${n("PRESENT")} present · ${n("HALF_DAY")} half day`],
   ["ABSENT", "Absent", n("ABSENT"), "#dc2626", "did not mark"],
   ["LATE", "Late", n("LATE"), "#d97706", "after 10:30 AM"],
-  ["LEAVE", "On leave", n("LEAVE"), "#64748b", `${n("WEEK_OFF")} week off`],
-  ["flagged", "Needs checking", flagged.length, "#7c3aed", `${flagged.filter((p) => p.flags.some((f) => f.level === "high")).length} serious`],
+  ["LEAVE", "On leave", n("LEAVE"), "#64748b", `${n("WEEK_OFF")} week off / holiday`],
+  ["flagged", "Needs checking", flagged.length, "#7c3aed", `${flagged.filter((p) => sev(p) === 0).length} serious`],
 ];
 $("kp").innerHTML = cards.map(([k, l, v, c, s]) => `<button class="kc" data-st="${k}" style="border-color:${c}38;background:${c}0b"><div class="l">${l}</div><div class="v" style="color:${c}">${v}</div><div class="s">${s}</div></button>`).join("");
-$("wl").innerHTML = D.warnings.length ? D.warnings.map((w) => `<li><button data-w="${w.code}" title="${esc(w.why)}"><i class="lv-${w.level}"></i><span>${esc(w.label)}</span><b>${w.n}</b></button></li>`).join("") : '<li class="muted">Nothing to check on this day.</li>';
+$("wl").innerHTML = D.warnings.length ? D.warnings.map((w) => `<li><button data-sign="w:${w.code}" title="${esc(w.why)}"><i class="lv-${w.level}"></i><span>${esc(w.label)}</span><b>${w.n}</b></button></li>`).join("") : '<li class="muted">Nothing to check on this day.</li>';
 if ($("teams")) $("teams").innerHTML = D.teams.map((t) => `<tr><td><b>${esc(t.zonal)}</b></td><td>${esc(t.hod)}</td><td class="num">${t.people}</td><td class="num"><b style="color:${col(t.pct)}">${t.pct === null ? "–" : t.pct + "%"}</b></td><td class="num">${t.absent}</td><td class="num">${t.late}</td><td class="num">${t.flagged}</td></tr>`).join("");
 if ($("stl")) $("stl").innerHTML = Object.entries(D.labels).map(([k, l]) => `<li><button data-st="${k}"><i style="background:${D.colors[k]}"></i><span>${l}</span><b>${n(k)}</b></button></li>`).join("");
-const CH = [["all", "Everyone"], ["flagged", "Needs checking"], ["ABSENT", "Absent"], ["LATE", "Late"], ["HALF_DAY", "Half day"], ["LEAVE", "Leave"], ["WEEK_OFF", "Week off"], ["PRESENT", "Present"]];
-function render() {
-  $("chips").innerHTML = CH.map(([k, l]) => `<button class="chip ${S.status === k && !S.warn ? "on" : ""}" data-st="${k}">${l}</button>`).join("") +
-    (S.warn ? `<button class="chip on" data-w="">${esc((D.warnings.find((w) => w.code === S.warn) || {}).label)} ✕</button>` : "");
-  document.querySelectorAll("#wl button").forEach((b) => b.classList.toggle("on", b.dataset.w === S.warn));
+
+// filter lists: team heads and every sign / check / pattern that occurs, with how many people
+const mgrs = {}; P.forEach((p) => { if (p.manager) mgrs[p.manager] = (mgrs[p.manager] || 0) + 1; });
+$("fm").innerHTML = '<option value="">All team heads</option>' + Object.keys(mgrs).sort().map((m) => `<option value="${esc(m)}">${esc(m)} (${mgrs[m]})</option>`).join("");
+const grp = {w: {}, c: {}, p: {}};
+P.forEach((p) => {
+  p.flags.forEach((f) => { grp.w[f.code] = grp.w[f.code] || [f.label, 0]; grp.w[f.code][1]++; });
+  (p.checks || []).forEach((c) => { const k = c.kind + ": " + c.label; grp.c[k] = grp.c[k] || [k, 0]; grp.c[k][1]++; });
+  (p.patterns || []).forEach((x) => { grp.p[x.label] = grp.p[x.label] || [x.label, 0]; grp.p[x.label][1]++; });
+});
+const og = (t, key, o) => Object.keys(o).length ? `<optgroup label="${t}">` + Object.entries(o).sort((a, b) => b[1][1] - a[1][1]).map(([k, [l, c]]) => `<option value="${key}:${esc(k)}">${esc(l)} (${c})</option>`).join("") + "</optgroup>" : "";
+$("fs").innerHTML = '<option value="">All signs, checks and patterns</option>' + og("Warning signs of the day", "w", grp.w) + og("Location & selfie checks", "c", grp.c) + og("Repeat patterns", "p", grp.p);
+
+const hasSign = (p, s) => { const [t, k] = [s.slice(0, 1), s.slice(2)];
+  return t === "w" ? p.flags.some((f) => f.code === k) : t === "c" ? (p.checks || []).some((c) => c.kind + ": " + c.label === k) : (p.patterns || []).some((x) => x.label === k); };
+const text = (p) => [p.name, p.code, p.manager, p.designation, p.zone, p.status_label, p.leave, ...p.flags.map((f) => f.label),
+  ...(p.checks || []).map((c) => c.label), ...(p.patterns || []).map((x) => x.label)].join(" ").toLowerCase();
+const KEY = {name: (p) => p.name, manager: (p) => p.manager || null, status: (p) => p.status_label, att: (p) => p.att_min ?? null, market: (p) => p.market_min ?? null,
+  km: (p) => p.km ?? null, eod: (p) => p.eod_min ?? null, signs: (p) => sev(p) * 100 - (p.flags.length + (p.checks || []).length + (p.patterns || []).length)};
+const cmp = (k, a, b) => { const x = k(a), y = k(b);                    // blanks always last, whichever way
+  if (x === null && y === null) return a.name.localeCompare(b.name); if (x === null) return 1; if (y === null) return -1;
+  return x < y ? -S.dir : x > y ? S.dir : a.name.localeCompare(b.name); };
+const CH = [["all", "Everyone"], ["flagged", "Needs checking"], ["ABSENT", "Absent"], ["LATE", "Late"], ["HALF_DAY", "Half day"], ["LEAVE", "Leave"], ["WEEK_OFF", "Week off / holiday"], ["PRESENT", "Present"]];
+
+function list() {
   const q = S.q.toLowerCase();
-  const list = P.filter((p) => (S.warn ? p.flags.some((f) => f.code === S.warn) : S.status === "all" ? true : S.status === "flagged" ? p.flags.length : p.status === S.status)
-    && (!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)))
-    .sort((a, b) => (b.flags.filter((f) => f.level === "high").length - a.flags.filter((f) => f.level === "high").length) || (b.flags.length - a.flags.length) || a.name.localeCompare(b.name));
-  $("cnt").textContent = `– ${list.length} of ${P.length}`;
-  $("rows").innerHTML = list.map((p) => `<tr class="p" data-p="${esc(p.code)}"><td class="who"><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
-      <td>${esc(p.manager)}</td><td><span class="st" style="color:${D.colors[p.status]}">${esc(p.status_label)}</span>${p.leave ? `<br><span class="muted" style="font-size:12px">${esc(p.leave)}</span>` : p.not_marked ? '<br><span class="muted" style="font-size:12px">did not mark</span>' : ""}</td>
+  const out = P.filter((p) => (S.status === "all" || (S.status === "flagged" ? any(p) : p.status === S.status))
+    && (!S.mgr || p.manager === S.mgr) && (!S.sign || hasSign(p, S.sign)) && (!q || text(p).includes(q)));
+  const k = KEY[S.sort];
+  return out.sort((a, b) => k ? cmp(k, a, b)
+    : (sev(a) - sev(b)) || ((b.flags.length + (b.checks || []).length) - (a.flags.length + (a.checks || []).length)) || a.name.localeCompare(b.name));
+}
+const tags = (p) => p.flags.map((f) => `<span class="tag t-${f.level}">${esc(f.label)}</span>`).join("")
+  + (p.checks || []).map((c) => `<span class="tag t-${c.level}" title="${esc(c.why)}">${esc(c.kind)}: ${esc(c.label)}</span>`).join("")
+  + (p.patterns || []).map((x) => `<span class="tag t-${x.level} pt" title="${esc(x.text)}">↻ ${esc(x.label)}</span>`).join("");
+function render() {
+  $("chips").innerHTML = CH.map(([k, l]) => `<button class="chip ${S.status === k ? "on" : ""}" data-st="${k}">${l} <span class="cn">${k === "all" ? P.length : k === "flagged" ? P.filter(any).length : n(k)}</span></button>`).join("");
+  document.querySelectorAll("#wl button").forEach((b) => b.classList.toggle("on", b.dataset.sign === S.sign));
+  $("fm").value = S.mgr; $("fs").value = S.sign;
+  document.querySelectorAll("th[data-k]").forEach((th) => th.dataset.dir = S.sort === th.dataset.k ? (S.dir > 0 ? "↑" : "↓") : "");
+  const L = list();
+  const active = [S.status !== "all", S.mgr, S.sign, S.q].filter(Boolean).length;
+  $("cnt").textContent = `– ${L.length} of ${P.length}` + (active ? ` (${active} filter${active > 1 ? "s" : ""})` : "");
+  $("clr").hidden = !active;
+  $("rows").innerHTML = L.map((p) => `<tr class="p${any(p) ? " has" : ""}" data-p="${esc(p.code)}"><td class="who"><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
+      <td>${esc(p.manager)}</td><td><span class="st" style="color:${D.colors[p.status]}">${esc(p.status_label)}</span>${p.leave ? `<br><span class="muted" style="font-size:12px">${esc(p.leave)}</span>` : p.not_marked ? `<br><span class="muted" style="font-size:12px">did not mark${p.absent_streak > 1 ? ` · ${p.absent_streak} days in a row` : ""}</span>` : ""}</td>
       <td class="num">${esc(p.att)}</td><td class="num">${p.first ? esc(p.first) + " – " + esc(p.last) : ""}</td><td class="num">${esc(p.market)}</td><td class="num">${p.km ?? ""}</td><td class="num">${esc(p.eod)}</td>
-      <td>${p.flags.map((f) => `<span class="tag t-${f.level}">${esc(f.label)}</span>`).join("")}</td></tr>` +
-      (S.open === p.code && p.flags.length ? `<tr class="ev"><td colspan="9"><b>Evidence:</b> ${esc(p.evidence)}<br>${p.flags.map((f) => `• ${esc(f.label)} – ${esc(f.why)}`).join("<br>")}${p.calls ? `<br>Visits: ${p.calls} (${p.productive} productive)${p.order_value ? ", order value ₹" + Math.round(p.order_value).toLocaleString("en-IN") : ""}` : ""}</td></tr>` : "")).join("")
-    || '<tr><td colspan="9" class="empty">Nobody matches.</td></tr>';
+      <td>${tags(p)}</td></tr>` +
+      (S.open === p.code && (any(p) || p.not_marked) ? `<tr class="ev"><td colspan="9">${p.evidence ? `<b>Evidence:</b> ${esc(p.evidence)}<br>` : ""}${p.flags.map((f) => `• ${esc(f.label)} – ${esc(f.why)}`).join("<br>")}
+        ${(p.checks || []).map((c) => `<br>• <b>${esc(c.kind)}:</b> ${esc(c.label)}${c.why ? " – " + esc(c.why) : ""}`).join("")}
+        ${(p.patterns || []).map((x) => `<br>• <b>Pattern:</b> ${esc(x.text)}`).join("")}
+        ${p.not_marked ? `<br>• Last marked in Bizom: ${esc(p.last_marked || "not in the uploaded days")}` : ""}
+        ${p.calls ? `<br>Visits: ${p.calls} (${p.productive} productive)${p.order_value ? ", order value ₹" + Math.round(p.order_value).toLocaleString("en-IN") : ""}` : ""}</td></tr>` : "")).join("")
+    || '<tr><td colspan="9" class="empty">Nobody matches these filters.</td></tr>';
+}
+function csv() {
+  const head = ["Code", "Name", "Designation", "Zone", "Manager", "Status", "Leave / holiday", "Attendance time", "First activity", "Last activity",
+    "Time in market", "KM", "Day end", "Warning signs", "Location & selfie checks", "Patterns"];
+  const q = (x) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+  const lines = [head.map(q).join(",")].concat(list().map((p) => [p.code, p.name, p.designation, p.zone, p.manager, p.status_label, p.leave, p.att, p.first, p.last,
+    p.market, p.km, p.eod, p.flags.map((f) => f.label).join("; "), (p.checks || []).map((c) => c.kind + ": " + c.label).join("; "),
+    (p.patterns || []).map((x) => x.text).join(" | ")].map(q).join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
+  a.download = (document.title.split(" – ").slice(1).join("_") || "field_sales").replace(/[^A-Za-z0-9_-]+/g, "_") + "_list.csv";
+  document.body.appendChild(a); a.click(); a.remove();
 }
 document.addEventListener("click", (e) => {
-  const st = e.target.closest("[data-st]"), w = e.target.closest("[data-w]"), p = e.target.closest("[data-p]");
-  if (st) { S.status = st.dataset.st; S.warn = ""; render(); }
-  else if (w) { S.warn = w.dataset.w; render(); }
+  const st = e.target.closest("[data-st]"), sg = e.target.closest("[data-sign]"), th = e.target.closest("th[data-k]"), p = e.target.closest("[data-p]");
+  if (st) { S.status = st.dataset.st; render(); if (st.classList.contains("kc")) $("people").scrollIntoView({behavior: "smooth"}); }
+  else if (sg) { S.sign = S.sign === sg.dataset.sign ? "" : sg.dataset.sign; S.status = "all"; render(); $("people").scrollIntoView({behavior: "smooth"}); }
+  else if (th) { S.dir = S.sort === th.dataset.k ? -S.dir : 1; S.sort = th.dataset.k; render(); }
+  else if (e.target.id === "clr") { Object.assign(S, {status: "all", mgr: "", sign: "", q: ""}); $("q").value = ""; render(); }
+  else if (e.target.id === "csv") csv();
   else if (p) { S.open = S.open === p.dataset.p ? null : p.dataset.p; render(); }
 });
 $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
+$("fm").addEventListener("change", (e) => { S.mgr = e.target.value; render(); });
+$("fs").addEventListener("change", (e) => { S.sign = e.target.value; render(); });
 render();
 })();
 (function () {

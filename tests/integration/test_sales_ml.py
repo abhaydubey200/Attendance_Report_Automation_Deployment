@@ -80,7 +80,7 @@ def test_unusual_day_risk_and_emails(day):
         wb = load_workbook(io.BytesIO(next(f for f in files if f.filename.endswith(".xlsx")).content))
         assert "Location & selfie checks" in wb.sheetnames and "Proof" in wb.sheetnames          # HOD: proof sheet with map links
         proof_ws = wb["Proof"]
-        assert proof_ws.cell(2, 2).value.startswith("Esha Fine") and proof_ws.cell(2, 6).hyperlink.target.startswith("https://www.google.com/maps?q=")
+        assert proof_ws.cell(5, 2).value.startswith("Esha Fine") and proof_ws.cell(5, 6).hyperlink.target.startswith("https://www.google.com/maps?q=")
         # a team head gets the checks but no photos / map links
         th = next(i for i in mail.items_for(s, end) if i.role == "Team head")
         _, _, tfiles = mail.render(s, th)

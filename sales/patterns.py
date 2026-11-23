@@ -243,3 +243,21 @@ def team_trend(session: Session, day: date, codes: set[str] | None, weeks: int =
                     "before_avg": avg, "change": round(p[-1] - avg, 1) if p[-1] is not None and avg is not None else None})
     out.sort(key=lambda x: (x["change"] if x["change"] is not None else 0, x["team_head"]))
     return out
+
+
+def absent_details(session: Session, day: date, codes: set[str] | None) -> dict[str, dict]:
+    """For everyone absent on `day`: the last day they worked (from the uploaded days) and how many working days in a row
+    they have been absent (week offs, leave and holidays do not break or add to the count)."""
+    out = {}
+    for code, days in history(session, day, codes, days_back=400).items():
+        if not days or days[-1].d != day or days[-1].status != "ABSENT":
+            continue
+        streak, last = 0, None
+        for x in reversed(days):
+            if x.status in WORKED:
+                last = x.d
+                break
+            if x.status == "ABSENT":
+                streak += 1
+        out[code] = {"streak": streak, "last_marked": f"{last:%d-%b-%Y}" if last else None}
+    return out

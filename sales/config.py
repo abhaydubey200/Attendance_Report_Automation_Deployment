@@ -92,6 +92,9 @@ class SalesRules(BaseModel):
     photo_dark: float = 40.0                      # average brightness (0-255) below this = too dark
     photo_blurry: float = 15.0                    # sharpness below this = too blurry to judge
     photo_time_hours: float = 2.0                 # time written in the photo this far from the attendance time
+    # selfie taken this many minutes or more BEFORE the attendance mark (same day, under photo_time_hours): 98.6% of dated
+    # selfies are within a minute of it, 0.3% are 15+ minutes older (78k selfies, May-Nov 2026)
+    photo_early_minutes: float = 15.0
 
     @field_validator("late_after", "half_day_from", "calls_after")
     @classmethod

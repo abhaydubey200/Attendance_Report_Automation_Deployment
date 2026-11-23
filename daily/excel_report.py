@@ -20,7 +20,7 @@ DETAIL_COLS = [("Code", "code", 12), ("Name", "name", 28), ("Category", "categor
                ("HOD", "hod", 18), ("Team", "team", 14), ("Reporting manager", "manager", 20), ("Status", "status_label", 15),
                ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 11),
                ("Short by (h:mm)", "early_minutes", 12), ("Leave type", "leave_type", 10), ("Permission", "permission", 20),
-               ("Shift", "shift", 18)]
+               ("On duty", "on_duty", 26), ("Shift", "shift", 18)]
 
 
 def build_excel(company: str, report_date: date, scope: str, insights: dict, rows: list[dict], date_format: str) -> bytes:
@@ -91,6 +91,8 @@ def build_excel(company: str, report_date: date, scope: str, insights: dict, row
              else "No punch counts as absent.",
              "Source: Pocket HRMS only. Approved short-leave permissions (Permission Report) excuse late arrival / early "
              "leaving within their time window; pending ones are shown but excuse nothing.",
+             "Approved full-day on-duty / work-from-home requests (On Duty Report) count as On duty / Work from home; "
+             "part-day ones excuse late / early inside their time; pending ones are shown but change nothing.",
              f"On-duty codes: {', '.join(rules['on_duty_codes']) or 'none'}; other leave codes count as leave.",
              f"Always counted present (Directors): {', '.join(rules.get('always_present_codes') or []) or 'none'}."]
     for i, n in enumerate(notes):

@@ -39,7 +39,7 @@ def overview(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), settings: Sett
                          "attendance_pct": s["attendance_pct"], "present": s["counts"].get("PRESENT", 0), "absent": s["counts"].get("ABSENT", 0),
                          "late": s["late"], "left_early": s["left_early"], "missing_punch": s["counts"].get("MISSING_PUNCH", 0),
                          "leave": s["counts"].get("LEAVE", 0) + s["counts"].get("HALF_DAY", 0), "avg_in_time": s.get("avg_in_time"),
-                         "permission_file": bool(latest.permission_path), "highlights": ins["scopes"]["ALL"]["highlights"][:4]}
+                         "permission_file": bool(latest.permission_path), "onduty_file": bool(latest.onduty_path), "highlights": ins["scopes"]["ALL"]["highlights"][:4]}
         # counted now (not at upload time), so adding a joiner or marking a leaver shows here at once
         in_file = {c.upper() for c in db.scalars(select(EmployeeDay.employee_code).where(EmployeeDay.upload_id == latest.upload_id))}
         master = {c.upper(): st for c, st in db.execute(select(Employee.code, Employee.status))}

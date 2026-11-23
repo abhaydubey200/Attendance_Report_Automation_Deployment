@@ -66,7 +66,8 @@ def _rows(session: Session, upload_id: int) -> dict[str, dict]:
             "status_label": LABELS.get(e.status, e.status), "in_time": e.in_time, "out_time": e.out_time,
             "work_hours": round(e.work_minutes / 60, 2) if e.work_minutes is not None else None,
             "late_minutes": e.late_minutes, "early_minutes": e.early_minutes, "leave_type": e.leave_type,
-            "source": e.source or "HRMS", "permission": e.permission or "", "flags": (e.flags or "").split(",") if e.flags else []}
+            "source": e.source or "HRMS", "permission": e.permission or "", "on_duty": e.on_duty or "",
+            "flags": (e.flags or "").split(",") if e.flags else []}
     return out
 
 
@@ -75,7 +76,7 @@ def _row_for(r: routing.Route, rows: dict[str, dict]) -> dict:
     if row is None:
         row = {"code": r.code, "name": r.name, "category": "", "status": NO_RECORD, "status_label": LABELS[NO_RECORD], "in_time": None,
                "out_time": None, "work_hours": None, "late_minutes": 0, "early_minutes": 0, "leave_type": None, "source": "",
-               "permission": "", "flags": []}
+               "permission": "", "on_duty": "", "flags": []}
     return {**row, "name": r.name or row["name"], "department": r.department, "hod": r.hod, "team": r.team, "manager": r.manager}
 
 
@@ -85,7 +86,19 @@ def attention(row: dict) -> str | None:
     if reason and "PERMISSION_PENDING" in row.get("flags", []):
         pending = [p for p in (row.get("permission") or "").split("; ") if p.startswith("Pending")]
         reason += f" (permission pending{pending[0][len('Pending'):]})" if pending else " (permission pending)"
+    if reason and "ON_DUTY_PENDING" in row.get("flags", []):
+        reason += f" ({onduty_pending_text(row)})"
     return reason
+
+
+def onduty_pending_text(row: dict) -> str:
+    """e.g. "work from home request pending, full day" - from the stored on-duty note."""
+    pend = [p for p in (row.get("on_duty") or "").split("; ") if " pending" in p]
+    if not pend:
+        return "on-duty request pending"
+    what, _, when = pend[0].partition(" pending")
+    when = when.strip(" ()")
+    return f"{what.lower()} request pending" + (f", {when}" if when else "")
 
 
 def _attention(row: dict) -> str | None:
@@ -155,7 +168,8 @@ def subject_numbers(c: dict) -> str:
         h = c["hr"]
         parts = [f"{h['records']} record(s) to fix" if h.get("records") else "",
                  f"{h['missing_punch']} missing punch" if h.get("missing_punch") else "",
-                 f"{h['permissions']} permission(s) pending" if h.get("permissions") else ""]
+                 f"{h['permissions']} permission(s) pending" if h.get("permissions") else "",
+                 f"{h['onduty']} on-duty request(s) pending" if h.get("onduty") else ""]
         return " · ".join(x for x in parts if x) or "nothing to fix"
     if c.get("exceptions"):
         return f"{c['exceptions']} record(s) to fix"
@@ -347,7 +361,8 @@ def build_plan(session: Session, settings: Settings, upload: DayUpload, actor: s
             everyone = [_row_for(r, rows) for r in rs]
             hr_parts = {"records": len(content["exceptions"]),
                         "missing_punch": sum(1 for r in everyone if r["status"] == "MISSING_PUNCH"),
-                        "permissions": sum(1 for r in everyone if "PERMISSION_PENDING" in r["flags"])}
+                        "permissions": sum(1 for r in everyone if "PERMISSION_PENDING" in r["flags"]),
+                        "onduty": sum(1 for r in everyone if "ON_DUTY_PENDING" in r["flags"])}
             if not any(hr_parts.values()):
                 continue                     # HR mail only on days with something to act on
         team_rows = [_row_for(r, rows) for r in rec.team]
@@ -544,6 +559,11 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
              "Remind the HOD to approve or reject them in Pocket HRMS.",
              [dict(r, detail=pending_row(r)["reason"].replace(" - waiting for approval", "")) for r in s["company"]
               if "PERMISSION_PENDING" in r["flags"]]),
+            ("onduty", "On-duty / work from home requests waiting for approval",
+             "Until a request is approved, the person is shown as Pocket HRMS has them (usually absent).",
+             "Remind the HOD to approve or reject them in Pocket HRMS.",
+             [dict(r, detail=onduty_pending_text(r)[0].upper() + onduty_pending_text(r)[1:]) for r in s["company"]
+              if "ON_DUTY_PENDING" in r["flags"]]),
             ("missing", "Missing punches", "Only one punch was recorded for the day.",
              "Get them regularised in Pocket HRMS before payroll.",
              [dict(r, detail=("In " + (analysis.t12(r["in_time"]) or "") + " · no out-punch") if r.get("in_time") and not r.get("out_time")
@@ -557,6 +577,7 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
                                for k, t, w, a, rs in groups if rs]
         blocks["hr_total"] = sum(len(g["rows"]) for g in blocks["hr_groups"])
         short = {"not_in_master": "not in the employee master", "routing": "routing problem(s)", "permissions": "short-leave request(s) pending",
+                 "onduty": "on-duty request(s) pending",
                  "missing": "missing punch(es)", "streaks": f"absent {STREAK_ALERT}+ days in a row"}
         blocks["hr_summary"] = ", ".join(f"{len(g['rows'])} {short[g['key']]}" for g in blocks["hr_groups"])
     greeting = "Dear HR team" if kind == "hr" else f"Dear {item.recipient_name}"
@@ -651,7 +672,8 @@ def _text(item: MailItem, day: str, greeting: str, b: dict) -> str:
 
 ROSTER_COLS = [("Code", "code", 11), ("Name", "name", 26), ("Needs attention", "reason", 22), ("Status", "status_label", 15),
                ("In", "in_time", 10), ("Out", "out_time", 10), ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 10),
-               ("Short by (h:mm)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Permission", "permission", 20)]
+               ("Short by (h:mm)", "early_minutes", 11), ("Leave type", "leave_type", 9), ("Permission", "permission", 20),
+               ("On duty", "on_duty", 26)]
 # (department, HOD, team and reporting manager are not shown in emails)
 
 
@@ -677,7 +699,8 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
                      else analysis.hm(r.get(k)) if k == "work_hours"
                      else analysis.mins_hm(r.get(k)) if k in ("late_minutes", "early_minutes") else r.get(k))
                 ws.write(i, j, "" if v in (None, 0) and k in ("late_minutes", "early_minutes", "in_time", "out_time", "work_hours",
-                                                              "leave_type", "reason", "permission") else ("" if v is None else v),
+                                                              "leave_type", "reason", "permission", "on_duty")
+                         else ("" if v is None else v),
                          flag if reason else cell)
         ws.freeze_panes(3, 2)
         if rows:
@@ -717,7 +740,8 @@ def dashboard(session: Session, settings: Settings, item: MailItem, people: list
                                        status=r["status"] if r["status"] in analysis.STATUSES else "NOT_TRACKED",
                                        late_minutes=r["late_minutes"], early_minutes=r["early_minutes"], flags=list(r["flags"]),
                                        department=r.get("department"), hod=r.get("hod"), team=r.get("team"), manager=r.get("manager"),
-                                       source=r.get("source") or "HRMS", permission=r.get("permission") or None) for r in people]
+                                       source=r.get("source") or "HRMS", permission=r.get("permission") or None,
+                                       on_duty=r.get("on_duty") or None) for r in people]
     summary = analysis.summarize(results, rules)
     # HOD dashboards have no per-team breakdown; the Director's and HR's company dashboards show one bar per HOD's team
     breakdown = {"by": "HOD", "rows": [{"name": t["name"], "attendance_pct": t["pct"], "tracked": t["people"]} for t in teams]} if teams \

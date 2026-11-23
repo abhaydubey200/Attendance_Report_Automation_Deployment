@@ -26,7 +26,8 @@ def sources_label(insights: dict) -> str:
     src = insights.get("sources") or {"hrms": True}
     if src.get("bizom_file"):                   # days analysed while Bizom was still used
         return "Pocket HRMS + Bizom"
-    return "Pocket HRMS (attendance + permissions)" if src.get("permission_file") else "Pocket HRMS"
+    extra = [x for x, k in (("permissions", "permission_file"), ("on duty", "onduty_file")) if src.get(k)]
+    return f"Pocket HRMS (attendance + {' + '.join(extra)})" if extra else "Pocket HRMS"
 
 
 def scoped_rows(rows: list[dict], scope: str) -> list[dict]:
@@ -134,6 +135,8 @@ def action_for(row: dict, pattern: str | None) -> str:
     st, flags = row.get("status"), row.get("flags") or []
     if "PERMISSION_PENDING" in flags:
         return "Review and approve / reject the short leave in Pocket HRMS"
+    if "ON_DUTY_PENDING" in flags and st in ("ABSENT", "MISSING_PUNCH", "NO_RECORD"):
+        return "Review and approve / reject the on-duty request in Pocket HRMS"
     if st == "ABSENT":
         if pattern and "absent" in pattern:
             return "Speak to the employee - absent on consecutive days"
@@ -155,7 +158,7 @@ def action_for(row: dict, pattern: str | None) -> str:
 
 def action_icon(row: dict, pattern: str | None) -> str:
     st, flags = row.get("status"), row.get("flags") or []
-    if "PERMISSION_PENDING" in flags or st == "MISSING_PUNCH":
+    if "PERMISSION_PENDING" in flags or "ON_DUTY_PENDING" in flags or st == "MISSING_PUNCH":
         return "check-square"
     if st == "NO_RECORD":
         return "help"
@@ -253,6 +256,8 @@ def dashboard_view(rows: list[dict], summary: dict, previous_rows: list[dict] | 
             details.append(f"{mins_hm(r['early_minutes'])} hrs short of the required hours")
         if r.get("permission"):
             details.append(f"Permission {r['permission'].replace('Approved', 'approved').replace('Pending', 'pending')}")
+        if r.get("on_duty"):
+            details.append(r["on_duty"])
         if pattern:
             details.append(pattern[0].upper() + pattern[1:])
         exceptions.append({"code": r.get("code", ""), "name": r.get("name", ""), "department": r.get("department") or "",
@@ -276,7 +281,7 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
                        patterns: dict[str, str] | None = None, subtitle: str | None = None, company_view: bool = False) -> bytes:
     """The self-contained dashboard for any set of people. routing_columns=False (emailed dashboards) leaves out
     each person's department, HOD, team and reporting manager and greets the recipient by name."""
-    keys = ("code", "name", "category", "department", "hod", "team", "manager", "permission", "status", "status_label",
+    keys = ("code", "name", "category", "department", "hod", "team", "manager", "permission", "on_duty", "status", "status_label",
             "in_time", "out_time", "work_hours", "late_minutes", "early_minutes", "leave_type", "flags")
     if not routing_columns:      # emailed: no hierarchy, except the HOD column of the Director's / HR's company view
         keys = tuple(k for k in keys if k not in ("department", "team", "manager") and (company_view or k != "hod"))

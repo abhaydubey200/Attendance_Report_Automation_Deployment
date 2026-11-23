@@ -30,6 +30,9 @@ class DayUpload(Base):
     permission_filename: Mapped[str | None] = mapped_column(String(255))   # Pocket HRMS Permission Report
     permission_path: Mapped[str | None] = mapped_column(String(500))
     permission_sha256: Mapped[str | None] = mapped_column(String(64))
+    onduty_filename: Mapped[str | None] = mapped_column(String(255))       # Pocket HRMS On Duty Report
+    onduty_path: Mapped[str | None] = mapped_column(String(500))
+    onduty_sha256: Mapped[str | None] = mapped_column(String(64))
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     employees: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     insights: Mapped[str] = mapped_column(Text, nullable=False)          # JSON computed at upload
@@ -68,6 +71,7 @@ class EmployeeDay(Base):
     designation: Mapped[str | None] = mapped_column(String(60))
     hq: Mapped[str | None] = mapped_column(String(100))
     permission: Mapped[str | None] = mapped_column(String(80))            # e.g. "Approved 16:00-18:00"
+    on_duty: Mapped[str | None] = mapped_column(String(200))              # e.g. "Work from home approved (full day)"
 
 
 class AppSetting(Base):

@@ -8,14 +8,17 @@ import { Icon } from "../components/icons";
 import { HighlightList } from "./InsightsPage";
 import { formatDate } from "../format";
 
-type Slot = "master" | "hrms" | "permission";
+type Slot = "master" | "hrms" | "permission" | "onduty";
 type Mode = "auto" | "manual";
 
-const SLOTS: { key: Slot; step: string; title: string; hint: string }[] = [
+const SLOTS: { key: Slot; step: string; title: string; hint: string; accept?: string }[] = [
   { key: "master", step: "1", title: "Employee master", hint: "Optional – only when it changed. Routing workbook or Employee Amendment Excel." },
   { key: "hrms", step: "2", title: "Attendance Summary", hint: "Pocket HRMS → AttendanceSummary (.xlsx) for the day." },
   { key: "permission", step: "3", title: "Permission Report", hint: "Pocket HRMS → PermissionReportAdmin (.xlsx): short-leave permissions." },
+  { key: "onduty", step: "4", title: "On Duty Report", hint: "Pocket HRMS → OnDutyReportAdmin (.xls as downloaded): on duty / work from home requests.",
+    accept: ".xls,.xlsx,.csv" },
 ];
+const EMPTY: Record<Slot, File | null> = { master: null, hrms: null, permission: null, onduty: null };
 
 function FileSlot({ slot, file, disabled, onPick, onClear }: {
   slot: (typeof SLOTS)[number]; file: File | null; disabled: boolean; onPick: (f: File) => void; onClear: () => void;
@@ -33,7 +36,7 @@ function FileSlot({ slot, file, disabled, onPick, onClear }: {
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={drop}>
       <div className="upload-box-head"><span className="step">{slot.step}</span> <strong>{slot.title}</strong></div>
       <p className="muted small">{slot.hint}</p>
-      <input ref={input} type="file" accept=".xlsx,.csv" hidden aria-label={`${slot.title} file`}
+      <input ref={input} type="file" accept={slot.accept ?? ".xlsx,.csv"} hidden aria-label={`${slot.title} file`}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }} />
       {file ? (
         <div className="upload-file"><span title={file.name}>{file.name}</span>
@@ -49,7 +52,7 @@ function FileSlot({ slot, file, disabled, onPick, onClear }: {
 
 export function UploadPage() {
   const options = useApi<UploadOptions>("/v1/upload/options");
-  const [chosen, setChosen] = useState<Record<Slot, File | null>>({ master: null, hrms: null, permission: null });
+  const [chosen, setChosen] = useState<Record<Slot, File | null>>(EMPTY);
   const [mode, setMode] = useState<Mode>("manual");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export function UploadPage() {
 
   useEffect(() => { if (options.data) setMode(options.data.default_mode); }, [options.data]);
 
-  const any = chosen.master || chosen.hrms || chosen.permission;
+  const any = chosen.master || chosen.hrms || chosen.permission || chosen.onduty;
   const set = (slot: Slot, f: File | null) => { setChosen({ ...chosen, [slot]: f }); setResult(null); setConflict(null); setError(null); };
 
   async function upload(replace = false) {
@@ -73,7 +76,7 @@ export function UploadPage() {
     try {
       const r = await api.upload<UploadResult>("/v1/days/upload", form);
       setResult(r);
-      setChosen({ master: null, hrms: null, permission: null });
+      setChosen(EMPTY);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setConflict(e.message);
       else setError(e instanceof ApiError ? e.message : "Unable to reach the server.");
@@ -86,6 +89,7 @@ export function UploadPage() {
   const sentCount = result?.mail.filter((m) => m.status === "SENT" || m.status === "SAVED").length ?? 0;
   const waiting = result?.mail.filter((m) => m.status === "PENDING").length ?? 0;
   const pm = result?.insights?.sources?.permissions;
+  const od = result?.insights?.sources?.onduty;
   const mi = result?.master_import;
   const test = options.data?.mode === "test";
   const stage = busy ? 2 : result?.report_date ? 3 : 1;
@@ -93,7 +97,7 @@ export function UploadPage() {
 
   return (
     <>
-      <PageHeader title="Upload yesterday's attendance" subtitle="Up to three datasets at once. The file type is checked; columns and date are validated before anything is sent." />
+      <PageHeader title="Upload yesterday's attendance" subtitle="Up to four datasets at once. The file type is checked; columns and date are validated before anything is sent." />
 
       <ol className="stepper" aria-label="Upload progress">
         {steps.map((t, i) => (
@@ -135,7 +139,7 @@ export function UploadPage() {
         </p>
         <div className="form-actions">
           <button className="btn btn-primary btn-inline" disabled={busy || !any} onClick={() => void upload()}>
-            {busy ? "Processing…" : mode === "auto" && (chosen.hrms || chosen.permission) ? "Upload and send emails" : "Upload"}
+            {busy ? "Processing…" : mode === "auto" && (chosen.hrms || chosen.permission || chosen.onduty) ? "Upload and send emails" : "Upload"}
           </button>
           {!any && <span className="muted small">Choose at least one file.</span>}
         </div>
@@ -171,6 +175,11 @@ export function UploadPage() {
               {pm && <span className="muted small"><br />{pm.today} for this day · {pm.approved} approved · {pm.pending} pending
                 {pm.excused_late + pm.excused_early > 0 && ` · excused ${pm.excused_late} late / ${pm.excused_early} early`}</span>}
             </div>
+            <div className={`upload-slot${result.onduty_file ? " done" : ""}`}>
+              <strong>On Duty Report</strong><br />{result.onduty_file ?? "Not uploaded yet for this day"}
+              {od && <span className="muted small"><br />{od.today} for this day · {od.approved} approved
+                {od.on_duty + od.wfh > 0 && ` (${od.on_duty} on duty, ${od.wfh} work from home)`} · {od.pending} pending</span>}
+            </div>
           </div>
           <Notice kind={result.auto_sent ? "ok" : "info"}>
             {formatDate(result.report_date)} processed: {result.employees} employees
@@ -187,6 +196,7 @@ export function UploadPage() {
             <KpiCard label="Present" value={s.counts.PRESENT} />
             <KpiCard label="Absent" value={s.counts.ABSENT} />
             <KpiCard label="Late" value={s.late} />
+            <KpiCard label="On duty / WFH" value={(s.counts.ON_DUTY ?? 0) + (s.counts.WFH ?? 0)} />
             <KpiCard label="Leave" value={s.counts.LEAVE + s.counts.HALF_DAY} />
             <KpiCard label="Week off" value={s.counts.WEEK_OFF ?? 0} />
             <KpiCard label="Not tracked" value={s.counts.NOT_TRACKED} />
@@ -199,7 +209,8 @@ export function UploadPage() {
               {waiting > 0 && <Link className="btn btn-primary btn-inline" to={`/mail?date=${result.report_date}`}><Icon name="mail" className="btn-icon" /> Review and approve {waiting} email(s)</Link>}
               {result.auto_sent && <Link className="btn btn-primary btn-inline" to={`/mail?date=${result.report_date}`}><Icon name="mail" className="btn-icon" /> See the emails</Link>}
               <Link className="btn btn-ghost btn-inline" to={`/insights?date=${result.report_date}`}><Icon name="insights" className="btn-icon" /> Open insights</Link>
-              {!result.permission_file && <span className="muted small" style={{ alignSelf: "center" }}>The Permission Report of this day can still be uploaded here.</span>}
+              {(!result.permission_file || !result.onduty_file) && <span className="muted small" style={{ alignSelf: "center" }}>
+                The {[!result.permission_file && "Permission Report", !result.onduty_file && "On Duty Report"].filter(Boolean).join(" and ")} of this day can still be uploaded here.</span>}
             </div>
           </Card>
         </>

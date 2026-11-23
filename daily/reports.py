@@ -68,7 +68,7 @@ def day_dict(d: date, e: EmployeeDay) -> dict:
             "status": e.status, "status_label": STATUS_LABEL.get(e.status, e.status), "in_time": e.in_time, "out_time": e.out_time,
             "work_hours": round(e.work_minutes / 60, 2) if e.work_minutes is not None else None, "late_minutes": e.late_minutes,
             "early_minutes": e.early_minutes, "leave_type": e.leave_type, "source": e.source or "HRMS",
-            "permission": e.permission or "", "flags": (e.flags or "").split(",") if e.flags else []}
+            "permission": e.permission or "", "on_duty": e.on_duty or "", "flags": (e.flags or "").split(",") if e.flags else []}
 
 
 def _tally(days: list[dict], rules: Rules) -> dict:
@@ -190,7 +190,7 @@ def attendance_excel(company: str, report: dict, f: Filters, date_format: str) -
     dcols = [("Date", "date", 12), ("Code", "code", 12), ("Name", "name", 26), ("Department", "department", 18), ("HOD", "hod", 18),
              ("Team", "team", 14), ("Status", "status_label", 13), ("In", "in_time", 10), ("Out", "out_time", 10),
              ("Hours (h:mm)", "work_hours", 11), ("Late by (h:mm)", "late_minutes", 10), ("Leave type", "leave_type", 9),
-             ("Permission", "permission", 20)]
+             ("Permission", "permission", 20), ("On duty", "on_duty", 26)]
     for j, (h, _, w) in enumerate(dcols):
         ws2.write(0, j, h, head)
         ws2.set_column(j, j, w)

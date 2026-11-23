@@ -200,6 +200,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
     # ------------------------------------------------------------------ HR: one sheet per action
     if kind == "hr":
         names = {"not_in_master": "Not in master", "routing": "Routing problems", "permissions": "Permissions pending",
+                 "onduty": "On duty pending",
                  "missing": "Missing punches", "streaks": "Absence streaks"}
         for g in b.get("hr_groups", []):
             rows = [{**x, "on_day": x.get("status_label") or "", "action": g["action"]} for x in g["rows"]]
@@ -222,7 +223,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
                      else analysis.hm(x.get(k)) if k == "work_hours"
                      else analysis.mins_hm(x.get(k)) if k in ("late_minutes", "early_minutes") else x.get(k))
                 blank = v in (None, 0) and k in ("late_minutes", "early_minutes", "in_time", "out_time", "work_hours", "leave_type", "reason",
-                                                 "permission")
+                                                 "permission", "on_duty")
                 w.write(i, j, "" if blank or v is None else v, flag if reason else cell)
         w.freeze_panes(3, 2)
         if rows:

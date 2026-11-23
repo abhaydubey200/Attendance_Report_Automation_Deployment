@@ -14,7 +14,9 @@ Statuses (how each is decided is in Settings -> Counting rules):
 
 The Pocket HRMS Permission Report (short-leave permissions) is applied by EMP_CODE: an APPROVED
 permission excuses a late arrival / early leaving inside its time window; a PENDING one is shown but
-excuses nothing. Pocket HRMS is the only attendance source.
+excuses nothing. The Pocket HRMS On Duty Report (daily.onduty) is applied the same way: an APPROVED full-day
+request makes the person On duty / Work from home, a part-day one excuses like a permission, a PENDING one is shown.
+Pocket HRMS is the only attendance source.
 """
 
 from __future__ import annotations
@@ -79,6 +81,7 @@ class EmployeeResult:
     manager: str | None = None
     source: str = "HRMS"
     permission: str | None = None      # e.g. "Approved 16:00-18:00" / "Pending 16:00-18:00"
+    on_duty: str | None = None         # e.g. "Work from home approved (full day)" / "On duty pending (full day)"
 
 
 def _minutes(hhmm: str | None) -> int | None:
@@ -160,25 +163,77 @@ def apply_permissions(results: list[EmployeeResult], perm_day, report_date: date
                 r.flags.append("PERMISSION_PENDING")
             continue
         stats["approved"] += 1
-        start, end = _minutes(perm.start), _minutes(perm.end)
-        excused = False
-        if "LATE" in r.flags and start <= late_after + PERMISSION_GRACE_MIN and _minutes(r.in_time) <= end + PERMISSION_GRACE_MIN:
-            r.flags.remove("LATE")
-            r.late_minutes = 0
-            stats["excused_late"] += 1
-            excused = True
-        # Leaving early is covered by an approved permission that starts in the second half of the day when the person
-        # left at (or after) its start - e.g. the usual 4:00-6:00 PM short leave. Office close is not required.
-        if ("LEFT_EARLY" in r.flags and start >= EARLY_PERMISSION_FROM
-                and _minutes(r.out_time) >= start - PERMISSION_GRACE_MIN):
-            r.flags.remove("LEFT_EARLY")
-            r.early_minutes = 0
-            stats["excused_early"] += 1
-            excused = True
-        if excused and "SHORT_HOURS" in r.flags:
-            r.flags.remove("SHORT_HOURS")
+        _excuse_window(r, _minutes(perm.start), _minutes(perm.end), late_after, stats)
         if "PERMISSION" not in r.flags:
             r.flags.append("PERMISSION")
+    return stats
+
+
+def _excuse_window(r: EmployeeResult, start: int, end: int, late_after: int, stats: dict) -> bool:
+    """An approved time window (short leave, part-day on duty) excuses a late arrival / early leaving inside it."""
+    excused = False
+    if "LATE" in r.flags and start <= late_after + PERMISSION_GRACE_MIN and _minutes(r.in_time) <= end + PERMISSION_GRACE_MIN:
+        r.flags.remove("LATE")
+        r.late_minutes = 0
+        stats["excused_late"] += 1
+        excused = True
+    # Leaving early is covered by an approved permission that starts in the second half of the day when the person
+    # left at (or after) its start - e.g. the usual 4:00-6:00 PM short leave. Office close is not required.
+    if ("LEFT_EARLY" in r.flags and start >= EARLY_PERMISSION_FROM
+            and _minutes(r.out_time) >= start - PERMISSION_GRACE_MIN):
+        r.flags.remove("LEFT_EARLY")
+        r.early_minutes = 0
+        stats["excused_early"] += 1
+        excused = True
+    if excused and "SHORT_HOURS" in r.flags:
+        r.flags.remove("SHORT_HOURS")
+    return excused
+
+
+# statuses an approved full-day on duty / WFH replaces (a recorded leave, half day, week off or holiday is kept)
+ON_DUTY_REPLACES = ("PRESENT", "MISSING_PUNCH", "ABSENT", "NOT_TRACKED", "ON_DUTY", "WFH")
+
+
+def apply_onduty(results: list[EmployeeResult], od_day, report_date: date, rules: Rules) -> dict:
+    """Apply the day's Pocket HRMS On Duty Report (``daily.onduty.OnDutyDay``). Returns counts."""
+    from daily.onduty import APPROVED, PENDING, WFH
+
+    todays = [q for q in od_day.requests if q.day == report_date]
+    stats = {"rows": len(od_day.requests), "today": len(todays), "other_dates": len(od_day.requests) - len(todays),
+             "approved": 0, "pending": 0, "on_duty": 0, "wfh": 0, "part_day": 0, "kept_status": 0,
+             "excused_late": 0, "excused_early": 0, "not_in_file": 0}
+    by_code = {r.code.upper(): r for r in results}
+    late_after = late_threshold(rules)
+    for q in todays:
+        r = by_code.get(q.code)
+        if r is None:
+            stats["not_in_file"] += 1
+            continue
+        if q.status not in (APPROVED, PENDING):
+            continue                                             # rejected / cancelled
+        r.on_duty = f"{r.on_duty}; {q.label}" if r.on_duty else q.label
+        if q.status == PENDING:
+            stats["pending"] += 1
+            if "ON_DUTY_PENDING" not in r.flags:
+                r.flags.append("ON_DUTY_PENDING")
+            continue
+        stats["approved"] += 1
+        if "ON_DUTY_APPROVED" not in r.flags:
+            r.flags.append("ON_DUTY_APPROVED")
+        if "ALWAYS_PRESENT" in r.flags:
+            continue
+        if not q.full_day:
+            stats["part_day"] += 1
+            if q.start and q.end:
+                _excuse_window(r, _minutes(q.start), _minutes(q.end), late_after, stats)
+            continue
+        if r.status not in ON_DUTY_REPLACES:
+            stats["kept_status"] += 1                            # on leave / week off / holiday that day: kept
+            continue
+        r.status = "WFH" if (q.kind == WFH or r.status == "WFH") else "ON_DUTY"
+        stats["wfh" if r.status == "WFH" else "on_duty"] += 1
+        r.flags = [f for f in r.flags if f not in ("LATE", "LEFT_EARLY", "SHORT_HOURS", "MISSING_PUNCH", "FLEXI")]
+        r.late_minutes = r.early_minutes = 0
     return stats
 
 
@@ -452,6 +507,15 @@ def build_insights(report_date: date, results: list[EmployeeResult], rules: Rule
     elif sources is not None and sources.get("hrms") and not sources.get("permission_file"):
         scopes["ALL"]["highlights"].append({"kind": "info", "text": "Permission Report not uploaded for this day - late / early "
                                                                    "arrivals are shown without permissions."})
+    od = (sources or {}).get("onduty")
+    if od and od["today"]:
+        done = [f"{od['on_duty']} on duty" if od["on_duty"] else "", f"{od['wfh']} work from home" if od["wfh"] else "",
+                f"{od['part_day']} part of the day" if od["part_day"] else ""]
+        done = ", ".join(x for x in done if x)
+        scopes["ALL"]["highlights"].append({"kind": "warn" if od["pending"] else "info", "text": (
+            f"{od['today']} on-duty request(s) on {report_date:%d-%b-%Y}: {od['approved']} approved"
+            + (f" ({done})" if done else "") + f", {od['pending']} still pending approval"
+            + (" - shown as Pocket HRMS has them until approved." if od["pending"] else "."))})
     for cat, rows in by_cat_rows.items():
         scopes[cat] = _scope_data(rows, rules, prev_of(cat), cat, use_master, "department")
     hods = []

@@ -97,8 +97,10 @@ export interface Insights {
   by_category: Record<string, Summary>;
   departments?: string[];
   hods?: HodInsight[];
-  sources?: { hrms?: boolean; permission_file?: boolean;
-    permissions?: { rows: number; today: number; approved: number; pending: number; other_dates: number; excused_late: number; excused_early: number; not_in_file: number } };
+  sources?: { hrms?: boolean; permission_file?: boolean; onduty_file?: boolean;
+    permissions?: { rows: number; today: number; approved: number; pending: number; other_dates: number; excused_late: number; excused_early: number; not_in_file: number };
+    onduty?: { rows: number; today: number; other_dates: number; approved: number; pending: number; on_duty: number; wfh: number; part_day: number;
+      kept_status: number; excused_late: number; excused_early: number; not_in_file: number } };
   master?: { matched: number; not_in_master: number; left_excluded: number; missing_from_file: number } | null;
   scopes: Record<string, ScopeInsights>;
   previous_date: string | null;
@@ -115,6 +117,7 @@ export interface EmployeeRow {
   manager?: string;
   source?: string;
   permission?: string;
+  on_duty?: string;
   designation?: string;
   shift: string;
   in_time: string | null;
@@ -136,6 +139,7 @@ export interface DayDetail {
   report_date: string;
   file: string | null;
   permission_file?: string | null;
+  onduty_file?: string | null;
   uploaded_by: string;
   uploaded_at: string;
   employees: number;

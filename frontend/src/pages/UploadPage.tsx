@@ -15,7 +15,7 @@ const SLOTS: { key: Slot; step: string; title: string; hint: string; accept?: st
   { key: "master", step: "1", title: "Employee master", hint: "Optional – only when it changed. Routing workbook or Employee Amendment Excel." },
   { key: "hrms", step: "2", title: "Attendance Summary", hint: "Pocket HRMS → AttendanceSummary (.xlsx) for the day." },
   { key: "permission", step: "3", title: "Permission Report", hint: "Pocket HRMS → PermissionReportAdmin (.xlsx): short-leave permissions." },
-  { key: "onduty", step: "4", title: "On Duty Report", hint: "Pocket HRMS → OnDutyReportAdmin (.xls as downloaded): on duty / work from home requests.",
+  { key: "onduty", step: "4", title: "On Duty Report", hint: "Pocket HRMS → OnDutyReportAdmin (.xls as downloaded): on duty / work from home. On its own, a longer period updates every uploaded day in it (no emails).",
     accept: ".xls,.xlsx,.csv" },
 ];
 const EMPTY: Record<Slot, File | null> = { master: null, hrms: null, permission: null, onduty: null };

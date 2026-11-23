@@ -167,3 +167,46 @@ def test_api_upload_with_on_duty_box(settings, engine, tmp_path):
         # the wrong file in the On Duty box is refused with a clear message
         r = c.post("/api/v1/days/upload", files={"onduty": ("p.xlsx", permission_file(PERMS))}, data={"replace": "true"}, headers=H)
         assert r.status_code == 422 and "On Duty Report box" in r.json()["detail"]
+
+
+def test_history_report_updates_every_uploaded_day_without_sending(engine, settings, tmp_path):
+    """Last month's On Duty Report on its own: each uploaded day in it is re-analysed; no email is sent; a day that
+    already has the same requests is left alone; waiting emails are prepared again; sent emails stay counted."""
+    from fastapi.testclient import TestClient
+
+    from api.main import create_app
+    from database.models.daily import EmailLog, MailItem
+    from tests.integration.test_api import H, with_auth_mode
+
+    history = ODS + [("E5", "12/11/2026", "09:30", "18:00", "Full Day", "WFH", "Approved"),
+                     ("E9", "11/11/2026", "09:30", "18:00", "Full Day", "visit", "Approved")]      # 11-Nov: no attendance
+    with session_scope(engine) as s:
+        save_email_settings(s, EmailSettings(approval_required=True, director_emails=["director@example.com"]), "tester")
+        for code, name, *_ in CASES[:9]:
+            emp.create(s, {"code": code, "name": name, "department": "Ops", "hod_name": "Hod One", "hod_email": "hod1@example.com"},
+                       "tester")
+        old12 = service.process_files(s, settings, [("s12.xlsx", summary_file(CASES, "12/11/2026"))], "tester")
+        for i in mail.build_plan(s, settings, old12, "tester"):            # 12-Nov: emails already sent
+            i.status = mail.SENT
+            s.add(EmailLog(upload_id=old12.upload_id, scope=i.recipient_key, recipients="x", subject="s", status="SENT", mode="LIVE",
+                           sent_by="tester"))
+        up13 = service.process_files(s, settings, [("s13.xlsx", summary_file(CASES))], "tester")
+        mail.build_plan(s, settings, up13, "tester")                       # 13-Nov: emails waiting for approval
+    with TestClient(create_app(with_auth_mode(settings, "none"), engine, frontend_dist=tmp_path / "no-dist")) as c:
+        r = c.post("/api/v1/days/upload", files={"onduty": ("OnDutyReportAdmin (1).xls", onduty_file(history))}, headers=H)
+        assert r.status_code == 200, r.text
+        res = r.json()["onduty_history"]
+        assert res["updated"] == ["2026-11-12", "2026-11-13"] and res["no_attendance"] == ["2026-11-11"]
+        assert res["emails_prepared_again"] == ["2026-11-13"] and "No emails were sent" in r.json()["send_note"]
+        days = {d["report_date"]: d for d in c.get("/api/v1/days").json()}
+        assert days["2026-11-12"]["emails"] > 0 and days["2026-11-12"]["has_onduty"]     # sent emails still counted
+        assert c.get("/api/v1/days/2026-11-12").json()["emails"]
+        # the same report again: nothing changes
+        res = c.post("/api/v1/days/upload", files={"onduty": ("o.xls", onduty_file(history))}, headers=H).json()["onduty_history"]
+        assert res["updated"] == [] and res["unchanged"] == ["2026-11-12", "2026-11-13"]
+    with session_scope(engine) as s:
+        assert {r["code"]: r["status"] for r in service.rows_for(s, service.current_upload(s, date(2026, 11, 12)).upload_id)}["E5"] == "WFH"
+        assert s.query(MailItem).filter(MailItem.report_date == date(2026, 11, 12), MailItem.status == mail.PENDING).count() == 0
+        waiting = s.query(MailItem).filter(MailItem.report_date == DAY, MailItem.status == mail.PENDING).all()
+        assert waiting and all(i.upload_id == service.current_upload(s, DAY).upload_id for i in waiting)
+        assert s.query(EmailLog).filter(EmailLog.recipients != "x").count() == 0                # nothing new was sent

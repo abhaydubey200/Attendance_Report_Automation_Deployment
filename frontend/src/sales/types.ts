@@ -70,7 +70,7 @@ export interface SalesRules {
 }
 
 export interface SalesEmailSettings {
-  mode: "test" | "live"; approval_required: boolean; auto_send: boolean; test_recipient: string | null; director_name: string; director_emails: string[];
+  mode: "test" | "live"; approval_required: boolean; auto_send: boolean; test_recipient: string | null; test_cc?: string[]; director_name: string; director_emails: string[];
   hr_emails: string[]; always_bcc: string[]; levels: string[]; attach_excel: boolean; attach_dashboard: boolean; pilot_live?: string[];
 }
 

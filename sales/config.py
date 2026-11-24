@@ -108,7 +108,8 @@ class SalesEmail(BaseModel):
     mode: str = "test"                             # test = saved to the outbox, never sent | live
     approval_required: bool = True
     auto_send: bool = False                        # daily job: send the prepared emails without waiting for Approve
-    test_recipient: str | None = None              # testing: every email goes here instead
+    test_recipient: str | None = None              # testing: every email really goes ONLY here (To), marked [TEST]
+    test_cc: list[str] = Field(default_factory=list)  # testing: CC on every test email
     director_name: str = "Director"
     director_emails: list[str] = Field(default_factory=list)
     hr_emails: list[str] = Field(default_factory=list)
@@ -126,7 +127,7 @@ class SalesEmail(BaseModel):
             raise ValueError("mode must be test or live.")
         return v
 
-    @field_validator("director_emails", "hr_emails", "always_bcc", "pilot_live")
+    @field_validator("director_emails", "hr_emails", "always_bcc", "pilot_live", "test_cc")
     @classmethod
     def _e(cls, v: list[str]) -> list[str]:
         out = [a.strip().lower() for a in v if a.strip()]

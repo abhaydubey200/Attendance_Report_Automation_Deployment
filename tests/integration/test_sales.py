@@ -334,3 +334,28 @@ def test_two_calls_at_the_same_time_one_without_location():
             ["GTR01", "2", "SL00001", "SL00001", D, "10:00:00", "10:00:20", "0:0:20", "PC", "Normal", "", "20", "28.61", "77.21", "", "9"]]
     c = bizom.parse(bizom.read_rows(csv_bytes(head, rows), "c.csv"))
     assert c.calls["SL00001"].calls == 2 and c.calls["SL00001"].first_call
+
+
+def test_testing_sends_only_to_the_testers_with_cc(staffed, settings, monkeypatch):
+    """Testing on: every Field Sales email really goes only to the test recipient (To) + test CC, marked [TEST]."""
+    from types import SimpleNamespace
+
+    sent = []
+
+    def fake_send(cfg, msg, outbox):
+        sent.append((cfg.mode, msg))
+        return SimpleNamespace(status="SENT", outbox_file=None)
+
+    monkeypatch.setattr(mail, "send", fake_send)
+    with session_scope(staffed) as s:
+        save_email(s, SalesEmail(mode="test", test_recipient="tester@example.com", test_cc=["cc@example.com"],
+                                 pilot_live=["ravi@example.com"]), "tester")
+        up = service.process(s, [("a.csv", attendance_csv()), ("e.csv", eod_csv()), ("c.csv", calls_csv())], "tester")
+        items = [i for i in mail.items_for(s, up.report_date) if i.status == "PENDING"]
+        assert any(i.recipient_key == "DIRECTOR" for i in items)                     # held for no address -> goes to the testers
+        done = mail.send_items(s, items, "tester", settings.storage.area("sales_outbox"))
+        assert done and all(i.status == "TEST_SENT" and "tester@example.com (CC cc@example.com)" in i.note for i in done)
+        assert all(mode == "live" and m["To"] == "tester@example.com" and m["Cc"] == "cc@example.com" and m["Subject"].startswith("[TEST] ")
+                   and not m["Bcc"] for mode, m in sent)
+        ravi = next(m for _, m in sent if "ravi@example.com" in m.get_body(("html",)).get_content())   # pilot too: only the testers
+        assert ravi["To"] == "tester@example.com"

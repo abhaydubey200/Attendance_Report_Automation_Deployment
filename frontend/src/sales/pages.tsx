@@ -534,8 +534,10 @@ export function SalesSettingsPage() {
             <select value={email.mode} onChange={(e) => setEmail({ ...email, mode: e.target.value as "test" | "live" })}>
               <option value="test">Test (saved, not sent)</option><option value="live">Live (sent)</option></select></Field>
           <label className="check"><input type="checkbox" checked={email.auto_send} onChange={(e) => setEmail({ ...email, auto_send: e.target.checked })} /> Daily job sends the emails automatically (otherwise they wait for Approve)</label>
-          <Field label="Test recipient" hint="Optional: in testing, every email goes to this address instead.">
+          <Field label="Test recipient (To)" hint="While set, every Field Sales email really goes only to this address (and the Test CC), marked [TEST]; nobody else receives anything.">
             <input value={email.test_recipient ?? ""} onChange={(e) => setEmail({ ...email, test_recipient: e.target.value || null })} /></Field>
+          <Field label="Test CC" hint="Comma separated. Copied on every test email.">
+            <input value={(email.test_cc ?? []).join(", ")} onChange={(e) => setEmail({ ...email, test_cc: LIST(e.target.value) })} /></Field>
           <Field label="Director name"><input value={email.director_name} onChange={(e) => setEmail({ ...email, director_name: e.target.value })} /></Field>
           <Field label="Director email(s)" hint="Comma separated. Empty = the Director's email is held.">
             <input value={email.director_emails.join(", ")} onChange={(e) => setEmail({ ...email, director_emails: LIST(e.target.value) })} /></Field>

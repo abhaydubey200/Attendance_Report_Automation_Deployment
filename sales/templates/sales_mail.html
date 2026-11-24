@@ -25,6 +25,28 @@
   <tr><td class="pad" style="padding:16px 24px 2px;"><div style="font-size:16px;font-weight:800;color:#3d2a10;">{{ text }}</div>
     {% if note %}<div style="font-size:12px;color:#5d6577;padding-top:2px;">{{ note }}</div>{% endif %}</td></tr>
 {%- endmacro %}
+{% macro pct_color(p) -%}{{ "#15803d" if p is not none and p >= 90 else ("#b45309" if p is not none and p >= 75 else "#b91c1c") }}{%- endmacro %}
+{% macro trend_bars(t, avg) -%}
+{# last 7 report days: simple bars that also work in Outlook (fixed-height cells) - same as the Head Office email #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f8f9fc;border:1px solid #e6e8ef;border-radius:10px;">
+  <tr><td colspan="{{ t|length }}" style="padding:8px 12px 2px;font-size:12.5px;font-weight:bold;color:#3d2a10;">Last {{ t|length }} report days
+    {%- if avg is not none %} <span style="font-weight:normal;color:#5d6577;">· average before {{ v.date_long }}: {{ avg }}%</span>{% endif %}</td></tr>
+  <tr>
+    {% for x in t %}
+    {% set h = ((x.pct or 0) * 0.5) | round(0, "floor") | int %}
+    <td align="center" valign="bottom" style="padding:6px 4px 0;height:62px;">
+      {% if x.pct is not none %}
+      <div style="font-size:10.5px;font-weight:bold;color:{{ pct_color(x.pct) }};">{{ x.pct | round(0) | int }}%</div>
+      <div style="width:26px;height:{{ [h, 2] | max }}px;line-height:{{ [h, 2] | max }}px;font-size:0;background:{{ pct_color(x.pct) }};border-radius:4px 4px 0 0;{{ 'outline:2px solid #f5b800;' if loop.last else '' }}">&nbsp;</div>
+      {% else %}<div style="font-size:10px;color:#9ca3af;">off</div>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  <tr>
+    {% for x in t %}<td align="center" style="padding:3px 2px 8px;font-size:10.5px;color:{{ '#3d2a10' if loop.last else '#6b7280' }};{{ 'font-weight:bold;' if loop.last else '' }}">{{ x.label }}<br>{{ x.day }}</td>{% endfor %}
+  </tr>
+</table>
+{%- endmacro %}
 {% set pc = v.pct %}
 {% set pcol = "#94a3b8" if pc is none else ("#15803d" if pc >= 90 else ("#b45309" if pc >= 75 else "#b91c1c")) %}
 {% set pbg = "#f0faf3" if (pc or 0) >= 90 else ("#fff8eb" if (pc or 0) >= 75 else "#fef3f2") %}
@@ -64,6 +86,7 @@
       {{ tile("Needs attention", k.attention, "#7c3aed", "#f6f2ff", "listed below" if v.view == "team" else "see attachments") }}
     </tr></table>
   </td></tr>
+  {% if v.week %}<tr><td class="pad" style="padding:4px 24px 6px;">{{ trend_bars(v.week, v.week_avg) }}</td></tr>{% endif %}
 
   {% if v.view == "team" %}
   {{ heading("Needs attention" ~ ("" if not v.is_hod_view else " – your direct reports"), "Absent, late, half day, or marked attendance without working – grouped by territory. Everyone else is in the counts above; the full roster is attached.") }}
@@ -132,12 +155,6 @@
     </table>
   </td></tr>
   {% endif %}
-  <tr><td class="pad" style="padding:10px 24px 6px;">
-    <div style="background:#f6f7fb;border:1px solid #e6e8ef;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#33405c;">
-      <b>Full roster in the attachments:</b> the Excel workbook (people needing attention first) and the dashboard (open in Chrome or Edge) have every person, the reasons,
-      {% if v.proof %}the attendance selfies side by side and the map links.{% else %}and the evidence for each person.{% endif %}
-      Warning signs are for checking, not proof.</div>
-  </td></tr>
 
   <tr><td style="padding:8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
   <tr><td style="padding:10px 24px;border-top:1px solid #e6e8ef;font-size:11px;color:#94a3b8;">

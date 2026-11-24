@@ -33,6 +33,22 @@
   table.people th[data-k]::after { content: attr(data-dir); margin-left:4px; font-size:11px; }
   table.people tr.has td.who b { color:#14213d; } .tag.pt { border:1px dashed currentColor; }
   .card-h { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .two.even { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } svg.chart { width:100%; height:auto; display:block; } svg .ax { font-size:11px; fill:#5d6577; }
+  svg .bk { cursor:pointer; } svg .bk:hover rect { opacity:1 !important; }
+  .pbar { display:inline-block; width:60px; height:7px; background:#eef1f6; border-radius:9px; margin-right:6px; vertical-align:middle; overflow:hidden; }
+  .pbar i { display:block; height:100%; border-radius:9px; }
+  tr.th-row { cursor:pointer; } tr.th-row:hover td { background:#fff8e1; } table.sc td.small { font-size:12px; color:#33405c; }
+  table.heat { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat th { font-weight:700; color:#14213d; padding:2px 8px; text-align:center; }
+  table.heat td { padding:5px 8px; } table.heat td:first-child { white-space:nowrap; } td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:42px; }
+  .modal { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:5vh 12px; z-index:50; overflow:auto; }
+  .modal[hidden] { display:none; } .modal .box { background:#fff; border-radius:16px; max-width:760px; width:100%; padding:20px 22px; position:relative; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+  .mx { position:absolute; right:12px; top:10px; border:0; background:#f1f5f9; border-radius:999px; width:32px; height:32px; cursor:pointer; font-size:15px; }
+  .msg { margin:10px 0; font-size:13.5px; } .mstats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .ms { border:1px solid #e6e8ef; border-radius:10px; padding:8px 10px; } .ms span { display:block; font-size:11.5px; color:#5d6577; } .ms b { font-size:17px; color:#14213d; }
+  .strip { display:flex; flex-wrap:wrap; gap:3px; } .dc { width:22px; height:26px; border-radius:5px; color:#fff; font-size:10px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; color:#5d6577; } .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  .modal h4 { margin:14px 0 6px; color:#14213d; } .mi { font-size:13px; margin:3px 0; }
+  @media (max-width: 900px) { .two.even { grid-template-columns:minmax(0,1fr); } }
   table.grid tr.p { cursor:pointer; } table.grid tr.ev td { background:#fafbfd; font-size:12.5px; color:#33405c; }
   .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; }
   .t-high { background:#fdecec; color:#b42318; } .t-medium { background:#fff3e0; color:#b45309; } .t-low { background:#f1f5f9; color:#475569; }
@@ -53,6 +69,20 @@
     <p>{{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance on <b>{{ v.date_long }}</b>: {{ v.n }} people.
     Click a number or a warning sign to see the people behind it; click a person for the evidence.</p></div></section>
   <section class="kp" id="kp"></section>
+  <section class="two even">
+    <div class="card"><div class="card-h"><h3>Last 30 days <span class="muted">– attendance % (line) and absent people (bars)</span></h3></div>
+      <div id="trend"></div><p class="note" id="trendNote"></p></div>
+    <div class="card"><div class="card-h"><h3>Marking times <span class="muted">– {{ v.date_long }}</span></h3></div>
+      <div id="arr"></div><p class="note" id="arrNote"></p></div>
+  </section>
+  <section class="card" style="margin-top:16px" id="scCard">
+    <div class="card-h"><h3>Team heads <span class="muted">– lowest 30-day attendance first; click a team head to see their people</span></h3></div>
+    <div class="tablewrap"><table class="grid sc" style="font-size:13px"><thead><tr><th>Team head</th><th>People</th><th>{{ v.date_long }}</th><th>Last 30 days</th>
+      <th title="This week vs the 3 weeks before (points)">4-week change</th><th>Late (30 days)</th><th>Absent</th><th>Signs</th><th>Patterns</th><th>Lowest 30-day attendance</th></tr></thead>
+      <tbody id="sc"></tbody></table></div>
+    <h4 style="margin:16px 0 6px">Attendance by weekday <span class="muted" style="font-weight:400">– last 12 weeks; spot days that are always weak</span></h4>
+    <div class="tablewrap"><table class="heat"><tbody id="heat"></tbody></table></div>
+  </section>
   <section class="two">
     <div class="card"><div class="card-h"><h3>Needs checking <span class="muted">– warning signs, not proof</span></h3></div>
       <ul class="wl" id="wl"></ul>
@@ -88,10 +118,11 @@
       <thead><tr><th data-k="name">Employee</th><th data-k="manager">Team head</th><th data-k="status">Status</th><th data-k="att">Marked</th><th>First – last activity</th>
         <th data-k="market">In market</th><th data-k="km">KM</th><th data-k="eod">Day end</th><th data-k="signs">Signs, checks &amp; patterns</th></tr></thead>
       <tbody id="rows"></tbody></table></div>
-    <p class="note">Click a column heading to sort, a person to see the evidence. ↻ = repeat pattern (dates in the Patterns list).</p>
+    <p class="note">Click a column heading to sort, a person for their last 30 days and the evidence. ↻ = repeat pattern (dates in the Patterns list).</p>
   </section>
   <footer><span>Source: <i>Bizom</i> · {{ v.date_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
 </main>
+<div id="modal" class="modal" hidden><div class="box" role="dialog" aria-modal="true"><button type="button" id="mx" class="mx" aria-label="Close">✕</button><div id="mbody"></div></div></div>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
 <script>
 (function () {
@@ -100,7 +131,7 @@ const D = JSON.parse(document.getElementById("data").textContent), P = D.people;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const LV = {high: 0, medium: 1, low: 2};
-const S = {status: "all", mgr: "", sign: "", q: "", open: null, sort: "", dir: 1};
+const S = {status: "all", mgr: "", sign: "", q: "", open: null, sort: "", dir: 1, att: null};
 const n = (st) => P.filter((p) => p.status === st).length;
 const due = P.length - n("WEEK_OFF"), pct = due ? Math.round(1000 * (n("PRESENT") + n("LATE") + 0.5 * n("HALF_DAY")) / due) / 10 : null;
 const col = (v) => v === null ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
@@ -145,7 +176,8 @@ const CH = [["all", "Everyone"], ["flagged", "Needs checking"], ["ABSENT", "Abse
 function list() {
   const q = S.q.toLowerCase();
   const out = P.filter((p) => (S.status === "all" || (S.status === "flagged" ? any(p) : p.status === S.status))
-    && (!S.mgr || p.manager === S.mgr) && (!S.sign || hasSign(p, S.sign)) && (!q || text(p).includes(q)));
+    && (!S.mgr || p.manager === S.mgr) && (!S.sign || hasSign(p, S.sign)) && (!q || text(p).includes(q))
+    && (!S.att || (p.att_min !== null && p.att_min !== undefined && p.att_min >= S.att[0] && p.att_min < S.att[1])));
   const k = KEY[S.sort];
   return out.sort((a, b) => k ? cmp(k, a, b)
     : (sev(a) - sev(b)) || ((b.flags.length + (b.checks || []).length) - (a.flags.length + (a.checks || []).length)) || a.name.localeCompare(b.name));
@@ -154,19 +186,20 @@ const tags = (p) => p.flags.map((f) => `<span class="tag t-${f.level}">${esc(f.l
   + (p.checks || []).map((c) => `<span class="tag t-${c.level}" title="${esc(c.why)}">${esc(c.kind)}: ${esc(c.label)}</span>`).join("")
   + (p.patterns || []).map((x) => `<span class="tag t-${x.level} pt" title="${esc(x.text)}">↻ ${esc(x.label)}</span>`).join("");
 function render() {
-  $("chips").innerHTML = CH.map(([k, l]) => `<button class="chip ${S.status === k ? "on" : ""}" data-st="${k}">${l} <span class="cn">${k === "all" ? P.length : k === "flagged" ? P.filter(any).length : n(k)}</span></button>`).join("");
+  $("chips").innerHTML = CH.map(([k, l]) => `<button class="chip ${S.status === k ? "on" : ""}" data-st="${k}">${l} <span class="cn">${k === "all" ? P.length : k === "flagged" ? P.filter(any).length : n(k)}</span></button>`).join("")
+    + (S.att ? `<button class="chip on" data-attclear="1">Marked ${hm(S.att[0])}–${S.att[1] >= 1440 ? "later" : hm(S.att[1])} ✕</button>` : "");
   document.querySelectorAll("#wl button").forEach((b) => b.classList.toggle("on", b.dataset.sign === S.sign));
   $("fm").value = S.mgr; $("fs").value = S.sign;
   document.querySelectorAll("th[data-k]").forEach((th) => th.dataset.dir = S.sort === th.dataset.k ? (S.dir > 0 ? "↑" : "↓") : "");
   const L = list();
-  const active = [S.status !== "all", S.mgr, S.sign, S.q].filter(Boolean).length;
+  const active = [S.status !== "all", S.mgr, S.sign, S.q, S.att].filter(Boolean).length;
   $("cnt").textContent = `– ${L.length} of ${P.length}` + (active ? ` (${active} filter${active > 1 ? "s" : ""})` : "");
   $("clr").hidden = !active;
   $("rows").innerHTML = L.map((p) => `<tr class="p${any(p) ? " has" : ""}" data-p="${esc(p.code)}"><td class="who"><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
       <td>${esc(p.manager)}</td><td><span class="st" style="color:${D.colors[p.status]}">${esc(p.status_label)}</span>${p.leave ? `<br><span class="muted" style="font-size:12px">${esc(p.leave)}</span>` : p.not_marked ? `<br><span class="muted" style="font-size:12px">did not mark${p.absent_streak > 1 ? ` · ${p.absent_streak} days in a row` : ""}</span>` : ""}</td>
       <td class="num">${esc(p.att)}</td><td class="num">${p.first ? esc(p.first) + " – " + esc(p.last) : ""}</td><td class="num">${esc(p.market)}</td><td class="num">${p.km ?? ""}</td><td class="num">${esc(p.eod)}</td>
       <td>${tags(p)}</td></tr>` +
-      (S.open === p.code && (any(p) || p.not_marked) ? `<tr class="ev"><td colspan="9">${p.evidence ? `<b>Evidence:</b> ${esc(p.evidence)}<br>` : ""}${p.flags.map((f) => `• ${esc(f.label)} – ${esc(f.why)}`).join("<br>")}
+      (false ? `<tr class="ev"><td colspan="9">${p.evidence ? `<b>Evidence:</b> ${esc(p.evidence)}<br>` : ""}${p.flags.map((f) => `• ${esc(f.label)} – ${esc(f.why)}`).join("<br>")}
         ${(p.checks || []).map((c) => `<br>• <b>${esc(c.kind)}:</b> ${esc(c.label)}${c.why ? " – " + esc(c.why) : ""}`).join("")}
         ${(p.patterns || []).map((x) => `<br>• <b>Pattern:</b> ${esc(x.text)}`).join("")}
         ${p.not_marked ? `<br>• Last marked in Bizom: ${esc(p.last_marked || "not in the uploaded days")}` : ""}
@@ -190,13 +223,96 @@ document.addEventListener("click", (e) => {
   if (st) { S.status = st.dataset.st; render(); if (st.classList.contains("kc")) $("people").scrollIntoView({behavior: "smooth"}); }
   else if (sg) { S.sign = S.sign === sg.dataset.sign ? "" : sg.dataset.sign; S.status = "all"; render(); $("people").scrollIntoView({behavior: "smooth"}); }
   else if (th) { S.dir = S.sort === th.dataset.k ? -S.dir : 1; S.sort = th.dataset.k; render(); }
-  else if (e.target.id === "clr") { Object.assign(S, {status: "all", mgr: "", sign: "", q: ""}); $("q").value = ""; render(); }
+  else if (e.target.id === "clr" || e.target.closest("[data-attclear]")) { if (e.target.id === "clr") { Object.assign(S, {status: "all", mgr: "", sign: "", q: ""}); $("q").value = ""; }
+    S.att = null; render(); arrivals(); }
   else if (e.target.id === "csv") csv();
-  else if (p) { S.open = S.open === p.dataset.p ? null : p.dataset.p; render(); }
+  else if (p) drill(p.dataset.p);
 });
 $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
 $("fm").addEventListener("change", (e) => { S.mgr = e.target.value; render(); });
 $("fs").addEventListener("change", (e) => { S.sign = e.target.value; render(); });
+// ---------------- charts, scorecards, heatmap and the person drill-down (all offline, plain SVG)
+const PK = D.pack, SC = D.scorecards || [];
+const SCOL = {P: "#16a34a", L: "#d97706", H: "#f59e0b", A: "#dc2626", V: "#64748b", O: "#cbd5e1", "-": "#eef1f6"};
+const SNAME = {P: "Present", L: "Late", H: "Half day", A: "Absent", V: "Leave", O: "Week off / holiday", "-": "Not in the day's data"};
+const pctCol = (v) => v === null || v === undefined ? "#e5e7eb" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
+function trendChart() {
+  if (!PK || !PK.trend.length || !$("trend")) return;
+  const T = PK.trend, W = 640, H = 200, L = 34, R = 10, top = 10, bot = 36, n = T.length;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)), y = (v) => top + (100 - v) * (H - top - bot) / 100;
+  const maxA = Math.max(1, ...T.map((t) => t.absent)), bw = Math.max(3, (W - L - R) / n * 0.55);
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Attendance over the last ${n} days">`;
+  [50, 75, 90, 100].forEach((g) => s += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 90 ? "#bbf7d0" : "#eef1f6"}"/><text x="${L - 4}" y="${y(g) + 4}" text-anchor="end" class="ax">${g}%</text>`);
+  T.forEach((t, i) => { const h = t.absent / maxA * 40; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - h}" width="${bw}" height="${h}" fill="#fecaca"><title>${t.label} (${t.weekday}): ${t.absent} absent</title></rect>`; });
+  const pts = T.map((t, i) => t.pct === null ? null : [x(i), y(t.pct)]);
+  let path = ""; pts.forEach((p, i) => { if (p) path += (path && pts[i - 1] ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); });
+  s += `<path d="${path}" fill="none" stroke="#14213d" stroke-width="2"/>`;
+  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="#f1f5f9"><title>${t.label} (${t.weekday}): Sunday / holiday - most people off, left out</title></rect>`; });
+  T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="${i === n - 1 ? 5 : 3}" fill="${pctCol(t.pct)}" stroke="#fff"><title>${t.label} (${t.weekday}): ${t.pct}% · ${t.absent} absent · ${t.late} late${t.off ? ` · ${t.off} week off / holiday` : ""}</title></circle>`;
+    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 14}" text-anchor="middle" class="ax">${t.label}</text>`; });
+  $("trend").innerHTML = s + "</svg>";
+  const v = T.filter((t) => t.pct !== null).map((t) => t.pct), avg = v.length ? Math.round(10 * v.reduce((a, b) => a + b, 0) / v.length) / 10 : null;
+  $("trendNote").textContent = avg === null ? "" : `Working-day average ${avg}% · best ${Math.max(...v)}% · lowest ${Math.min(...v)}% · red bars = absent people · grey = Sunday / holiday (left out). Hover a point for the day.`;
+}
+const BUCKETS = []; for (let m = 360; m < 840; m += 30) BUCKETS.push([m, m + 30]); BUCKETS.push([840, 1440]);
+const hm = (m) => `${(Math.floor(m / 60) % 12) || 12}:${String(m % 60).padStart(2, "0")}${m < 720 ? "am" : "pm"}`;
+function arrivals() {
+  if (!$("arr")) return;
+  const cnt = BUCKETS.map(([a, b]) => P.filter((p) => p.att_min !== null && p.att_min !== undefined && p.att_min >= a && p.att_min < b).length);
+  const early = P.filter((p) => p.att_min !== null && p.att_min !== undefined && p.att_min < 360).length;
+  const W = 640, H = 200, L = 10, bot = 34, top = 14, mx = Math.max(1, ...cnt), bw = (W - 2 * L) / BUCKETS.length;
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Attendance marking times">`;
+  BUCKETS.forEach(([a, b], i) => { const h = cnt[i] / mx * (H - top - bot), on = S.att && S.att[0] === a;
+    const c = a >= 630 ? "#d97706" : "#3b82f6";
+    s += `<g class="bk" data-att="${a}-${b}"><rect x="${L + i * bw + 2}" y="${H - bot - h}" width="${bw - 4}" height="${Math.max(h, 1)}" rx="3" fill="${c}" opacity="${S.att && !on ? .35 : .9}"><title>${b === 1440 ? "after 2:00pm" : hm(a) + "–" + hm(b)}: ${cnt[i]} people (click to filter)</title></rect>`
+      + (cnt[i] ? `<text x="${L + i * bw + bw / 2}" y="${H - bot - h - 3}" text-anchor="middle" class="ax">${cnt[i]}</text>` : "")
+      + (i % 2 === 0 ? `<text x="${L + i * bw + bw / 2}" y="${H - 12}" text-anchor="middle" class="ax">${b === 1440 ? "2pm+" : hm(a)}</text>` : "") + "</g>"; });
+  $("arr").innerHTML = s + "</svg>";
+  $("arrNote").textContent = `Orange = after 10:30 AM (late). ${early ? early + " marked before 6 AM. " : ""}Click a bar to list those people.`;
+}
+function scorecard() {
+  if (!$("sc") || !SC.length) { if ($("scCard")) $("scCard").hidden = true; return; }
+  const bar = (v) => v === null || v === undefined ? "–" : `<span class="pbar"><i style="width:${v}%;background:${pctCol(v)}"></i></span><b style="color:${pctCol(v)}">${v}%</b>`;
+  const chg = (v) => v === null || v === undefined ? "" : `<span style="color:${v <= -10 ? "#b91c1c" : v < 0 ? "#b45309" : "#15803d"};font-weight:700">${v > 0 ? "+" : ""}${v}</span>`;
+  $("sc").innerHTML = SC.map((r) => `<tr class="th-row" data-team="${esc(r.team_head)}" title="Show ${esc(r.team_head)}'s people">
+    <td><b>${esc(r.team_head)}</b></td><td class="num">${r.people}</td><td>${bar(r.pct)}</td><td>${bar(r.pct30)}</td><td class="num">${chg(r.change4)}</td>
+    <td class="num">${r.late30_pct ?? "–"}%</td><td class="num">${r.absent}</td><td class="num">${r.signs}</td><td class="num">${r.patterns}</td>
+    <td class="small">${r.lowest.map(esc).join("<br>")}</td></tr>`).join("");
+  const H7 = PK ? PK.weekdays : [];
+  if ($("heat") && PK) $("heat").innerHTML = `<tr><th>Team head</th>${H7.map((w) => `<th>${w}</th>`).join("")}</tr>` +
+    [["Everyone", PK.heat_all]].concat(SC.map((r) => [r.team_head, r.heat])).map(([n, h]) => `<tr ${n === "Everyone" ? "" : `class="th-row" data-team="${esc(n)}"`}><td><b>${esc(n)}</b></td>${h.map((v, i) =>
+      `<td class="hc" style="background:${v === null ? "#f8fafc" : pctCol(v)};color:${v === null ? "#94a3b8" : "#fff"}" title="${esc(n)} · ${H7[i]}: ${v === null ? "no working days" : v + "% attendance"} (last 12 weeks)">${v === null ? "–" : Math.round(v)}</td>`).join("")}</tr>`).join("");
+}
+function drill(code) {
+  const p = P.find((x) => x.code === code); if (!p) return;
+  const h = p.hist || {}, strip = (h.strip || "").split("");
+  const days = PK ? PK.labels : [], wds = PK ? PK.weekday_of : [];
+  const cell = (c, i) => `<span class="dc" style="background:${SCOL[c] || "#eef1f6"}" title="${esc(days[i] || "")} ${esc(wds[i] || "")}: ${SNAME[c] || c}">${(days[i] || "").split("-")[0]}</span>`;
+  const st = (l, v) => `<div class="ms"><span>${l}</span><b>${v ?? "–"}</b></div>`;
+  $("mbody").innerHTML = `<h3 style="margin:0 0 2px">${esc(p.name)} <span class="code">(${esc(p.code)})</span></h3>
+    <div class="muted small">${[p.designation, p.zone, p.manager && "Team head: " + p.manager].filter(Boolean).map(esc).join(" · ")}</div>
+    <div class="msg"><b style="color:${D.colors[p.status]}">${esc(p.status_label)}</b>${p.att ? " · marked " + esc(p.att) : ""}${p.first ? " · active " + esc(p.first) + "–" + esc(p.last) : ""}${p.market ? " · " + esc(p.market) + " h in market" : ""}${p.km ? " · " + p.km + " km" : ""}${p.leave ? " · " + esc(p.leave) : ""}</div>
+    <div class="mstats">${st("30-day attendance", h.pct30 === null || h.pct30 === undefined ? "–" : h.pct30 + "%")}${st("Late (30 days)", h.late30)}${st("Absent (30 days)", h.absent30)}${st("Leave (30 days)", h.leave30)}${st("Usual start", h.usual_start || "–")}${st("Avg time in market", h.avg_market ? Math.floor(h.avg_market / 60) + ":" + String(h.avg_market % 60).padStart(2, "0") : "–")}</div>
+    <div class="small muted" style="margin:10px 0 4px">Last ${strip.length} uploaded days (oldest → newest, hover for the date)</div><div class="strip">${strip.map(cell).join("")}</div>
+    <div class="legend small">${Object.entries(SNAME).map(([k, v]) => `<span><i style="background:${SCOL[k]}"></i>${v}</span>`).join("")}</div>
+    ${(p.patterns || []).length ? `<h4>Repeat patterns</h4>${p.patterns.map((x) => `<div class="mi"><span class="tag t-${x.level}">${esc(x.label)}</span> ${esc(x.text)}</div>`).join("")}` : ""}
+    ${p.flags.length ? `<h4>Warning signs on ${esc(D.date)}</h4>${p.evidence ? `<div class="mi"><b>Evidence:</b> ${esc(p.evidence)}</div>` : ""}${p.flags.map((f) => `<div class="mi"><span class="tag t-${f.level}">${esc(f.label)}</span> ${esc(f.why)}</div>`).join("")}` : ""}
+    ${(p.checks || []).length ? `<h4>Location &amp; selfie checks${p.risk !== null && p.risk !== undefined ? ` (risk ${p.risk})` : ""}</h4>${p.checks.map((c) => `<div class="mi"><span class="tag t-${c.level}">${esc(c.kind)}: ${esc(c.label)}</span> ${esc(c.why)}</div>`).join("")}` : ""}
+    ${p.not_marked ? `<div class="mi">Last marked in Bizom: <b>${esc(p.last_marked || "not in the uploaded days")}</b>${p.absent_streak > 1 ? ` · absent ${p.absent_streak} working days in a row` : ""}</div>` : ""}
+    ${p.calls ? `<div class="mi">Visits: ${p.calls} (${p.productive} productive)${p.order_value ? ", order value ₹" + Math.round(p.order_value).toLocaleString("en-IN") : ""}</div>` : ""}
+    <p class="note">Warning signs are for checking with the person, not proof of anything.</p>`;
+  $("modal").hidden = false; document.body.style.overflow = "hidden";
+}
+const closeModal = () => { $("modal").hidden = true; document.body.style.overflow = ""; };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+document.addEventListener("click", (e) => {
+  const bk = e.target.closest("[data-att]"), tr = e.target.closest("[data-team]"), mx = e.target.closest("#mx");
+  if (mx || e.target.id === "modal") { closeModal(); e.stopPropagation(); }
+  else if (bk) { const [a, b] = bk.dataset.att.split("-").map(Number); S.att = S.att && S.att[0] === a ? null : [a, b]; S.status = "all"; render(); arrivals(); $("people").scrollIntoView({behavior: "smooth"}); }
+  else if (tr) { S.mgr = tr.dataset.team; S.status = "all"; render(); $("people").scrollIntoView({behavior: "smooth"}); }
+}, true);
+window.FS_drill = drill;
+trendChart(); arrivals(); scorecard();
 render();
 })();
 (function () {
@@ -205,7 +321,7 @@ render();
   const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const col = (l) => l === "high" ? "#b91c1c" : l === "medium" ? "#b45309" : "#475569";
   document.getElementById("patCard").hidden = false;
-  document.getElementById("pats").innerHTML = X.map((x) => x.patterns.map((p, i) => `<tr>
+  document.getElementById("pats").innerHTML = X.map((x) => x.patterns.map((p, i) => `<tr class="p" data-p="${esc(x.code)}">
     <td>${i ? "" : `<b>${esc(x.name)}</b> <span class="code">(${esc(x.code)})</span>`}</td><td>${i ? "" : esc(x.manager)}</td>
     <td>${i ? "" : esc(x.status_label)}</td>
     <td><span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;color:${col(p.level)};background:#f8fafc;border:1px solid #e6e8ef">${esc(p.label)}</span></td>
@@ -217,7 +333,7 @@ render();
   const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const col = (l) => l === "high" ? "#b91c1c" : l === "medium" ? "#b45309" : "#475569";
   document.getElementById("checksCard").hidden = false;
-  document.getElementById("checks").innerHTML = C.map((c) => `<tr><td class="num"><b style="color:#fff;background:${c.risk >= 60 ? "#b91c1c" : c.risk >= 30 ? "#d97706" : "#64748b"};padding:2px 8px;border-radius:999px">${c.risk}</b></td>
+  document.getElementById("checks").innerHTML = C.map((c) => `<tr class="p" data-p="${esc(c.code)}"><td class="num"><b style="color:#fff;background:${c.risk >= 60 ? "#b91c1c" : c.risk >= 30 ? "#d97706" : "#64748b"};padding:2px 8px;border-radius:999px">${c.risk}</b></td>
     <td><b>${esc(c.name)}</b> <span class="code">(${esc(c.code)})</span></td><td>${esc(c.manager)}</td>
     <td>${c.signs.map((s) => `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;margin:1px 3px 1px 0;color:${col(s.level)};background:#f8fafc;border:1px solid #e6e8ef">${esc(s.kind)}: ${esc(s.label)}</span>`).join("")}</td>
     <td style="font-size:12px">${esc(c.why)}</td></tr>`).join("");

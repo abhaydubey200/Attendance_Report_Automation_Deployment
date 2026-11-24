@@ -215,4 +215,8 @@ def context(session: Session, day: date, codes: set[str] | None) -> dict:
     out["patterns"] = patterns.day_patterns(session, day, {r.code for r in rows_of[day]}, sup)
     out["team_trend"] = patterns.team_trend(session, day, {r.code for r in rows_of[day]})
     out["absent_info"] = patterns.absent_details(session, day, {r.code for r in rows_of[day] if r.status == "ABSENT"})
+    from sales import insights
+    from sales.report import manager_label
+    out["pack"] = insights.pack(session, day, {r.code for r in rows_of[day]},
+                                {r.code: manager_label(r.manager_name) or "No team head" for r in rows_of[day]})
     return out

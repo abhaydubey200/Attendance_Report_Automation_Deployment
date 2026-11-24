@@ -318,3 +318,14 @@ def test_new_sales_api_routes(staffed, settings, tmp_path):
         assert api.post("/api/v1/sales/monthly/2026-11/approve", headers=H, json={}).json()["sent_now"] == 4
         assert {e["kind"] for e in api.get("/api/v1/sales/emails").json()} == {"Month-end"}
         assert api.get("/api/v1/sales/monthly/2026-13").status_code == 422
+
+
+def test_two_calls_at_the_same_time_one_without_location():
+    """Real 23-Nov-2026 export: same start and end time, only one call had a location -> sorting must not crash."""
+    head = ["Zone", "Call_ID", "User_Name", "EMP_Id", "Call_Start_Date", "Call_Start_Time", "Call_End_Time", "Total_Time_Spent",
+            "Call_Status", "Order_Type", "Reason_Category_Name", "Distance_Variance(Mtrs)", "Call_Latitude", "Call_Longitude", "Order_Value",
+            "Outlet_Mobile_No"]
+    rows = [["GTR01", "1", "SL00001", "SL00001", D, "10:00:00", "10:00:20", "0:0:20", "PC", "Normal", "", "20", "", "", "", "9"],
+            ["GTR01", "2", "SL00001", "SL00001", D, "10:00:00", "10:00:20", "0:0:20", "PC", "Normal", "", "20", "28.61", "77.21", "", "9"]]
+    c = bizom.parse(bizom.read_rows(csv_bytes(head, rows), "c.csv"))
+    assert c.calls["SL00001"].calls == 2 and c.calls["SL00001"].first_call

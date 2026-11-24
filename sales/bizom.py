@@ -358,7 +358,7 @@ def parse(rows: list[list[str]], short_call_seconds: int = 60, far_call_m: float
                 g(r, "call_id")[:40], start, end, dur, coord(lat, lon), oid, g(r, "beat_id") or None, g(r, "beat_name")[:200] or None,
                 dist, g(r, "call_status").upper() == "PC"))
         points[code].sort(key=lambda p: p.start or "99:99")
-        calls.sort()
+        calls.sort(key=lambda c: (c[0], c[1]))   # by time only: a tie with one call missing its location must not crash
         if calls:
             s.first_call, s.last_call = calls[0][0], max(c[1] for c in calls)
         for (a_s, a_e, la1, lo1), (b_s, _b_e, la2, lo2) in zip(calls, calls[1:]):

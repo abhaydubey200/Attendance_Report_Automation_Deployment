@@ -37,9 +37,9 @@ def test_hq_and_outstation_days(day):
     with session_scope(day) as s:
         service.import_history(s, "AttendanceReport.csv", history_csv())          # Chetan usually starts at base; 18-Nov is 50 km away
         flags, ev = _chetan(s, None)
-        assert "GEO_START_AWAY" in flags and "no HQ / outstation information" in ev
+        assert "GEO_START_AWAY" in flags and "HQ / outstation information was recorded" in ev
         flags, ev = _chetan(s, "Retailing HQ")
-        assert "GEO_AWAY_AT_HQ" in flags and "GEO_START_AWAY" not in flags and 'Bizom shows "Retailing HQ"' in ev
+        assert "GEO_AWAY_AT_HQ" in flags and "GEO_START_AWAY" not in flags and 'Recorded as "Retailing HQ"' in ev
         flags, _ = _chetan(s, "Retailing EX-HQ")
         assert not {"GEO_AWAY_AT_HQ", "GEO_START_AWAY"} & flags                   # outstation: far from base is expected
 

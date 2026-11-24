@@ -130,6 +130,7 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         assert json.loads(items["zonal2@example.com"].content)["codes"] == ["SL00006"]
         html, text, files = mail.render(s, items["ravi@example.com"])
         assert "Needs attention" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
+        assert "bizom" not in (html + text).lower()                                       # reports never name the source app
         assert [f.filename.split("_")[-1] for f in files] == ["Manager.xlsx", "dashboard.html"]
         names = load_workbook(io.BytesIO(files[0].content)).sheetnames
         assert names[0] == "Dashboard" and {"Trend", "Last 30 days", "Needs checking", "Location & selfie checks", "Absent", "Team list"} <= set(names)

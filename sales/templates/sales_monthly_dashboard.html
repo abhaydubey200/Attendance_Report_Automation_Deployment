@@ -17,7 +17,7 @@
 <header class="app">
   <div class="hd">
     <img src="{{ logo }}" alt="apis">
-    <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.month_long }} · {{ v.work_days }} working days · {{ v.recipient }}</div></div>
+    <div><h1>{{ v.title }}</h1><div class="sub">{{ v.month_long }} · {{ v.work_days }} working days · {{ v.recipient }}</div></div>
     <div class="sp"></div>
     <button class="ib" id="theme" title="Light / dark (T)">◐ Theme</button>
     <button class="ib" id="share" title="Copy a link to exactly this view (filters + tab)">⧉ Copy view</button>
@@ -77,7 +77,7 @@
     </div>
   </section>
 </main>
-<footer>Source: Bizom · {{ v.month_long }}. Attendance % = present + late + half of half days, over the days people were due (week offs left out). Warning signs are for checking, not proof.</footer>
+<footer>Field sales attendance · {{ v.month_long }}. Attendance % = present + late + half of half days, over the days people were due (week offs left out). Warning signs are for checking, not proof.</footer>
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="dh" id="dh"></div><div class="db" id="dbody"></div></aside>
 <script>{% include "_apis_kit.js" %}</script>

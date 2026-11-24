@@ -591,17 +591,22 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     attachments = []
     dash_people = people if kind == "hod" else s["company"]
     notes = {r["code"].upper(): p for r in dash_people if (p := pattern(hist.get(r["code"].upper(), [])) or week_note(recent(r["code"])))}
+    from daily import pack30
+    rules_ = get_rules(session, settings)
+    pk = pack30.pack(session, item.report_date, {r["code"].upper() for r in dash_people},
+                     {r["code"].upper(): (r.get("hod") or "No HOD") for r in dash_people} if kind != "hod" else None,
+                     rules_.single_punch_counts_present) if dash_people else None
     if cfg.attach_excel:
         from daily import daily_excel
 
-        attachments.append(Attachment(f"{stem}.xlsx", daily_excel.build(settings, item, kind, s, blocks, ups, grid, notes), XLSX))
+        attachments.append(Attachment(f"{stem}.xlsx", daily_excel.build(settings, item, kind, s, blocks, ups, grid, notes, pk), XLSX))
     if cfg.attach_dashboard and dash_people:
         prev_people = [dict(r, status=prev_rows[r["code"].upper()]["status"], flags=prev_rows[r["code"].upper()]["flags"])
                        for r in dash_people if r["code"].upper() in prev_rows] if prev_up else None
         attachments.append(Attachment(f"{stem}_dashboard.html",
                                       dashboard(session, settings, item, dash_people, prev_people or None,
                                                 prev_up.report_date if prev_up else None, notes,
-                                                teams=blocks["teams"] if kind != "hod" else None), "text/html"))
+                                                teams=blocks["teams"] if kind != "hod" else None, pack=pk), "text/html"))
     return html, text, attachments
 
 
@@ -728,7 +733,8 @@ def roster_xlsx(settings: Settings, item: MailItem, s: dict) -> bytes:
 
 
 def dashboard(session: Session, settings: Settings, item: MailItem, people: list[dict], previous_rows: list[dict] | None = None,
-              previous_date: date | None = None, patterns: dict[str, str] | None = None, teams: list[dict] | None = None) -> bytes:
+              previous_date: date | None = None, patterns: dict[str, str] | None = None, teams: list[dict] | None = None,
+              pack: dict | None = None) -> bytes:
     """The HTML dashboard, limited to this recipient's people: key figures, comparison with the previous report day,
     the exceptions with the action expected from the manager, and the full searchable list."""
     from daily.render import dashboard_html_for
@@ -750,7 +756,7 @@ def dashboard(session: Session, settings: Settings, item: MailItem, people: list
                               analysis.highlights(summary, {}, rules, None, item.recipient_name),
                               analysis.in_time_buckets(results), breakdown, people, settings.app.date_format,
                               routing_columns=False, recipient=item.recipient_name, previous_rows=previous_rows,
-                              previous_date=previous_date, patterns=patterns, company_view=bool(teams))
+                              previous_date=previous_date, patterns=patterns, company_view=bool(teams), pack=pack)
 
 
 # ---------------------------------------------------------------------------- sending

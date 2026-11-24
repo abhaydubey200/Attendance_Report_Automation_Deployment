@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.config import Settings
-from daily.branding import excel_banner, logo_data_uri
+from daily.branding import excel_banner, favicon_data_uri, logo_data_uri
 from daily.mailer import Attachment
 from database.connection import session_scope
 from database.models.sales import SalesDayUpload, SalesEmployee, SalesEmployeeDay, SalesJobRun, SalesMailItem
@@ -439,4 +439,4 @@ def excel(v: dict) -> bytes:
 def dashboard(v: dict) -> bytes:
     data = {k: v[k] for k in ("people", "weeks", "teams", "days", "colors", "trend", "scorecards", "weekdays", "prev_label", "month_long")}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return _env.get_template("sales_monthly_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js).encode("utf-8")
+    return _env.get_template("sales_monthly_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js, favicon_fs=favicon_data_uri("fs")).encode("utf-8")

@@ -301,7 +301,9 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
     # Safe to embed inside <script>: no "</" or "<!--" can appear in the JSON text.
     data_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     bd = breakdown_ or {"by": "Category", "rows": []}
-    return _env.get_template("dashboard.html").render(
+    from daily.branding import favicon_data_uri
+
+    return _env.get_template("dashboard.html").render(favicon_ho=favicon_data_uri("ho"),
         title=title, data_json=data_json, logo=logo_data_uri(), v=view, emailed=emailed, recipient=recipient, company_view=company_view,
         heading=("Daily Company Attendance Dashboard" if company_view else "Daily Team Attendance Dashboard") if emailed
         else "Daily Attendance Dashboard",

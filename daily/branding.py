@@ -49,3 +49,10 @@ def excel_banner(wb, ws, widths: list[float], title: str, subtitle: str | None =
             ws.merge_range(row, 0, row, last, text, fmt)
         else:
             ws.write(row, 0, text, fmt)
+
+
+@lru_cache(maxsize=None)
+def favicon_data_uri(module: str = "ho") -> str:
+    """Browser-tab icon for the HTML dashboards: 'ho' = Head Office (building), 'fs' = Field Sales (map pin)."""
+    svg = (ASSETS / f"favicon_{'fs' if module == 'fs' else 'ho'}.svg").read_bytes()
+    return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")

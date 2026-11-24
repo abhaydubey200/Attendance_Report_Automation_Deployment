@@ -850,7 +850,9 @@ def dashboard_html(settings: Settings, item: MailItem, month: str, days: list[da
     data_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     data_json = data_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     is_director = company
-    return _env.get_template("monthly_dashboard.html").render(company=company,
+    from daily.branding import favicon_data_uri
+
+    return _env.get_template("monthly_dashboard.html").render(company=company, favicon_ho=favicon_data_uri("ho"),
         title=f"Monthly Attendance - {label(month)} - {item.recipient_name}", logo=logo_data_uri(), data_json=data_json,
         recipient="HR team" if view == "hr" else item.recipient_name, month_long=first.strftime("%B %Y"),
         heading="Monthly Company Attendance Report" if is_director else "Monthly Team Attendance Report",

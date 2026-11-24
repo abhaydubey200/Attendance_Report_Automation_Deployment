@@ -23,6 +23,12 @@ export const SALES_PAGES = [
 ] as const;
 
 export function SalesLayout() {
+  useEffect(() => {   // the browser tab shows the Field Sales icon while in this module
+    const link = document.getElementById("favicon") as HTMLLinkElement | null;
+    if (!link) return;
+    link.href = "/favicon-fs.svg";
+    return () => { link.href = "/favicon-ho.svg"; };
+  }, []);
   const { me, logout, hasPermission } = useAuth();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);

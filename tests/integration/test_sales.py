@@ -132,7 +132,10 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         assert "Needs checking" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
         assert [f.filename.split("_")[-1] for f in files] == ["Manager.xlsx", "dashboard.html"]
         names = load_workbook(io.BytesIO(files[0].content)).sheetnames
-        assert names[0] == "Summary" and {"Trend", "Last 30 days", "Needs checking", "Location & selfie checks", "Absent", "Team list"} <= set(names)
+        assert names[0] == "Dashboard" and {"Trend", "Last 30 days", "Needs checking", "Location & selfie checks", "Absent", "Team list"} <= set(names)
+        wbx = load_workbook(io.BytesIO(files[0].content))
+        assert "TeamList" in wbx["Team list"].tables                                    # pivots count from this table
+        assert any(str(c.value).startswith("=COUNTIFS(TeamList[") for row in wbx[next(n for n in names if n.startswith("Pivot"))].iter_rows() for c in row)
         assert "9999999999" not in html + text + files[1].content.decode() and "<img src=x>" not in files[1].content.decode()
         hr_html, _, hr_files = mail.render(s, items["HR"])
         assert "Data to fix" in hr_html and "Data issues" in load_workbook(io.BytesIO(hr_files[0].content)).sheetnames

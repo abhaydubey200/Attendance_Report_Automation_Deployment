@@ -107,7 +107,8 @@ def _scope_totals(people: list[dict], days: list[date], by_code: dict, rules) ->
         # A Sunday or holiday where only a handful of people were due (one punch, one stray "A") is not a working day:
         # it is left out of the trend and the working-day count (those people still count in the totals).
         working = dt["tracked"] > 0 and dt["tracked"] >= MIN_WORKING_SHARE * len(present)
-        trend.append({"date": d.isoformat(), "attendance_pct": dt["attendance_pct"] if working else None})
+        trend.append({"date": d.isoformat(), "attendance_pct": dt["attendance_pct"] if working else None, "absent": dt["absent"],
+                      "late": dt["late"], "missing_punch": dt["missing_punch"], "leave": dt["leave"] + dt["half_day"]})
     t["trend"] = trend
     t["work_days"] = sum(1 for x in trend if x["attendance_pct"] is not None)   # days most people were due to work
     return t
@@ -126,6 +127,26 @@ def _groups(people: list[dict], key: str) -> list[dict]:
                     "attendance_pct": round(100 * present_eq / tracked, 1) if tracked else None,
                     "attention": sum(1 for p in ps if p["reason"])})
     return out
+
+
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def team_heat(rows: list[dict], people: list[dict], days: list[date], by_code: dict, trend: list[dict], rules) -> None:
+    """Adds each team's attendance % per weekday (working days only) and late % to the team rows, in place."""
+    working = {date.fromisoformat(t["date"]) for t in trend if t["attendance_pct"] is not None}
+    g: dict[str, list[dict]] = defaultdict(list)
+    for p in people:
+        g[p["hod"] or NO_HOD].append(p)
+    for r in rows:
+        per_wd: list[list[dict]] = [[] for _ in range(7)]
+        for p in g.get(r["name"], []):
+            for d, x in by_code.get(p["code"].upper(), {}).items():
+                if d in working:
+                    per_wd[d.weekday()].append(x)
+        r["heat"] = [reports._tally(x, rules)["attendance_pct"] if x else None for x in per_wd]
+        tracked = sum(p["tracked"] for p in g.get(r["name"], []))
+        r["late_pct"] = round(100 * r["late"] / tracked, 1) if tracked else None
 
 
 def team_table(people: list[dict], prev_people: dict[str, dict] | None) -> list[dict]:
@@ -361,6 +382,7 @@ def render(session: Session, settings: Settings, item: MailItem) -> tuple[str, s
     ins = month_insights.build(scope, days, by_code, rules, totals, prev, prev_people, who)
     # HOD emails never name HODs, teams or managers; the Director's and HR's show a team-by-team table by HOD
     teams = team_table(scope, prev_people) if company else []
+    team_heat(teams, scope, days, by_code, totals["trend"], rules)
     attention = sorted([p for p in scope if p["reason"]], key=lambda p: (-p["absent"], -p["missing_punch"], -p["late"], p["name"]))
     for p in scope:
         b = (prev_people or {}).get(p["code"].upper())
@@ -443,9 +465,9 @@ def _text(greeting: str, month: str, totals: dict, blocks: dict, ins: dict, atta
 def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], people: list[dict], totals: dict, groups: list[dict],
           blocks: dict, ins: dict | None = None) -> bytes:
     """Month-end workbook. Sheet order by recipient:
-    HOD      Summary, Insights, Needs attention, Weeks, Employees, Calendar
-    Director Summary, Teams, Insights, Needs attention, Weeks, Employees, Calendar
-    HR       Summary, Teams, Needs attention, Routing problems, Weeks, Insights, Employees, Calendar"""
+    HOD      Summary, Insights, Needs attention, Weeks, Day by day, Employees, Calendar
+    Director Summary, Teams, Insights, Needs attention, Weeks, Day by day, Employees, Calendar
+    HR       Summary, Teams, Needs attention, Routing problems, Weeks, Day by day, Insights, Employees, Calendar"""
     view = blocks.get("view", "hod")
     company = view in ("director", "hr")
     buf = io.BytesIO()
@@ -538,8 +560,13 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
         ws = wb.add_worksheet("Teams")
         cols = [("Rank", "rank", 6), ("HOD's team", "name", 30), ("People", "employees", 8), ("Attendance %", "attendance_pct", 12),
                 (f"{label(previous_month_of(month))} %", "before", 11), ("Change (pts)", "change", 11), ("Absences", "absent", 10),
-                ("Leave", "leave", 8), ("Late", "late", 8), ("Missing punch", "missing_punch", 10), ("Need attention", "attention", 10)]
-        excel_banner(wb, ws, [w for _, _, w in cols], f"Teams at a glance - {label(month)}", "By HOD's team, best attendance first")
+                ("Leave", "leave", 8), ("Late", "late", 8), ("Late %", "late_pct", 8), ("Missing punch", "missing_punch", 10),
+                ("Need attention", "attention", 10)] + [(w, f"wd{k}", 6) for k, w in enumerate(WEEKDAYS)]
+        for g in groups:
+            for k, x in enumerate(g.get("heat") or [None] * 7):
+                g[f"wd{k}"] = x
+        excel_banner(wb, ws, [w for _, _, w in cols], f"Teams at a glance - {label(month)}",
+                     "By HOD's team, best attendance first; Mon-Sun = attendance % on that weekday (working days only)")
         for j, (h, _, w) in enumerate(cols):
             ws.write(3, j, h, head)
             ws.set_column(j, j, w)
@@ -553,11 +580,19 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
                 ws.write(i, j, "" if v is None else v, f)
         last = 3 + len(groups)
         if groups:
+            w0 = len(cols) - 7
+            ws.conditional_format(4, w0, last, w0 + 6, {"type": "3_color_scale", "min_color": "#F8696B", "mid_color": "#FFEB84",
+                                  "max_color": "#63BE7B", "min_type": "num", "min_value": 60, "mid_type": "num", "mid_value": 85,
+                                  "max_type": "num", "max_value": 100})
+            ws.autofilter(3, 0, last, len(cols) - 1)
             chart = wb.add_chart({"type": "bar"})
-            chart.add_series({"name": "Attendance %", "categories": ["Teams", 4, 1, last, 1], "values": ["Teams", 4, 3, last, 3],
+            chart.add_series({"name": label(month), "categories": ["Teams", 4, 1, last, 1], "values": ["Teams", 4, 3, last, 3],
                               "fill": {"color": "#14213D"}, "gap": 50, "data_labels": {"value": True, "num_format": "0.0"}})
+            if any(g.get("before") is not None for g in groups):
+                chart.add_series({"name": label(previous_month_of(month)), "categories": ["Teams", 4, 1, last, 1],
+                                  "values": ["Teams", 4, 4, last, 4], "fill": {"color": "#F5B800"}, "gap": 50})
             chart.set_title({"name": "Attendance % by team", "name_font": {"size": 11, "color": "#14213D"}})
-            chart.set_legend({"none": True})
+            chart.set_legend({"position": "bottom"})
             chart.set_x_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
             chart.set_y_axis({"reverse": True})
             chart.set_size({"width": 620, "height": max(260, 24 * len(groups) + 80)})
@@ -627,6 +662,42 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             c2.set_size({"width": 480, "height": 260})
             ws.insert_chart(last + 2, 4, c2)
 
+    def day_sheet():
+        tr = totals.get("trend") or []
+        if not tr:
+            return
+        ws = wb.add_worksheet("Day by day")
+        cols = [("Date", 12), ("Day", 7), ("Attendance %", 12), ("Absent", 9), ("Late", 8), ("Missing punch", 10), ("Leave", 8)]
+        excel_banner(wb, ws, [w for _, w in cols], f"Day by day - {label(month)}",
+                     "Days when almost nobody was due to work (Sundays / holidays) show 'off day' and are left out of the %")
+        for j, (h, w) in enumerate(cols):
+            ws.write(3, j, h, head)
+            ws.set_column(j, j, w)
+        for i, t in enumerate(tr, start=4):
+            d = date.fromisoformat(t["date"])
+            ws.write(i, 0, f"{d.day}-{d:%b}", cell)
+            ws.write(i, 1, WEEKDAYS[d.weekday()], cell)
+            if t["attendance_pct"] is None:
+                ws.write(i, 2, "off day", note)
+            else:
+                ws.write_number(i, 2, t["attendance_pct"], pct_fmt[band(t["attendance_pct"])])
+            for j, k in ((3, "absent"), (4, "late"), (5, "missing_punch"), (6, "leave")):
+                ws.write(i, j, t.get(k, 0), num if t.get(k) else zero)
+        last = 3 + len(tr)
+        ch = wb.add_chart({"type": "line"})
+        ch.add_series({"name": "Attendance %", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 2, last, 2],
+                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+        colc = wb.add_chart({"type": "column"})
+        colc.add_series({"name": "Absent", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 3, last, 3],
+                         "fill": {"color": "#FCA5A5"}, "y2_axis": True})
+        ch.combine(colc)
+        ch.set_title({"name": f"{label(month)}: attendance % and absent people", "name_font": {"size": 12}})
+        ch.set_y_axis({"min": 40, "max": 100})
+        ch.set_legend({"position": "bottom"})
+        ch.set_size({"width": 760, "height": 340})
+        ws.insert_chart(3, 8, ch)
+        ws.freeze_panes(4, 1)
+
     def routing_problems():
         held = blocks.get("held") or []
         if not held:
@@ -693,9 +764,9 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
         if ins:
             _insights_sheet(wb, ins, month, head, cell, bold, wrap, note, pct_fmt, band)
 
-    order = {"hod": [summary, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
-             "director": [summary, teams, insights, needs_attention, weeks_sheet, employees_sheet, calendar_sheet],
-             "hr": [summary, teams, needs_attention, routing_problems, weeks_sheet, insights, employees_sheet, calendar_sheet]}[view]
+    order = {"hod": [summary, insights, needs_attention, weeks_sheet, day_sheet, employees_sheet, calendar_sheet],
+             "director": [summary, teams, insights, needs_attention, weeks_sheet, day_sheet, employees_sheet, calendar_sheet],
+             "hr": [summary, teams, needs_attention, routing_problems, weeks_sheet, day_sheet, insights, employees_sheet, calendar_sheet]}[view]
     for sheet in order:
         sheet()
     wb.close()

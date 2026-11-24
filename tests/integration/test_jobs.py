@@ -215,7 +215,7 @@ def test_monthly_report_archive_and_guarded_cleanup(engine, settings, master):
         director = next(i for i in items if i.recipient_key == "MONTHLY:DIRECTOR")
         html, text, files = mail.render(s, settings, director)
         assert "Monthly Company Attendance Report" in html and "Next-month planning" not in html and "Teams at a glance" in html and "not a measure of productivity" not in html and "Details:" not in html
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Teams", "Insights", "Needs attention", "Weeks",
+        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Teams", "Insights", "Needs attention", "Weeks", "Day by day",
                                                                          "Employees", "Calendar"]
         assert "Teams at a glance" in html          # (one week of test data: no week table)
         assert 'data-act="tab:teams"' in files[1].content.decode()
@@ -229,7 +229,7 @@ def test_monthly_report_archive_and_guarded_cleanup(engine, settings, master):
         o_html, _, o_files = mail.render(s, settings, hod)
         assert "Monthly Team Attendance Report" in o_html and "Teams at a glance" not in o_html and "HOD" not in o_html
         wb = load_workbook(io.BytesIO(o_files[0].content))
-        assert wb.sheetnames == ["Summary", "Insights", "Needs attention", "Weeks", "Employees", "Calendar"]
+        assert wb.sheetnames == ["Summary", "Insights", "Needs attention", "Weeks", "Day by day", "Employees", "Calendar"]
         assert "Key takeaways" not in o_html and "HOD's team" not in [c.value for c in wb["Employees"][1]]
         assert 'data-act="tab:teams"' not in o_files[1].content.decode()
         dash = files[1].content.decode()

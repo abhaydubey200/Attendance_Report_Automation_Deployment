@@ -5,6 +5,7 @@ the photos stay in the HR Portal."""
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from datetime import date
 
@@ -18,6 +19,18 @@ from sales.geo import GEO, UNUSUAL
 from sales.photos import PHOTO
 
 LEVELS = ("high", "medium", "low")
+
+
+_NEUTRAL = ((re.compile(r"\bBizom KM\b"), "Recorded KM"), (re.compile(r'\bBizom shows "'), 'Recorded as "'),
+            (re.compile(r"Bizom gives no HQ / outstation information for this day\."), "No HQ / outstation information was recorded for this day."),
+            (re.compile(r"\bin Bizom\b"), "in the field app"), (re.compile(r"\bBizom's\b"), "the field app's"), (re.compile(r"\bBizom\b"), "the field app"))
+
+
+def neutral(text: str) -> str:
+    """Report wording never names the source app (user 2026-11-24), also for evidence stored before that."""
+    for rx, new in _NEUTRAL:
+        text = rx.sub(new, text)
+    return text
 
 
 def day_checks(session: Session, day: date, codes: set[str] | None) -> list[dict]:
@@ -39,14 +52,14 @@ def day_checks(session: Session, day: date, codes: set[str] | None) -> list[dict
         signs: list[dict] = []
         if sc is not None and sc.unusual:
             signs.append({"code": "UNUSUAL_DAY", "label": UNUSUAL[0], "level": UNUSUAL[1], "kind": "Pattern",
-                          "why": "; ".join(json.loads(sc.reasons or "[]")).capitalize()})
+                          "why": neutral("; ".join(json.loads(sc.reasons or "[]")).capitalize())})
         if r is not None and r.geo_flags:
             ev = json.loads(r.geo_evidence or "{}")
-            signs += [{"code": k, "label": GEO[k][0], "level": GEO[k][1], "kind": "Location", "why": ev.get(k, "")}
+            signs += [{"code": k, "label": GEO[k][0], "level": GEO[k][1], "kind": "Location", "why": neutral(ev.get(k, ""))}
                       for k in r.geo_flags.split(",") if k in GEO]
         for p in photos.get(code, []):
             ev = json.loads(p.evidence or "{}")
-            signs += [{"code": k, "label": PHOTO[k][0], "level": PHOTO[k][1], "kind": "Selfie", "why": ev.get(k, "")}
+            signs += [{"code": k, "label": PHOTO[k][0], "level": PHOTO[k][1], "kind": "Selfie", "why": neutral(ev.get(k, ""))}
                       for k in p.flags.split(",") if k in PHOTO]
         if not signs:
             continue

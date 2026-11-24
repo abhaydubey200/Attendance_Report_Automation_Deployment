@@ -12,7 +12,7 @@
 <header class="app">
   <div class="hd">
     <img src="{{ logo }}" alt="apis">
-    <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.weekday }}, {{ v.date_long }} · {{ v.recipient }}</div></div>
+    <div><h1>{{ v.title }}</h1><div class="sub">{{ v.weekday }}, {{ v.date_long }} · {{ v.recipient }}</div></div>
     <div class="sp"></div>
     <button class="ib" id="theme" title="Light / dark (T)">◐ Theme</button>
     <button class="ib" id="share" title="Copy a link to exactly this view (filters + tab) for your own use">⧉ Copy view</button>
@@ -38,7 +38,7 @@
   <section class="view" id="v-overview">
     <div class="tiles" id="tiles"></div>
     <div class="g21">
-      <div class="card"><h3>Last 30 Bizom days <span class="muted">– attendance % on working days (line), absent people (bars); grey = off day, left out</span></h3><div id="ovTrend"></div></div>
+      <div class="card"><h3>Last 30 report days <span class="muted">– attendance % on working days (line), absent people (bars); grey = off day, left out</span></h3><div id="ovTrend"></div></div>
       <div class="card"><h3>Status <span class="muted">– click a slice</span></h3><div id="donut"></div></div>
     </div>
     <div class="g3">
@@ -68,7 +68,7 @@
   </section>
 
   <section class="view" id="v-teams" hidden>
-    <div class="card"><h3>Team-head scorecard <span class="muted">– this day from the people in the current filter; 30-day figures from Bizom history · click a team head to see their people</span></h3>
+    <div class="card"><h3>Team-head scorecard <span class="muted">– this day from the people in the current filter; 30-day figures from the stored report days · click a team head to see their people</span></h3>
       <div class="tw"><table class="t" id="sctab"><thead></thead><tbody></tbody></table></div></div>
     <div class="g2">
       <div class="card"><h3>Attendance by weekday <span class="muted">– last 12 weeks, working days</span></h3><div class="tw" style="border:0;max-height:none"><table class="heat" id="heat"></table></div></div>
@@ -90,7 +90,7 @@
   </section>
 
   <section class="view" id="v-trends" hidden>
-    <div class="card"><div class="tb"><h3 style="margin:0">Day by day <span class="muted">– last 30 Bizom days</span></h3><span style="flex:1"></span><div class="seg" id="tmet"></div></div><div id="bigTrend"></div>
+    <div class="card"><div class="tb"><h3 style="margin:0">Day by day <span class="muted">– last 30 report days</span></h3><span style="flex:1"></span><div class="seg" id="tmet"></div></div><div id="bigTrend"></div>
       <div class="tw" style="margin-top:10px;max-height:320px"><table class="t dense" id="ttab"></table></div></div>
     <div class="g2">
       <div class="card"><h3>Who is behind the absences <span class="muted">– most absent days in 30, current filter</span></h3><div class="tw" style="max-height:420px"><table class="t dense" id="absTop"></table></div></div>
@@ -102,7 +102,7 @@
     <div class="card"><h3>Data issues <span class="muted">– for HR</span></h3><div id="dataBox"></div></div>
   </section>{% endif %}
 </main>
-<footer>Source: Bizom · {{ v.date_long }}. Warning signs are for checking with the person, not proof of anything. Supervisors (ASE / ASM / TSM / RSM…) are not checked for market activity.</footer>
+<footer>Field sales attendance · {{ v.date_long }}. Warning signs are for checking with the person, not proof of anything. Supervisors (ASE / ASM / TSM / RSM…) are not checked for market activity.</footer>
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="dh" id="dh"></div><div class="db" id="dbody"></div></aside>
 <div class="lb" id="lb" hidden><img id="lbImg" alt=""></div>
@@ -196,7 +196,7 @@ $("tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-t
 
 // ------------------------------------------------------------------ charts
 function trendSvg(T, metric, h) {
-  if (!T || T.length < 2) return '<p class="muted">Not enough Bizom days yet.</p>';
+  if (!T || T.length < 2) return '<p class="muted">Not enough report days yet.</p>';
   const W = 760, H = h || 220, L = 40, R = 12, top = 10, bot = 34, n = T.length, x = (i) => L + i * (W - L - R) / (n - 1);
   const val = (t) => metric === "pct" ? t.pct : metric === "absent" ? (t.off_day ? null : t.absent) : (t.off_day ? null : t.late);
   const vals = T.map(val).filter((v) => v !== null), hi = metric === "pct" ? 100 : Math.max(5, ...vals) * 1.15, lo = metric === "pct" ? Math.max(0, Math.floor(Math.min(...vals, 90) / 10) * 10 - 10) : 0;
@@ -240,7 +240,7 @@ function heatRows(rows, weekdays) {
   const show = weekdays.map((_, k) => rows.some((r) => r.heat[k] !== null && r.heat[k] !== undefined));
   return `<tr><th></th>${weekdays.map((w, k) => show[k] ? `<th>${w}</th>` : "").join("")}<th>30 days</th></tr>` + rows.map((r) => `<tr class="${r.click ? "ck" : ""}" ${r.click ? `data-mgr="${esc(r.name)}"` : ""}><td>${esc(r.name)}</td>${r.heat.map((v, k) => show[k] ? `<td class="hc" style="background:${v === null ? "var(--soft)" : pc(v)};${v === null ? "color:var(--muted)" : ""}" title="${esc(r.name)} · ${weekdays[k]}: ${v === null ? "no working days" : v + "%"}">${v === null ? "–" : Math.round(v)}</td>` : "").join("")}<td class="num"><b style="color:${pc(r.pct30)}">${pctS(r.pct30)}</b></td></tr>`).join("");
 }
-const mini = (h) => h && h.strip ? `<span class="mini" title="Last ${h.strip.length} Bizom days">${h.strip.split("").map((c, i) => `<i style="background:${(SCODE[c] || SCODE["-"])[1]}" title="${PK ? PK.labels[i] + " " + PK.weekday_of[i] : ""}: ${(SCODE[c] || SCODE["-"])[0]}"></i>`).join("")}</span>` : "";
+const mini = (h) => h && h.strip ? `<span class="mini" title="Last ${h.strip.length} report days">${h.strip.split("").map((c, i) => `<i style="background:${(SCODE[c] || SCODE["-"])[1]}" title="${PK ? PK.labels[i] + " " + PK.weekday_of[i] : ""}: ${(SCODE[c] || SCODE["-"])[0]}"></i>`).join("")}</span>` : "";
 const tags = (p) => p.flags.map((f) => `<span class="tag t-${f.level}" title="${esc(f.why)}">${esc(f.label)}</span>`).join("")
   + (p.checks || []).map((c) => `<span class="tag t-${c.level}" title="${esc(c.why)}">${esc(c.kind)}: ${esc(c.label)}</span>`).join("")
   + (p.patterns || []).map((x) => `<span class="tag t-${x.level} pt" title="${esc(x.text)}">↻ ${esc(x.label)}</span>`).join("");
@@ -442,7 +442,7 @@ function openP(code) {
   $("dbody").innerHTML = `<h4>${esc(D.date)}</h4><div class="facts">${f("Marked", esc(p.att))}${f("First – last activity", p.first ? esc(p.first) + " – " + esc(p.last) : "")}${f("Time in market", esc(p.market))}${f("KM", p.km)}
       ${f("Day end", esc(p.eod))}${f("Visits", p.calls)}${f("With order", p.productive)}${f("Visits < 1 min", p.short_calls)}${f("Away from outlet", p.far_calls)}${f("Order value", p.order_value ? Math.round(p.order_value).toLocaleString("en-IN") : "")}</div>
     ${p.not_marked ? `<p class="ev">Did not mark attendance${p.absent_streak > 1 ? ` – <b>${p.absent_streak} days in a row</b>` : ""}${p.last_marked ? `; last marked ${esc(p.last_marked)}` : ""}.</p>` : ""}
-    ${h.strip ? `<h4>Last ${h.strip.length} Bizom days</h4><div class="facts">${f("Attendance", `<span style="color:${pc(h.pct30)}">${pctS(h.pct30)}</span>`)}${f("Days worked", h.worked30)}${f("Absent", h.absent30)}${f("Late", h.late30)}${f("Leave", h.leave30)}${f("Usual start", esc(h.usual_start || ""))}${f("Avg in market", h.avg_market ? dur(h.avg_market) + " h" : "")}</div>${strip}` : ""}
+    ${h.strip ? `<h4>Last ${h.strip.length} report days</h4><div class="facts">${f("Attendance", `<span style="color:${pc(h.pct30)}">${pctS(h.pct30)}</span>`)}${f("Days worked", h.worked30)}${f("Absent", h.absent30)}${f("Late", h.late30)}${f("Leave", h.leave30)}${f("Usual start", esc(h.usual_start || ""))}${f("Avg in market", h.avg_market ? dur(h.avg_market) + " h" : "")}</div>${strip}` : ""}
     ${p.flags.length ? `<h4>Warning signs on this day</h4>${p.flags.map((x) => `<div class="ev"><span class="tag t-${x.level}">${esc(x.label)}</span> ${esc(x.why)}</div>`).join("")}${p.evidence ? `<div class="ev"><b>Evidence:</b> ${esc(p.evidence)}</div>` : ""}` : ""}
     ${(p.checks || []).length ? `<h4>Location &amp; selfie checks${p.risk !== null && p.risk !== undefined ? ` · risk ${p.risk}` : ""}</h4>${p.checks.map((c) => `<div class="ev"><span class="tag t-${c.level}">${esc(c.kind)}: ${esc(c.label)}</span> ${esc(c.why)}</div>`).join("")}` : ""}
     ${(p.patterns || []).length ? `<h4>Repeat patterns</h4>${p.patterns.map((x) => `<div class="ev"><span class="tag t-${x.level} pt">↻ ${esc(x.label)}</span> ${esc(x.text)}</div>`).join("")}` : ""}

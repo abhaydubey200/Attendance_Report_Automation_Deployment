@@ -48,17 +48,17 @@ def issues(session: Session, upto: date, codes: set[str] | None = None) -> dict:
             since = max(e.date_of_joining, working[0].report_date) if e.date_of_joining else working[0].report_date
             if seen:
                 left.append({**row, "last_seen": seen[-1].isoformat(),
-                             "proof": f"Not in Bizom's attendance file on any of the last {LEFT_AFTER} working days "
-                                      f"({recent[0]:%d-%b} to {recent[-1]:%d-%b}), no leave recorded; last seen in Bizom on {seen[-1]:%d-%b-%Y}."})
+                             "proof": f"No attendance record on any of the last {LEFT_AFTER} working days "
+                                      f"({recent[0]:%d-%b} to {recent[-1]:%d-%b}), no leave recorded; last seen on {seen[-1]:%d-%b-%Y}."})
             else:
                 n = sum(1 for u in working if u.report_date >= since)
                 never.append({**row, "last_seen": None,
-                              "proof": f"Not in Bizom's attendance file on any of {n} working days from {since:%d-%b-%Y} to {recent[-1]:%d-%b-%Y}."})
+                              "proof": f"No attendance record on any of {n} working days from {since:%d-%b-%Y} to {recent[-1]:%d-%b-%Y}."})
         if e.date_of_joining and seen and seen[0] < e.date_of_joining:
             early = [d for d in seen if d < e.date_of_joining]
             doj.append({"code": code, "name": e.name, "manager": e.manager_name or "", "hod": e.hod_name or "",
                         "doj": e.date_of_joining.isoformat(), "first_seen": early[0].isoformat(),
-                        "proof": f"In Bizom on {len(early)} day(s) before the joining date {e.date_of_joining:%d-%b-%Y}, "
+                        "proof": f"Marked attendance on {len(early)} day(s) before the joining date {e.date_of_joining:%d-%b-%Y}, "
                                  f"first on {early[0]:%d-%b-%Y}."})
     return {"upto": upto.isoformat(), "working_days_checked": len(recent), "possibly_left": left, "never_in_bizom": never, "doj_wrong": doj}
 

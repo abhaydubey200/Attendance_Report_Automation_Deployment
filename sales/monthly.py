@@ -250,7 +250,7 @@ def text(v: dict) -> str:
         lines += ["Needs a conversation:"] + [f"- {p['name']} ({p['code']}): {'; '.join(p['reasons'])}" for p in v["attention"][:15]] + [""]
     if v["perfect"]:
         lines += ["Full attendance: " + ", ".join(p["name"] for p in v["perfect"][:40]), ""]
-    lines.append("Automated email from the APIS HR Portal (source: Bizom).")
+    lines.append("Automated email from the APIS HR Portal.")
     return "\n".join(lines)
 
 

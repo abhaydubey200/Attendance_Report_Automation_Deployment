@@ -228,9 +228,9 @@ def highlights(v: dict) -> list[dict]:
             h.append({"level": "high", "text": f"Selfie reused (confirmed by image comparison): {', '.join(reused[:4])}."})
     si = v["ctx"].get("staff_issues") or {}
     if v["view"] == "hr" and (si.get("possibly_left") or si.get("never_in_bizom") or si.get("doj_wrong")):
-        h.append({"level": "medium", "text": f"Staff list to fix: {len(si.get('possibly_left', []))} possibly left (not in Bizom for "
+        h.append({"level": "medium", "text": f"Staff list to fix: {len(si.get('possibly_left', []))} possibly left (no attendance for "
                                               f"{si.get('working_days_checked')} working days), {len(si.get('never_in_bizom', []))} never mark "
-                                              f"attendance in Bizom, {len(si.get('doj_wrong', []))} joining date looks wrong. Proof in the Excel."})
+                                              f"attendance, {len(si.get('doj_wrong', []))} joining date looks wrong. Proof in the Excel."})
     if v["view"] == "hr" and v["data"] and (v["data"].get("not_in_staff_list") or v["data"].get("left_but_marked")):
         h.append({"level": "low", "text": f"Data to fix: {len(v['data'].get('not_in_staff_list', []))} not on the staff list, "
                                            f"{len(v['data'].get('left_but_marked', []))} marked attendance though Left."})
@@ -314,7 +314,7 @@ def email_html(v: dict) -> str:
 def email_text(v: dict) -> str:
     t = v.get("tally") or _tally(v["people"])
     lines = [f"Dear {v['recipient']},", "",
-             f"Field sales attendance for {v['weekday']}, {v['date_long']} (Bizom).",
+             f"Field sales attendance for {v['weekday']}, {v['date_long']}.",
              f"Total {t['people']} | Present {t['present']} | Late {t['late']} | Half day {t['half']} | Absent {t['absent']} | "
              f"Leave {t['leave']} | Week off {t['week_off']} | Attendance {t['pct'] if t['pct'] is not None else '-'}%", ""]
     for g in v.get("attention_groups") or []:
@@ -332,7 +332,7 @@ def email_text(v: dict) -> str:
         lines += ["Was this right? Your answer makes the checks more accurate:"] + [
             f"- {f['name']} ({f['sign'].lower()}): right {f['right']} | not right {f['wrong']}" for f in v["feedback"]] + [""]
     lines += ["Full lists, selfies and map links: the attached dashboard (open in Chrome or Edge) and Excel.",
-              "Warning signs are for checking, not proof. Automated email from the APIS HR Portal (source: Bizom)."]
+              "Warning signs are for checking, not proof. Automated email from the APIS HR Portal."]
     return "\n".join(lines)
 
 
@@ -514,7 +514,7 @@ def excel(v: dict) -> bytes:
         tc2 = wb.add_chart({"type": "column"})
         tc2.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3], "fill": {"color": "#FCA5A5"}, "y2_axis": True})
         tc.combine(tc2)
-        tc.set_title({"name": f"Last {len(pk['trend'])} Bizom days – attendance % (off days left out)", "name_font": {"size": 11}})
+        tc.set_title({"name": f"Last {len(pk['trend'])} report days – attendance % (off days left out)", "name_font": {"size": 11}})
         tc.set_y_axis({"min": 40, "max": 100})
         tc.set_legend({"position": "bottom"})
         tc.set_size({"width": 580, "height": 280})
@@ -608,7 +608,7 @@ def excel(v: dict) -> bytes:
                 plv.append(p["level"])
         table("Patterns", f"Repeat patterns – {v['date_long']}",
               "Counted over each person's own uploaded working days (week offs, leave, holidays and days without an upload are not counted)",
-              [("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("On the day", 12), ("Pattern", 30), ("Proof (dates from Bizom)", 80)],
+              [("Code", 10), ("Name", 26), ("Designation", 11), ("Manager", 22), ("On the day", 12), ("Pattern", 30), ("Proof (dates)", 80)],
               prow, "", fmt=lambda i, j, x: lvl[plv[i]] if j == 5 else None)
 
     tt = v["ctx"].get("team_trend") or []
@@ -634,7 +634,7 @@ def excel(v: dict) -> bytes:
     if v["proof"]:
         wp = wb.add_worksheet("Proof")
         cols = [("Risk", 6), ("Employee", 24), ("Warning signs and why", 52), ("Attendance selfie", 17), ("Matching selfie", 17), ("Where", 30)]
-        excel_banner(wb, wp, [w for _, w in cols], f"Proof – {v['date_long']}", "Selfies are small copies made for this workbook; click one to open the original on Bizom")
+        excel_banner(wb, wp, [w for _, w in cols], f"Proof – {v['date_long']}", "Selfies are small copies made for this workbook; click one to open the original")
         link = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "valign": "top", "text_wrap": True})
         top_ = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "top", "text_wrap": True})
         for j, (h_, w) in enumerate(cols):
@@ -662,12 +662,12 @@ def excel(v: dict) -> bytes:
         wp.freeze_panes(4, 2)
 
     ai = v["ctx"].get("absent_info") or {}
-    table("Absent", f"Absent – {v['date_long']}", "Did not mark attendance in Bizom (no leave recorded); longest absence first",
-          [("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 10), ("Manager", 24), ("Last marked in Bizom", 14),
+    table("Absent", f"Absent – {v['date_long']}", "Did not mark attendance (no leave recorded); longest absence first",
+          [("Code", 10), ("Name", 28), ("Designation", 12), ("Zone", 10), ("Manager", 24), ("Last marked", 14),
            ("Absent working days in a row", 13), ("Reason", 30)],
           sorted([[p["code"], p["name"], p["designation"], p["zone"], p["manager"], (ai.get(p["code"]) or {}).get("last_marked") or "not in the uploaded days",
                    (ai.get(p["code"]) or {}).get("streak"),
-                   "Did not mark attendance in Bizom" if p["not_marked"] else "Marked absent in Bizom"] for p in v["not_marked"]],
+                   "Did not mark attendance" if p["not_marked"] else "Marked absent"] for p in v["not_marked"]],
                  key=lambda r_: (-(r_[6] or 0), r_[1])),
           "Nobody absent on this day.", fmt=lambda i, j, x: lvl["high"] if j == 6 and isinstance(x, int) and x >= 3 else None)
 
@@ -770,10 +770,10 @@ def excel(v: dict) -> bytes:
     if v["view"] == "hr" and (sit.get("possibly_left") or sit.get("never_in_bizom") or sit.get("doj_wrong")):
         rows = []
         for key, label, action in (("possibly_left", "Possibly left", "Confirm with the team head; mark Left on the staff list if gone."),
-                                   ("never_in_bizom", "Never marks attendance in Bizom", "Remove from the Field Sales list, or ask them to mark in Bizom."),
+                                   ("never_in_bizom", "Never marks attendance", "Remove from the Field Sales list, or ask them to mark attendance in the field app."),
                                    ("doj_wrong", "Joining date looks wrong", "Correct the date of joining on the staff list.")):
             rows += [[label, x["code"], x["name"], x["manager"], x["hod"], x["proof"], action] for x in sit.get(key, [])]
-        table("Staff list to fix", "Staff list to fix", "People who never mark attendance in Bizom are not counted absent; the others are, until the list is fixed",
+        table("Staff list to fix", "Staff list to fix", "People who never mark attendance are not counted absent; the others are, until the list is fixed",
               [("Problem", 26), ("Code", 10), ("Name", 26), ("Team head", 22), ("HOD", 20), ("Proof", 80), ("Action", 44)], rows, "", freeze=3)
 
     if v["view"] == "hr" and v["data"]:
@@ -781,8 +781,8 @@ def excel(v: dict) -> bytes:
         excel_banner(wb, wd, [70], "Data issues", v["date_long"])
         wd.set_column(0, 0, 70)
         r = 3
-        for title, items in (("In Bizom but not on the field sales staff list", v["data"].get("not_in_staff_list", [])),
-                             ("Marked attendance in Bizom but Left on the staff list", v["data"].get("left_but_marked", []))):
+        for title, items in (("Marked attendance but not on the field sales staff list", v["data"].get("not_in_staff_list", [])),
+                             ("Marked attendance but Left on the staff list", v["data"].get("left_but_marked", []))):
             wd.write(r, 0, f"{title} ({len(items)})", head)
             for i, x in enumerate(items, start=r + 1):
                 wd.write(i, 0, x)
@@ -790,7 +790,7 @@ def excel(v: dict) -> bytes:
         wd.write(r, 0, f"'Not Marked' in the EOD report: {v['data'].get('eod_not_marked', 0)} users", note)
         wd.write(r + 1, 0, f"Left out: {', '.join(f'{k} {n}' for k, n in v['data'].get('excluded', {}).items()) or 'none'}", note)
 
-    about = {"Trend": "Day-by-day attendance % and absences, last 30 Bizom days, with chart", "Team scorecard": "Every team head: this day, 30 days, 4-week change, weekday heat",
+    about = {"Trend": "Day-by-day attendance % and absences, last 30 report days, with chart", "Team scorecard": "Every team head: this day, 30 days, 4-week change, weekday heat",
              "Last 30 days": "Each person's last 30 days as a colour grid", "By team": "HOD × zonal head, this day", "Needs checking": "Warning signs, most serious first",
              "Patterns": "Repeat patterns with the dates", "Team heads - 4 weeks": "Team heads week by week", "Location & selfie checks": "Location and selfie checks, highest risk first",
              "Proof": "Selfies and map links behind the checks", "Absent": "Who did not mark, longest absence first", "Team list": "Everyone, every column – the master list",

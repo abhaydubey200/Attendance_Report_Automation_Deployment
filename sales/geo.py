@@ -35,9 +35,9 @@ GEO: dict[str, tuple[str, str, str]] = {
     "GEO_SAME_SPOT": ("All calls from one spot", "high", "Every call of the day was made from nearly the same place."),
     "GEO_ONE_SPOT_MANY_OUTLETS": ("Several outlets from one spot", "high",
                                   "Calls to different outlets were made from one spot, away from those outlets."),
-    "GEO_KM_VS_ROUTE": ("KM much higher than the route", "medium", "Bizom KM is far more than the distance between the day's points."),
+    "GEO_KM_VS_ROUTE": ("KM much higher than the route", "medium", "The KM recorded is far more than the distance between the day's points."),
     "GEO_AWAY_AT_HQ": ("Away from base on an HQ day", "high",
-                       "Bizom shows the day as work at HQ, but attendance was marked far from all of the person's usual places."),
+                       "The day is recorded as work at HQ, but attendance was marked far from all of the person's usual places."),
     "GEO_START_AWAY": ("Attendance away from the usual start", "medium", "Attendance was marked far from where this person usually starts."),
     "GEO_SAME_POINT": ("Same exact GPS point as another person", "high",
                        "Attendance was marked at exactly the same GPS point (to about 10 cm) as someone else that day - real phones almost "
@@ -277,7 +277,7 @@ def _person_checks(r: SalesEmployeeDay, calls: list[SalesCall], locs: dict, outl
     if r.km and len(pts) >= 3:              # needs real call points: start -> end alone says nothing about the route
         route = sum(km(a, b) for a, b in zip(path, path[1:]))
         if r.km > rules.geo_km_ratio * route and r.km - route >= rules.geo_km_extra:
-            f["GEO_KM_VS_ROUTE"] = f"Bizom KM {r.km:.0f} km; route between the day's {len(path)} points {route:.1f} km."
+            f["GEO_KM_VS_ROUTE"] = f"Recorded KM {r.km:.0f} km; route between the day's {len(path)} points {route:.1f} km."
     # 5. attendance away from the usual start
     att = locs.get((r.code, "ATT"))
     work = _work_of(r)
@@ -288,9 +288,9 @@ def _person_checks(r: SalesEmployeeDay, calls: list[SalesCall], locs: dict, outl
             n = len(usual[4])
             where = f"{d:.1f} km from the nearest usual place ({n} usual place{'s' if n > 1 else ''} learned from {usual[2]} earlier days)"
             if work == "HQ":
-                f["GEO_AWAY_AT_HQ"] = f"Bizom shows \"{r.present_type}\" but attendance was {where}."
+                f["GEO_AWAY_AT_HQ"] = f"Recorded as \"{r.present_type}\" but attendance was {where}."
             else:
-                f["GEO_START_AWAY"] = f"Attendance {where}. Bizom gives no HQ / outstation information for this day."
+                f["GEO_START_AWAY"] = f"Attendance {where}. No HQ / outstation information was recorded for this day."
     # 6. day ended away from the market
     eod = locs.get((r.code, "EOD"))
     if eod and pts:

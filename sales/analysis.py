@@ -41,7 +41,7 @@ WARNINGS: dict[str, tuple[str, str, str]] = {
     "FAR_ATTENDANCE": ("Attendance marked away from the expected spot", "medium", "Attendance location differs from the expected place."),
     "NO_PHOTO": ("No attendance photo", "medium", "Attendance marked without the selfie."),
     "SHORT_DAY": ("Short day (attendance to day-end)", "medium", "Day ended less than 4 hours after marking attendance."),
-    "DAY_NOT_CLOSED": ("Day not closed", "low", "Did not end the day in Bizom; it closed automatically at 23:59."),
+    "DAY_NOT_CLOSED": ("Day not closed", "low", "Did not end the day in the field app; it closed automatically at 23:59."),
     "BEAT_JUMP": ("Visits outside the planned beat", "low", "Several outlets visited outside today's route."),
     "CALLS_AFTER_HOURS": ("Visits logged late in the evening", "low", "Outlet visits logged after working hours."),
     "ODD_HOUR": ("Attendance marked at an odd hour", "medium", "Attendance marked very early in the morning or late in the evening."),

@@ -83,7 +83,7 @@ def test_staff_who_never_use_bizom_are_not_absent_and_listed_for_hr(engine):
         assert "SL00005" not in rows and rows["SL00004"] == "ABSENT"
         issues = staffcheck.issues(s, last.report_date)
         assert [x["code"] for x in issues["never_in_bizom"]] == ["SL00005"] and [x["code"] for x in issues["possibly_left"]] == ["SL00004"]
-        assert "last seen in Bizom on" in issues["possibly_left"][0]["proof"]
+        assert "last seen on" in issues["possibly_left"][0]["proof"]
         # the next upload already leaves SL00005 out
         nxt = service.process(s, [("a.csv", attendance((d + timedelta(days=1)).isoformat(), missing={"SL00005"}))], "tester", plan_mail=False)
         assert json.loads(nxt.summary)["not_bizom_users"] == 1 and json.loads(nxt.summary)["verify"]["mismatch_count"] == 0

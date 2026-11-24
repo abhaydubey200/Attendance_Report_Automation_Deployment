@@ -303,6 +303,11 @@ def routing_sections(v: dict, detail: set[str] | None, exceptions: list[dict] | 
     v["summary_cols"] = ("Reporting manager", "Territories") if v["is_hod_view"] else ("HOD", "Reporting manager")
     v["summary_title"] = "reporting manager and territory" if v["is_hod_view"] else "HOD and reporting manager"
     v["routing_exceptions"] = exceptions or []
+    tr = ((v.get("pack") or {}).get("trend") or [])[-7:]
+    week = [{"label": t["weekday"], "day": t["label"], "pct": None if t.get("off_day") else t["pct"]} for t in tr]
+    past = [t["pct"] for t in week[:-1] if t["pct"] is not None]
+    v["week"] = week if sum(1 for t in week if t["pct"] is not None) >= 2 else []
+    v["week_avg"] = round(sum(past) / len(past), 1) if past else None
     v["recipient"] = title(v["recipient"]) if v["recipient"].isupper() else v["recipient"]
     return v
 
@@ -317,6 +322,8 @@ def email_text(v: dict) -> str:
              f"Field sales attendance for {v['weekday']}, {v['date_long']}.",
              f"Total {t['people']} | Present {t['present']} | Late {t['late']} | Half day {t['half']} | Absent {t['absent']} | "
              f"Leave {t['leave']} | Week off {t['week_off']} | Attendance {t['pct'] if t['pct'] is not None else '-'}%", ""]
+    if v.get("week"):
+        lines += ["Last 7 report days: " + " | ".join(f"{t['label']} {t['day']} {'off' if t['pct'] is None else '%g%%' % t['pct']}" for t in v["week"]), ""]
     for g in v.get("attention_groups") or []:
         lines += [f"Needs attention - {g['territory']}:"] + [f"- {p['display_name']} ({p['code']}): {p['reason']}" for p in g["people"]] + [""]
     if v.get("visit_signs"):
@@ -331,8 +338,7 @@ def email_text(v: dict) -> str:
     if v.get("feedback"):
         lines += ["Was this right? Your answer makes the checks more accurate:"] + [
             f"- {f['name']} ({f['sign'].lower()}): right {f['right']} | not right {f['wrong']}" for f in v["feedback"]] + [""]
-    lines += ["Full lists, selfies and map links: the attached dashboard (open in Chrome or Edge) and Excel.",
-              "Warning signs are for checking, not proof. Automated email from the APIS HR Portal."]
+    lines += ["Automated email from the APIS HR Portal."]
     return "\n".join(lines)
 
 

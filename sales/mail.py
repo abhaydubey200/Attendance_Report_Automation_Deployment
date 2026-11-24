@@ -50,7 +50,7 @@ def plan(session: Session, up: SalesDayUpload) -> list[SalesMailItem]:
         hold = (f"Held: {up.report_date:%d-%b-%Y} looks like a holiday ({day_summary['off_day']}). Confirm it as a holiday or a "
                 f"working day in Field Sales > Holidays; the emails are prepared again after that.")
     items = []
-    for rec in routing.recipients(set(by_code), staff, cfg):
+    for rec in routing.recipients(set(by_code), staff, cfg, hr_always=False):
         scope = [by_code[c] for c in rec.codes if c in by_code]
         if not scope:
             continue
@@ -63,11 +63,10 @@ def plan(session: Session, up: SalesDayUpload) -> list[SalesMailItem]:
             status, note = DUPLICATE, "Already sent for this day."
         cnt = Counter(r.status for r in scope)
         flagged = sum(1 for r in scope if r.flags)
-        subject = (f"Field Sales Attendance | {up.report_date:%d-%b-%Y} | {rec.name}"
-                   + (f" | {cnt['ABSENT']} absent" if cnt["ABSENT"] else "") + (f" · {flagged} to check" if flagged else ""))
+        subject = f"Daily Attendance | {up.report_date:%d-%b-%Y} | {rec.name}"          # build brief: one plain subject line
         item = SalesMailItem(upload_id=up.upload_id, report_date=up.report_date, recipient_key=rec.key[:200], recipient_name=rec.name[:200],
                              role=rec.role, to_addrs=", ".join(rec.to) or None, subject=subject[:300],
-                             content=json.dumps({"codes": sorted(rec.codes), "view": rec.view}),
+                             content=json.dumps({"codes": sorted(rec.codes), "view": rec.view, "detail": sorted(rec.detail or rec.codes)}),
                              counts=json.dumps({"people": len(scope), "absent": cnt["ABSENT"], "late": cnt["LATE"], "flagged": flagged,
                                                 "attendance_pct": report.pct_of(scope)}),
                              status=status, note=note, attempts=0)
@@ -98,6 +97,9 @@ def render(session: Session, item: SalesMailItem) -> tuple[str, str, list[Attach
         from sales import staffcheck
         ctx["staff_issues"] = staffcheck.issues(session, up.report_date)
     view = report.build_view(rows, json.loads(up.summary), c["view"], item.recipient_name, up.report_date, found, proof, ctx)
+    staff_all = {e.code: e for e in session.scalars(select(SalesEmployee))} if c["view"] == "hr" else {}
+    report.routing_sections(view, set(c["detail"]) if c.get("detail") and c["view"] == "team" else None,
+                            routing.exceptions({r.code for r in rows}, staff_all) if c["view"] == "hr" else None)
     if item.role != "HR":
         from sales import feedback
         view["feedback"] = feedback.links(found, up.report_date, item.recipient_key)

@@ -18,6 +18,7 @@ export const SALES_PAGES = [
   { section: "Reports", title: "Employee report", path: "/sales/employee", icon: "employee-report" },
   { section: "Reports", title: "Email log", path: "/sales/emails", icon: "emails" },
   { section: "Setup", title: "Staff list", path: "/sales/staff", icon: "employees" },
+  { section: "Setup", title: "Sales routing", path: "/sales/routing", icon: "mail" },
   { section: "Setup", title: "Automation", path: "/sales/automation", icon: "automation" },
   { section: "Setup", title: "Settings", path: "/sales/settings", icon: "settings", perm: "MANAGE_SETTINGS" },
 ] as const;

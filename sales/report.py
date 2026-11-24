@@ -243,18 +243,91 @@ def _checks_summary(checks: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------- email
+ATTENTION_STATUS = ("ABSENT", "LATE", "HALF_DAY")
+ATTENTION_SIGNS = {"NO_ACTIVITY", "VERY_SHORT_MARKET"}     # signs that question the attendance itself; visit signs are counted only
+
+
+def _reason(p: dict) -> str:
+    bits = []
+    if p["status"] == "ABSENT":
+        bits.append("did not mark attendance" + (f" ({p['absent_streak']} days in a row)" if (p.get("absent_streak") or 0) > 1 else ""))
+    elif p["status"] == "LATE":
+        bits.append(f"marked late at {p['att']}")
+    elif p["status"] == "HALF_DAY":
+        bits.append("half day")
+    bits += [f["label"] for f in p["flags"] if f["code"] in ATTENTION_SIGNS] + [f"{c['kind']}: {c['label']}" for c in p.get("checks") or []]
+    return "; ".join(bits)
+
+
+def _tally(ps: list[dict]) -> dict:
+    c = Counter(p["status"] for p in ps)
+    due = len(ps) - c["WEEK_OFF"]
+    pct = round(100 * (c["PRESENT"] + c["LATE"] + 0.5 * c["HALF_DAY"]) / due, 1) if due else None
+    return {"people": len(ps), "present": c["PRESENT"], "late": c["LATE"], "half": c["HALF_DAY"], "absent": c["ABSENT"],
+            "leave": c["LEAVE"], "week_off": c["WEEK_OFF"], "pct": pct, "attention": sum(1 for p in ps if p["attention"])}
+
+
+def routing_sections(v: dict, detail: set[str] | None, exceptions: list[dict] | None = None) -> dict:
+    """Adds to the view: tally, the people needing attention (only the recipient's own reports) grouped by territory,
+    and the summary tables - HOD: by manager and territory; Director / HR: by HOD and manager."""
+    from sales.routing import title
+    for p in v["people"]:
+        # attention = absent / late / half day, or a SERIOUS warning sign or check; minor signs stay in the attachments
+        # location / selfie checks only reach an email after the trust gate (proven by HR reviews), so each one is listed
+        p["attention"] = p["status"] in ATTENTION_STATUS or any(f["code"] in ATTENTION_SIGNS for f in p["flags"]) or bool(p.get("checks"))
+        p["reason"] = _reason(p) if p["attention"] else ""
+        p["display_name"] = title(p["name"])
+    own = [p for p in v["people"] if detail is None or p["code"] in detail]
+    v["visit_signs"] = sum(1 for p in own if any(f["code"] not in ATTENTION_SIGNS for f in p["flags"]))
+    v["tally"] = _tally(v["people"])
+    v["own_tally"] = _tally(own)
+    groups: dict[str, list[dict]] = defaultdict(list)
+    if v["view"] == "team":
+        for p in own:
+            if p["attention"]:
+                groups[p["zone"] or "No territory"].append(p)
+    v["attention_groups"] = [{"territory": z, "people": sorted(ps, key=lambda p: (ATTENTION_STATUS.index(p["status"]) if p["status"] in ATTENTION_STATUS else 9, p["name"]))}
+                             for z, ps in sorted(groups.items())]
+    v["is_hod_view"] = v["view"] == "team" and detail is not None and len(detail) < len(v["people"])
+    rows: dict[tuple, list[dict]] = defaultdict(list)
+    if v["is_hod_view"]:                     # one row per reporting manager; their territories in the second column
+        for p in v["people"]:
+            rows[(title(p["manager"]) or "No reporting manager", "")].append(p)
+        rows = {(a, ", ".join(sorted({p["zone"] or "-" for p in ps}))): ps for (a, _), ps in rows.items()}
+    elif v["view"] != "team":
+        for p in v["people"]:
+            rows[(title(p["hod"]) or "No HOD", title(p["manager"]) or "No reporting manager")].append(p)
+    summ = [{"a": a, "b": b, **_tally(ps)} for (a, b), ps in rows.items()]
+    v["summary_rows"] = sorted(summ, key=lambda r: ((r["a"], r["pct"] if r["pct"] is not None else 999) if v["view"] != "team"
+                                                    else (r["pct"] if r["pct"] is not None else 999, r["a"])))
+    v["summary_cols"] = ("Reporting manager", "Territories") if v["is_hod_view"] else ("HOD", "Reporting manager")
+    v["summary_title"] = "reporting manager and territory" if v["is_hod_view"] else "HOD and reporting manager"
+    v["routing_exceptions"] = exceptions or []
+    v["recipient"] = title(v["recipient"]) if v["recipient"].isupper() else v["recipient"]
+    return v
+
+
 def email_html(v: dict) -> str:
     return _env.get_template("sales_mail.html").render(v=v)
 
 
 def email_text(v: dict) -> str:
-    c = v["counts"]
+    t = v.get("tally") or _tally(v["people"])
     lines = [f"Dear {v['recipient']},", "",
-             f"Field sales attendance for {v['weekday']}, {v['date_long']}: {v['n']} people." + (f" ({v['trend']})" if v["trend"] else ""),
-             f"Attendance {v['pct'] if v['pct'] is not None else '-'}% | Absent {c['ABSENT']} | Late {c['LATE']} | "
-             f"Needs checking {len(v['flagged'])}" + (f" | Location & selfie checks {len(v['checks'])}" if v["checks"] else ""), ""]
-    if v["highlights"]:
-        lines += ["Highlights:"] + [f"- {x['text']}" for x in v["highlights"]] + [""]
+             f"Field sales attendance for {v['weekday']}, {v['date_long']} (Bizom).",
+             f"Total {t['people']} | Present {t['present']} | Late {t['late']} | Half day {t['half']} | Absent {t['absent']} | "
+             f"Leave {t['leave']} | Week off {t['week_off']} | Attendance {t['pct'] if t['pct'] is not None else '-'}%", ""]
+    for g in v.get("attention_groups") or []:
+        lines += [f"Needs attention - {g['territory']}:"] + [f"- {p['display_name']} ({p['code']}): {p['reason']}" for p in g["people"]] + [""]
+    if v.get("visit_signs"):
+        lines += [f"Visit checks: {v['visit_signs']} people have warning signs about their outlet visits - see the attachments.", ""]
+    if v.get("summary_rows"):
+        lines += [f"Summary by {v['summary_title']}:"] + [
+            f"- {r['a']} / {r['b']}: {r['people']} people, {r['absent']} absent, {r['late']} late, attendance {r['pct'] if r['pct'] is not None else '-'}%"
+            for r in v["summary_rows"]] + [""]
+    if v.get("routing_exceptions"):
+        lines += ["Records that could not be routed (please fix on the staff list):"] + [
+            f"- {x['code']} {x['name']}: {x['issue']} - {x['detail']}" for x in v["routing_exceptions"]] + [""]
     if v.get("feedback"):
         lines += ["Was this right? Your answer makes the checks more accurate:"] + [
             f"- {f['name']} ({f['sign'].lower()}): right {f['right']} | not right {f['wrong']}" for f in v["feedback"]] + [""]
@@ -609,7 +682,7 @@ def excel(v: dict) -> bytes:
     cols += [("Risk", "risk", 6), ("Warning signs", "warn", 34), ("Location & selfie checks", "chk", 30), ("Patterns", "pat", 30)]
     if v["view"] != "team":
         cols.insert(5, ("HOD", "hod", 18))
-    people = v["people"]
+    people = sorted(v["people"], key=lambda p: (not p.get("attention"), p["name"]))      # roster: people needing attention first
 
     def val(p, k):
         if k == "warn":

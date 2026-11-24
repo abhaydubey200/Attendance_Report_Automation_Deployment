@@ -151,3 +151,17 @@ table.heat30 tr.click:hover td.nm { text-decoration: underline; }
 .facts30 b { font-size: 1.05rem; }
 .bar30 { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: #eef1f6; vertical-align: middle; margin-right: 6px; overflow: hidden; }
 .bar30 i { display: block; height: 100%; }
+
+/* ---- Sales routing (approved APIS Sales Dashboard) */
+.rt-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin: 4px 0; }
+.rt-flow b { background: #fff3c4; color: #5e3c0f; padding: 3px 10px; border-radius: 12px; } .rt-flow i { color: var(--muted); font-style: normal; }
+.rt-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; }
+.rt-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.rt-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; min-height: 26px; }
+.rt-chip { background: #fff3c4; color: #5e3c0f; border-radius: 14px; padding: 3px 10px; font-size: 12px; font-weight: 600; border: 0; cursor: pointer; }
+.rt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.rt-card { font: inherit; text-align: left; background: var(--surface); border: 1px solid var(--line); border-top: 3px solid #5e3c0f; border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: inherit; }
+.rt-card.hod { border-top: 4px solid #1f7a4c; } .rt-card.on { outline: 2px solid #f5b800; background: #fff8e1; } .rt-card.dim { opacity: .4; }
+.rt-card .nm { font-weight: 700; } .rt-card .ct { color: #5e3c0f; font-weight: 700; } .rt-card.hod .ct { color: #1f7a4c; }
+.rt-card .sm { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

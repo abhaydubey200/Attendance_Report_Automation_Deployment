@@ -193,14 +193,43 @@ def staff_list(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session 
     return {"summary": staff.summary(db), "staff": [staff.to_dict(e) for e in db.scalars(select(SalesEmployee).order_by(SalesEmployee.name))]}
 
 
+@router.get("/routing")
+def routing_view(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    """Who reports to whom and where each person's daily email goes (build brief, approved sales dashboard)."""
+    from sqlalchemy import select
+
+    from database.models.sales import SalesEmployee
+    from sales import analysis, routing
+    rules = get_rules(db)
+    staff_all = {e.code: e for e in db.scalars(select(SalesEmployee))}
+    scope = {c: e for c, e in staff_all.items() if e.status == "ACTIVE" and not analysis._match(rules.exclude_codes, c)
+             and not (not rules.include_promoters and analysis.is_promoter(c, e.designation, rules))}
+    excluded = sorted((c, routing.title(e.name)) for c, e in staff_all.items() if e.status == "ACTIVE" and c not in scope)
+    issues = {x["code"]: x for x in routing.exceptions(set(scope), scope)}
+    mgrs = routing.managers(scope)
+    rows = [{"code": c, "name": routing.title(e.name), "role": "Manager" if c in mgrs else "Team member",
+             "department": e.channel or "", "doj": e.date_of_joining.isoformat() if e.date_of_joining else "", "hod": routing.title(e.hod_name),
+             "hod_email": (e.hod_email or "").lower(), "manager": routing.title(e.manager_name), "territory": e.zone or "",
+             "goes_to": (e.manager_email or "").lower(), "check": "VERIFY" if c in issues else "OK",
+             "issue": issues[c]["issue"].replace("_", " ").capitalize() if c in issues else ""} for c, e in scope.items()]
+    rows.sort(key=lambda r: (r["hod"], r["manager"], r["role"] != "Manager", r["name"]))
+    to = {r["goes_to"] for r in rows if r["goes_to"]} | {r["hod_email"] for r in rows if r["hod_email"]}
+    return {"rows": rows, "excluded": [{"code": c, "name": n} for c, n in excluded], "emails_per_day": len(to) + 1,
+            "hr_exception_day": bool(issues), "exceptions": list(routing.exceptions(set(scope), scope))}
+
+
 @router.post("/staff/import")
-async def staff_import(file: UploadFile = File(...), principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)),
+async def staff_import(file: UploadFile = File(...), preview: bool = Form(False), principal: Principal = Depends(require(Perm.MANAGE_EMPLOYEES)),
                        db: Session = Depends(get_db)) -> dict:
+    """preview=True: report what would change (joiners, manager changes, people not in the file) and save nothing."""
     data = await file.read(10 * 1024 * 1024 + 1)
     try:
         rows = bizom.read_rows(data, file.filename or "staff.xlsx")
-        return staff.import_rows(db, [[("" if c is None else str(c)) for c in r] for r in rows], principal.username, file.filename or "upload",
-                                 codes=get_rules(db).staff_codes)
+        res = staff.import_rows(db, [[("" if c is None else str(c)) for c in r] for r in rows], principal.username, file.filename or "upload",
+                                codes=get_rules(db).staff_codes)
+        if preview:
+            db.rollback()
+        return {**res, "preview": preview}
     except (bizom.BizomError, staff.StaffError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
 

@@ -297,6 +297,9 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
         "routing_columns": routing_columns,
         "buckets": {k: {"label": label, "color": color} for k, label, _, color, _ in BUCKETS},
         "pack": pack, "company_view": company_view, "day": f"{report_date:%d-%b-%Y}",
+        "view": {k: view[k] for k in ("metrics", "attendance_pct", "has_previous", "need", "to_approve")},
+        "meta": {"late_after": late_after, "previous_day": previous_date.strftime(date_format) if previous_date else None},
+        "highlights": [] if not routing_columns else (highlights or []),
     }
     # Safe to embed inside <script>: no "</" or "<!--" can appear in the JSON text.
     data_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")

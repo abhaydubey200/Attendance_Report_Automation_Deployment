@@ -6,459 +6,414 @@
 <meta name="robots" content="noindex">
 <title>{{ title }}</title>
 <link rel="icon" href="{{ favicon_ho }}">
-{% from "_icons.html" import icon %}
-<style>{% include "_dash_style.css" %}
-  .row2b[hidden] { display:none; }
-  .row2b { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:16px; margin-top:16px; }
-  @media (max-width: 900px) { .row2b { grid-template-columns:minmax(0,1fr); } }
-  .note30 { font-size:12.5px; color:var(--muted); margin:8px 0 0; }
-  table.heat30 { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat30 th { color:var(--navy); padding:2px 8px; }
-  table.heat30 td { padding:5px 8px; white-space:nowrap; } table.heat30 td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:40px; }
-  table.heat30 tr.hrow { cursor:pointer; } table.heat30 tr.hrow:hover td:first-child { text-decoration:underline; }
-  .strip30 { display:flex; flex-wrap:wrap; gap:3px; margin-top:8px; } .strip30 span { width:20px; height:24px; border-radius:5px; color:#fff; font-size:10px;
-    display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; }
-  .leg30 { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:var(--muted); margin-top:6px; } .leg30 i { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:3px; }
+<style>{% include "_apis_kit.css" %}
+.grp td.gh { background:var(--soft); font-weight:800; color:var(--navy-2); letter-spacing:.02em; }
+.act { display:inline-flex; gap:6px; align-items:flex-start; background:#fff8e1; border:1px solid #f3dc8f; color:#5b4300; border-radius:9px; padding:4px 8px; font-size:12.5px; }
+:root[data-theme="dark"] .act { background:#3a2e12; border-color:#6b5a1f; color:#f8e3a1; }
+.pill { display:inline-block; border-radius:999px; padding:1px 9px; font-weight:700; font-size:12px; color:#fff; }
 </style>
 </head>
 <body>
-<script>document.documentElement.classList.add("js");</script>
-<header class="top">
-  <svg class="hex" viewBox="0 0 300 150" aria-hidden="true">
-    <defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe08a"/><stop offset="1" stop-color="#f5b800"/></linearGradient></defs>
-    <g fill="none" stroke="#f3cf63" stroke-width="1.4" opacity=".7">
-      <path d="M150 20l20 11.5v23L150 66l-20-11.5v-23z"/><path d="M190 43l20 11.5v23L190 89l-20-11.5v-23z"/>
-      <path d="M190 -3l20 11.5v23L190 43l-20-11.5v-23z"/><path d="M230 20l20 11.5v23L230 66l-20-11.5v-23z"/>
-      <path d="M150 66l20 11.5v23L150 112l-20-11.5v-23z"/><path d="M110 43l20 11.5v23L110 89l-20-11.5v-23z"/>
-    </g>
-    <path d="M270 43l20 11.5v23L270 89l-20-11.5v-23z" fill="url(#hg)" opacity=".95"/>
-    <path d="M230 66l20 11.5v23L230 112l-20-11.5v-23z" fill="url(#hg)" opacity=".75"/>
-    <path d="M270 -3l20 11.5v23L270 43l-20-11.5v-23z" fill="url(#hg)" opacity=".55"/>
-    <path d="M270 89l20 11.5v23L270 135l-20-11.5v-23z" fill="url(#hg)" opacity=".4"/>
-  </svg>
-  <div class="top-in">
-    <img class="logo" src="{{ logo }}" alt="apis">
-    <div class="vr"></div>
-    <div>
-      <h1>{{ heading }}</h1>
-      <div class="sub">{{ subtitle }}</div>
-    </div>
+<header class="app">
+  <div class="hd">
+    <img src="{{ logo }}" alt="apis">
+    <div><h1>{{ heading }}</h1><div class="sub">{{ long_day }} · {{ subtitle }}{% if recipient %} · {{ recipient }}{% endif %}</div></div>
+    <div class="sp"></div>
+    <button class="ib" id="theme" title="Light / dark (T)">◐ Theme</button>
+    <button class="ib" id="share" title="Copy a link to exactly this view (filters + tab)">⧉ Copy view</button>
+    <button class="ib" onclick="window.print()" title="Print or save as PDF">⎙ Print</button>
   </div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
 </header>
-
-<main class="page" id="page">
-  <div class="toolbar" role="search">
-    <label class="search">{{ icon("search", 17) }}<input id="q" type="search" placeholder="Search name or employee code…" aria-label="Search employees"></label>
-    <span class="fchip" id="fchip"><span id="flabel"></span><button type="button" id="fclear" aria-label="Clear filter" title="Clear filter">✕</button></span>
-    <span class="shown" id="shown"></span>
-    <span class="tb-right">
-      <button type="button" class="tb-btn" id="csv" title="Download the people shown as a CSV file">{{ icon("download", 16) }}Export CSV</button>
-      <button type="button" class="tb-btn" id="print">{{ icon("printer", 16) }}Print</button>
-    </span>
+<div class="fbar">
+  <div class="fin" role="search">
+    <input type="search" id="q" placeholder="Search name or employee code…  ( / )" aria-label="Search">
+    <select id="fB" aria-label="Status"></select>
+    <select id="fF" aria-label="Flag"></select>
+    <select id="fH" aria-label="HOD" hidden></select>
+    <select id="fC" aria-label="Category" hidden></select>
+    <label class="tg"><input type="checkbox" id="fA"> Needs attention</label>
+    <label class="tg"><input type="checkbox" id="fP"> Repeat pattern</label>
   </div>
-
-  <section class="greet">
-    <div>
-      {% if recipient %}
-      <h2>Dear {{ "HR team" if recipient == "HR Attendance" else recipient }},</h2>
-      <p>Here is {{ "the company's" if company_view else "your team's" }} attendance summary for {{ day }} and <em>actionable insights</em>. Click any card, chart or row to drill down.</p>
-      {% else %}
-      <h2>Attendance on {{ day }}</h2>
-      <p>Summary, exceptions and <em>actionable insights</em>{% if avg_in %} · average arrival {{ avg_in }}{% endif %}{% if avg_hours %} · average working time {{ avg_hours }} (h:mm){% endif %}. Click any card, chart or row to drill down.</p>
-      {% endif %}
+  <div class="act" id="act" style="background:none;border:0;padding:0;margin-top:8px"></div>
+</div>
+<main>
+  <section class="view" id="v-overview">
+    <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px;border-left:5px solid var(--gold)">
+      <div style="flex:1;min-width:260px">
+      {% if recipient %}<h2 style="margin:0;font-size:19px;color:var(--navy)">Dear {{ "HR team" if recipient == "HR Attendance" else recipient }},</h2>
+      <p style="margin:4px 0 0">Here is {{ "the company's" if company_view else "your team's" }} attendance summary for <b>{{ day }}</b> and <em>actionable insights</em>. Click any card, chart or row to drill down.</p>
+      {% else %}<h2 style="margin:0;font-size:19px;color:var(--navy)">Attendance on {{ day }}</h2>
+      <p style="margin:4px 0 0">Summary, exceptions and <em>actionable insights</em>{% if avg_in %} · average arrival {{ avg_in }}{% endif %}{% if avg_hours %} · average working time {{ avg_hours }} (h:mm){% endif %}. Click any card, chart or row to drill down.</p>{% endif %}
+      </div>
+      <button class="btn {{ 'pri' if v.need else '' }}" data-tile="att" style="font-size:13.5px;padding:9px 14px">{% if v.need %}{{ v.need }} employee{{ "s" if v.need != 1 }} need{{ "s" if v.need == 1 }} {{ "attention" if company_view else "your attention" }}{% else %}Nobody needs attention{% endif %}{% if v.to_approve %} · {{ v.to_approve }} short-leave request{{ "s" if v.to_approve != 1 }} to approve{% endif %}</button>
     </div>
-    <div class="date">{{ icon("calendar", 22) }}<span>{{ long_day }}</span></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="g21">
+      <div class="card"><h3>Last 30 report days <span class="muted">– attendance % on working days (line), absent people (bars); grey = week off / holiday, left out</span></h3><div id="ovTrend"></div></div>
+      <div class="card"><h3>Status <span class="muted">– click a slice</span></h3><div id="donut"></div></div>
+    </div>
+    <div class="g2">
+      <div class="card"><h3>Arrival times <span class="muted">– click a bar to list those people</span></h3><div id="arr"></div></div>
+      <div class="card"><h3>Attendance by weekday <span class="muted">– last 12 weeks, working days</span></h3><div class="tw" style="border:0;max-height:none"><table class="heat" id="heat"></table></div></div>
+    </div>
+    <div class="g2" id="ovMore"></div>
   </section>
-
-  <section class="kpis" aria-label="Key figures - click to filter">
-    <button type="button" class="kpi team" data-filter="" data-label="Everyone" title="Show everyone">
-      <span class="badge">{{ icon("users", 26) }}</span>
-      <span><span class="lbl" style="display:block">{{ "Team size" if recipient else "Employees" }}</span><span class="val num" style="display:block">{{ v.total }}</span></span>
-      <span class="hint">show all</span>
-    </button>
-    {% for c in v.cards %}
-    <button type="button" class="kpi{% if not c.value %} zero{% endif %}" data-filter="{{ c.filter }}" data-label="{{ c.label }}"
-            style="background:{{ c.color }}0f;border-color:{{ c.color }}38" title="Show {{ c.label | lower }}">
-      <span class="badge" style="background:{{ c.color }}1c;color:{{ c.color }}">{{ icon(c.icon, 24) }}</span>
-      <span>
-        <span class="lbl" style="display:block">{{ c.label }}</span>
-        {% if c.note %}<span class="note" style="display:block">({{ c.note }})</span>{% endif %}
-        <span class="val num" style="display:block;color:{{ c.color }}">{{ c.value }}</span>
-        {% if c.pct is not none %}<span class="pct num" style="display:block;color:{{ c.color }}">({{ "%g" | format(c.pct) }}%)</span>{% endif %}
-      </span>
-      <span class="hint">click to filter</span>
-    </button>
-    {% endfor %}
+  <section class="view" id="v-attention" hidden>
+    <div class="card"><div class="tb"><h3 style="margin:0">Needs attention <span class="muted" id="attN"></span></h3><span style="flex:1"></span><button class="btn pri" id="attCsv">⭳ CSV</button></div>
+      <div class="tw"><table class="t" id="attT"></table></div>
+      <p class="small muted">Grouped by what happened · click a person for their day and last 30 days.</p></div>
   </section>
-
-  <section class="row2">
+  <section class="view" id="v-people" hidden>
     <div class="card">
-      <div class="ringwrap">
-        <div class="ring" role="img" aria-label="Attendance {{ v.attendance_pct if v.attendance_pct is not none else '' }}%">
-          <svg viewBox="0 0 42 42">
-            <circle cx="21" cy="21" r="15.9155" fill="none" stroke="#eef1f6" stroke-width="5.2"/>
-            {% for s in v.segments %}
-            <circle cx="21" cy="21" r="15.9155" fill="none" stroke="{{ s.color }}" stroke-width="5.2" stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}"
-                    data-filter="bucket:{{ s.key }}" data-label="{{ s.label }}" data-tip="{{ s.label }}: {{ s.value }} ({{ '%g' | format(s.pct) }}%)"><title>{{ s.label }}: {{ s.value }} ({{ s.pct }}%)</title></circle>
-            {% endfor %}
-          </svg>
-          <div class="c" style="pointer-events:none"><div class="big num">{% if v.attendance_pct is not none %}{{ "%g" | format(v.attendance_pct) }}%{% else %}–{% endif %}</div><div class="cap">Attendance</div></div>
-        </div>
-        <div class="legend">
-          {% for s in v.segments %}
-          <button type="button" class="li" data-filter="bucket:{{ s.key }}" data-label="{{ s.label }}" style="display:grid;grid-template-columns:16px 1fr auto auto;gap:10px;align-items:center;font-size:15px">
-            <span class="sw" style="background:{{ s.color }}"></span><span>{{ s.label }}</span><span class="n num">{{ s.value }}</span><span class="p num">({{ "%g" | format(s.pct) }}%)</span>
-          </button>
-          {% else %}
-          <div class="li"><span></span><span class="noscript">No attendance records.</span></div>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-
-    <div class="card warm">
-      <div class="card-h"><span style="color:#d99a00">{{ icon("bars", 26) }}</span>
-        <h3>Key insights <span class="muted">{% if previous_day and v.has_previous %}(vs. {{ previous_day }}){% else %}(no earlier report day to compare){% endif %}</span></h3>
-      </div>
-      <table class="ins">
-        {% for m in v.metrics %}
-        <tr{% if m.filter %} data-filter="{{ m.filter }}" data-label="{{ m.label }}" tabindex="0" title="Show {{ m.label | lower }}"{% endif %}>
-          <td class="i">{{ icon(m.icon, 20) }}</td>
-          <td>{{ m.label }}</td>
-          <td class="v num">{{ m.value }}</td>
-          <td class="d num t-{{ m.trend }}">{{ m.delta }}</td>
-          <td class="b num">{% if m.before is not none %}(was {{ m.before }}){% endif %}</td>
-        </tr>
-        {% endfor %}
-      </table>
+      <div class="tb"><b id="pcnt"></b><span style="flex:1"></span><div class="seg" id="quick"></div>
+        <div class="menu"><button class="btn" id="colsBtn">Columns ▾</button><div class="pop" id="colsPop" hidden></div></div>
+        <button class="btn" id="dense">Compact rows</button><button class="btn pri" id="csv">⭳ CSV (filtered)</button></div>
+      <div class="tw"><table class="t" id="ptab"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="pager"></div>
+      <p class="small muted">Click a heading to sort · click a person for details · <span class="kbd">/</span> search · <span class="kbd">Esc</span> close · <span class="kbd">↑</span><span class="kbd">↓</span> previous / next</p>
     </div>
   </section>
-
-  {% if highlights or breakdown or arrivals %}
-  <section class="row3">
-    {% if highlights %}
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("pin", 22) }}</span><h3>Highlights</h3></div>
-      <ul class="hl">{% for h in highlights %}<li class="{{ h.kind }}">{{ h.text }}</li>{% endfor %}</ul></div>
-    {% endif %}
-    {% if breakdown %}
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("bars", 22) }}</span><h3>{{ "Attendance by HOD's team" if breakdown.by == "HOD" else "Attendance by " ~ (breakdown.by | lower) }}</h3></div>
-      <div class="bars">
-        {% set fkey = {"Department": "dept", "Team": "team", "Category": "cat", "HOD": "hod"}[breakdown.by] | default("dept") %}
-        {% for r in breakdown.rows if r.attendance_pct is not none %}
-        {% set col = "#dc2626" if r.attendance_pct < 75 else ("#d97706" if r.attendance_pct < 90 else "#16a34a") %}
-        <div class="bar" data-filter="{{ fkey }}:{{ r.name }}" data-label="{{ r.name }}" tabindex="0" title="{{ r.name }}: {{ r.attendance_pct }}% of {{ r.tracked }} - click to filter"><span class="nm">{{ r.name }}</span>
-          <span class="t"><span class="f" style="display:block;width:{{ r.attendance_pct }}%;background:{{ col }}"></span></span><b class="num">{{ r.attendance_pct }}%</b></div>
-        {% endfor %}
-      </div></div>
-    {% endif %}
-    {% if arrivals %}
-    {% set amax = (arrivals | map(attribute="count") | max) or 1 %}
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("clock", 22) }}</span><h3>Arrival times</h3></div>
-      <div class="bars">
-        {% for a in arrivals %}
-        <div class="bar"><span class="nm">{{ a.label }}</span><span class="t"><span class="f" style="display:block;width:{{ (100 * a.count / amax) | round(1) }}%;background:#e3a917"></span></span><b class="num">{{ a.count }}</b></div>
-        {% endfor %}
-      </div></div>
-    {% endif %}
-  </section>
-  {% endif %}
-
-  <section class="row2b" id="p30" hidden>
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("bars", 22) }}</span><h3>Last 30 report days</h3></div>
-      <div id="t30"></div><p class="note30" id="t30n"></p></div>
-    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("clock", 22) }}</span><h3>Attendance by weekday</h3></div>
-      <table class="heat30" id="h30"></table><p class="note30">Last 12 weeks, working days only – spot days that are always weak.{% if company_view %} Click a team to filter.{% endif %}</p>
-      <div id="g30w" hidden><div class="k" style="font-weight:700;color:var(--navy);margin:12px 0 6px">HOD teams – last 30 report days (lowest first)</div><div class="bars" id="g30"></div></div></div>
-  </section>
-
-  <section class="card section" id="exc">
-    <div class="card-h" style="flex-wrap:wrap">
-      <span style="color:var(--navy)">{{ icon("users", 28) }}</span>
-      <h3>{{ "Company attendance details" if company_view else ("Team attendance details" if recipient else "Attendance details") }} – Exceptions <span class="muted">(action required)</span></h3>
-      <span class="right need{% if not v.exceptions %} ok{% endif %}" id="need" data-filter="attention" data-label="Needs attention">{% if v.need %}{{ v.need }} employee{{ "s" if v.need != 1 }} need{{ "s" if v.need == 1 }} {{ "attention" if company_view else "your attention" }}{% else %}Nobody needs attention{% endif %}{% if v.to_approve %} · {{ v.to_approve }} short-leave request{{ "s" if v.to_approve != 1 }} to approve{% endif %}</span>
+  <section class="view" id="v-teams" hidden>
+    <div class="card"><h3>HOD teams <span class="muted">– this day from the people in the current filter; 30 days from history · click a team to see its people</span></h3>
+      <div class="tw"><table class="t" id="sctab"><thead></thead><tbody></tbody></table></div></div>
+    <div class="g2">
+      <div class="card"><h3>Teams by weekday <span class="muted">– last 12 weeks, working days</span></h3><div class="tw" style="border:0;max-height:none"><table class="heat" id="theat"></table></div></div>
+      <div class="card"><h3>Pivot <span class="muted">– count people by any two fields</span></h3>
+        <div class="tb"><select id="pvR" aria-label="Rows"></select><span class="muted">by</span><select id="pvC" aria-label="Columns"></select><button class="btn" id="pvCsv">⭳ CSV</button></div>
+        <div class="tw"><table class="t dense" id="pivot"></table></div></div>
     </div>
-    {% if v.exceptions %}
-    <div class="tablewrap" style="max-height:620px">
-      <table class="grid" id="exct">
-        <thead><tr>
-          <th class="ctr" data-sort="order">#</th><th data-sort="name">Employee name <small>(EMP code)</small></th><th class="ctr" data-sort="order">Attendance status</th>
-          <th class="ctr" data-sort="in">In time</th><th class="ctr" data-sort="out">Out time</th><th class="ctr" data-sort="minutes">Total duty <small>(h:mm)</small></th>
-          <th>Details</th><th>Action required <small>(manager)</small></th>
-        </tr></thead>
-        <tbody>
-        {% for x in v.exceptions %}
-          <tr data-code="{{ x.code }}" data-order="{{ loop.index0 }}" data-name="{{ x.name }}" data-in="{{ x.in24 }}" data-out="{{ x.out24 }}" data-minutes="{{ x.minutes }}" tabindex="0">
-            <td class="ctr num idx">{{ loop.index }}</td>
-            <td class="who"><b>{{ x.name }}</b><span class="code">({{ x.code }})</span>{% if not emailed and x.department %}<span class="dep">{{ x.department }}</span>{% endif %}</td>
-            <td class="ctr"><span class="pill" style="background:{{ x.color }}14;color:{{ x.color }};border-color:{{ x.color }}40">{{ x.status }}</span></td>
-            <td class="ctr num">{{ x.in }}</td><td class="ctr num">{{ x.out }}</td><td class="ctr num">{{ x.hours }}</td>
-            <td class="details">{{ x.details }}</td>
-            <td><div class="act">{{ icon(x.action_icon, 20) }}<span>{{ x.action }}</span></div></td>
-          </tr>
-        {% endfor %}
-          <tr class="noresults hidden" id="excnone"><td colspan="8">No exceptions match this filter – see the full list below.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="empty">Everyone is accounted for on {{ day }} – no absences, late arrivals or missing punches.</div>
-    {% endif %}
   </section>
-
-  <details class="card all" id="all">
-    <summary class="card-h" style="margin:0">
-      <span class="chev" style="color:var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span>
-      <h3>{{ "All team members" if recipient else "All employees" }} <span class="muted" id="allcount">({{ v.total }})</span></h3>
-    </summary>
-    <div style="margin-top:12px">
-      <div class="tablewrap" style="max-height:640px"><table class="grid"><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
-      <noscript><p class="noscript">Open this file in a web browser to see the full list (the Excel attachment has it too).</p></noscript>
+  <section class="view" id="v-trends" hidden>
+    <div class="card"><div class="tb"><h3 style="margin:0">Day by day <span class="muted">– last 30 report days</span></h3><span style="flex:1"></span><div class="seg" id="tmet"></div></div><div id="bigTrend"></div>
+      <div class="tw" style="margin-top:10px;max-height:320px"><table class="t dense" id="ttab"></table></div></div>
+    <div class="g2">
+      <div class="card"><h3>Most absent days <span class="muted">– last 30 report days, current filter</span></h3><div class="tw" style="max-height:420px"><table class="t dense" id="absTop"></table></div></div>
+      <div class="card"><h3>Usual in-time <span class="muted">– median over the last 30 report days</span></h3><div id="usual"></div></div>
     </div>
-  </details>
-
-  <footer>
-    <span>Source: <i>{{ sources }}</i> · {{ day }}{% if office_opens %} · office opens {{ office_opens }}{% endif %}.</span>
-    <span class="line"></span>
-    <svg width="54" height="34" viewBox="0 0 54 34" aria-hidden="true"><path d="M14 2l11 6.3v12.7L14 27.3 3 21V8.3z" fill="#f5b800"/><path d="M38 8l11 6.3V27L38 33.3 27 27V14.3z" fill="#ffd34d"/></svg>
-  </footer>
+  </section>
 </main>
-
-<div class="tip" id="tip"></div>
-<div class="scrim" id="scrim"></div>
-<aside class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="pname">
-  <div class="panel-h">
-    <div><h4 id="pname"></h4><div class="code" id="pcode"></div><div id="ppill" style="margin-top:8px"></div></div>
-    <button type="button" class="x" id="pclose" aria-label="Close">✕</button>
-  </div>
-  <div class="panel-b" id="pbody"></div>
-  <div class="panel-nav"><button type="button" class="tb-btn" id="pprev">‹ Previous</button><button type="button" class="tb-btn" id="pnext">Next ›</button></div>
-</aside>
-
+<footer>Source: {{ sources }} · {{ day }}{% if office_opens %} · late after {{ office_opens }}{% endif %}. Attendance % = present, on duty, work from home (and a single punch) over everyone due to work; half days count half.</footer>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="dh" id="dh"></div><div class="db" id="dbody"></div></aside>
+<script>{% include "_apis_kit.js" %}</script>
+<script id="data" type="application/json">{{ data_json | safe }}</script>
 <script>
 (function () {
-const D = {{ data_json | safe }};
-const ROWS = D.rows, B = D.buckets || {};
-const BYCODE = Object.fromEntries(ROWS.map((r) => [String(r.code), r]));
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent), R = D.rows, PK = D.pack, V = D.view, M = D.meta;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function hm(h) { if (h === null || h === undefined || h === "") return ""; const m = Math.round(Number(h) * 60);
-  return Number.isFinite(m) ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : String(h); }
-function t12(v) { const m = /^(\d{1,2}):(\d{2})/.exec(v || ""); if (!m) return v || ""; const h = Number(m[1]);
-  return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`; }
-const pill = (label, color) => `<span class="pill" style="background:${color}14;color:${color};border-color:${color}40">${esc(label)}</span>`;
-const colorOf = (r) => (B[r.bucket] || {}).color || "#6b7280";
+const pc = (v) => v === null || v === undefined ? "#94a3b8" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
+const pctS = (v) => v === null || v === undefined ? "–" : v + "%";
+const mins = (s) => { if (!s) return null; const [h, m] = String(s).split(":"); return +h * 60 + +m; };
+const t12 = (s) => { const m = typeof s === "number" ? s : mins(s); return m === null || isNaN(m) ? "" : `${Math.floor(m / 60) % 12 || 12}:${String(m % 60).padStart(2, "0")} ${m < 720 ? "AM" : "PM"}`; };
+const hmm = (h) => h === null || h === undefined || h === "" ? "" : `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+const mhm = (m) => m ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : "";
+const CO = D.company_view, B = D.buckets;
+const SC = {P: ["Present", "#16a34a"], D: ["On duty", "#0d9488"], W: ["Work from home", "#4f46e5"], M: ["Missing punch", "#7c3aed"], H: ["Half day", "#f59e0b"],
+  V: ["Leave", "#64748b"], A: ["Absent", "#dc2626"], O: ["Week off / holiday", "#cbd5e1"], N: ["Not tracked", "#e2e8f0"], "-": ["No record", "#eef1f6"]};
+const FL = {LATE: "Late arrival", LEFT_EARLY: "Left early", SHORT_HOURS: "Short hours", PERMISSION: "Short leave (approved)", PERMISSION_PENDING: "Short leave (pending)"};
+R.forEach((r) => { r.inM = mins(r.in_time); r.h = (PK && PK.people[String(r.code).toUpperCase()]) || {}; r.flags = r.flags || [];
+  r.text = [r.name, r.code, r.hod, r.category, r.status_label, r.leave_type, r.on_duty, r.permission].join(" ").toLowerCase(); });
+const pctOf = (L) => { let due = 0, eq = 0; L.forEach((r) => { if (["WEEK_OFF", "HOLIDAY", "NOT_TRACKED"].includes(r.status)) return; due++;
+  if (["PRESENT", "ON_DUTY", "WFH", "MISSING_PUNCH"].includes(r.status)) eq++; else if (r.status === "HALF_DAY") eq += .5; }); return due ? Math.round(1000 * eq / due) / 10 : null; };
 
-// ---------------- filter state
-let filter = "", filterLabel = "", query = "";
-function matchesFilter(r) {
-  if (!filter) return true;
-  const i = filter.indexOf(":"), kind = i < 0 ? filter : filter.slice(0, i), val = i < 0 ? "" : filter.slice(i + 1);
-  const flags = r.flags || [];
-  if (kind === "bucket") return r.bucket === val;
-  if (kind === "flag") return flags.includes(val);
-  if (kind === "perm") return flags.includes("PERMISSION") || flags.includes("PERMISSION_PENDING");
-  if (kind === "attention") return !!r.exc;
-  if (kind === "dept") return (r.department || "Not in employee master") === val;
-  if (kind === "team") return (r.team || "Not in employee master") === val;
-  if (kind === "hod") return (r.hod || "No HOD assigned") === val;
-  if (kind === "cat") return r.category === val;
-  return true;
-}
-const matchesQuery = (r) => !query || [r.name, r.code].some((x) => String(x || "").toLowerCase().includes(query));
-const visible = () => ROWS.filter((r) => matchesFilter(r) && matchesQuery(r));
+// ---------------- state in the address bar
+const DEF = {tab: "overview", q: "", b: "", f: "", hod: "", cat: "", att: false, pat: false, arr: null, sort: "attention", dir: 1, page: 0, per: 50, dense: false, tmet: "pct", pvR: CO ? "hod" : "status", pvC: "bucket"};
+const S = Object.assign({}, DEF);
+try { Object.assign(S, JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}")); } catch (e) { /* ignore a bad link */ }
+const save = () => { const d = {}; Object.keys(S).forEach((k) => { if (JSON.stringify(S[k]) !== JSON.stringify(DEF[k])) d[k] = S[k]; });
+  history.replaceState(null, "", Object.keys(d).length ? "#" + encodeURIComponent(JSON.stringify(d)) : location.pathname + location.search); };
 
-function setFilter(f, label, scroll) {
-  if (f === filter) { f = ""; label = ""; }                 // clicking the active filter again clears it
-  filter = f; filterLabel = label || "";
-  apply();
-  if (scroll && f) {
-    const excVisible = document.querySelectorAll("#exct tbody tr[data-code]:not(.hidden)").length;
-    if (!excVisible) $("all").open = true;
-    (excVisible ? $("exc") : $("all")).scrollIntoView({behavior: "smooth", block: "start"});
-  }
+// ---------------- filter controls
+const cnt = (f) => { const o = {}; R.forEach((r) => { const k = f(r); if (k) o[k] = (o[k] || 0) + 1; }); return o; };
+const opt = (o, all) => `<option value="">${all}</option>` + Object.keys(o).sort().map((k) => `<option value="${esc(k)}">${esc(k)} (${o[k]})</option>`).join("");
+$("fB").innerHTML = `<option value="">All statuses</option>` + Object.entries(B).filter(([k]) => R.some((r) => r.bucket === k)).map(([k, b]) => `<option value="${k}">${esc(b.label)} (${R.filter((r) => r.bucket === k).length})</option>`).join("");
+const fc = {}; R.forEach((r) => r.flags.forEach((f) => { if (FL[f]) fc[f] = (fc[f] || 0) + 1; }));
+$("fF").innerHTML = `<option value="">All flags</option>` + Object.keys(fc).map((k) => `<option value="${k}">${FL[k]} (${fc[k]})</option>`).join("");
+if (CO) { $("fH").hidden = false; $("fH").innerHTML = opt(cnt((r) => r.hod || "No HOD assigned"), "All HOD teams"); }
+const cats = cnt((r) => r.category); if (Object.keys(cats).length > 1) { $("fC").hidden = false; $("fC").innerHTML = opt(cats, "All categories"); }
+function filtered(skip) {
+  const q = S.q.trim().toLowerCase();
+  return R.filter((r) => (!S.b || r.bucket === S.b) && (!S.f || r.flags.includes(S.f)) && (!S.hod || (r.hod || "No HOD assigned") === S.hod)
+    && (!S.cat || r.category === S.cat) && (!S.att || r.exc) && (!S.pat || (r.exc && r.exc.pattern))
+    && (skip === "arr" || !S.arr || (r.inM !== null && r.inM >= S.arr[0] && r.inM < S.arr[1])) && (!q || q.split(/\s+/).every((w) => r.text.includes(w))));
 }
-function apply() {
-  document.body.classList.toggle("filtering", !!filter);
-  document.querySelectorAll("[data-filter]").forEach((el) => el.classList.toggle("active", !!filter && el.dataset.filter === filter));
-  $("fchip").classList.toggle("on", !!filter);
-  $("flabel").textContent = filter ? `Showing: ${filterLabel}` : "";
-  // exceptions table: hide rows that do not match
-  let shownExc = 0, n = 0;
-  document.querySelectorAll("#exct tbody tr[data-code]").forEach((tr) => {
-    const r = BYCODE[tr.dataset.code], ok = !!r && matchesFilter(r) && matchesQuery(r);
-    tr.classList.toggle("hidden", !ok);
-    if (ok) { shownExc++; tr.querySelector(".idx").textContent = ++n; }
-  });
-  if ($("excnone")) $("excnone").classList.toggle("hidden", shownExc > 0);
-  renderAll();
-  const total = visible().length;
-  $("shown").textContent = filter || query ? `${total} of ${ROWS.length} employees` : "";
+const set = (patch, tab) => { Object.assign(S, patch, {page: 0}); if (tab) S.tab = tab; render(); };
+function sync() {
+  $("q").value = S.q; $("fB").value = S.b; $("fF").value = S.f; $("fH").value = S.hod; $("fC").value = S.cat; $("fA").checked = S.att; $("fP").checked = S.pat;
+  const c = [];
+  if (S.q) c.push(["q", `“${S.q}”`]); if (S.b) c.push(["b", B[S.b].label]); if (S.f) c.push(["f", FL[S.f]]); if (S.hod) c.push(["hod", "HOD: " + S.hod]);
+  if (S.cat) c.push(["cat", S.cat]); if (S.att) c.push(["att", "Needs attention"]); if (S.pat) c.push(["pat", "Repeat pattern"]);
+  if (S.arr) c.push(["arr", `In ${t12(S.arr[0])} – ${S.arr[1] >= 1440 ? "later" : t12(S.arr[1])}`]);
+  $("act").innerHTML = c.length ? c.map(([k, l]) => `<button class="fc" data-clear="${k}">${esc(l)} ✕</button>`).join("") + `<button class="lnk" data-clear="all">Clear all</button><span class="muted small">${filtered().length} of ${R.length} people</span>` : "";
+}
+$("q").addEventListener("input", (e) => { S.q = e.target.value; S.page = 0; render(); });
+[["fB", "b"], ["fF", "f"], ["fH", "hod"], ["fC", "cat"]].forEach(([id, k]) => $(id).addEventListener("change", (e) => set({[k]: e.target.value})));
+[["fA", "att"], ["fP", "pat"]].forEach(([id, k]) => $(id).addEventListener("change", (e) => set({[k]: e.target.checked})));
+const CLEAR = {q: "", b: "", f: "", hod: "", cat: "", att: false, pat: false, arr: null};
+$("act").addEventListener("click", (e) => { const b = e.target.closest("[data-clear]"); if (!b) return; set(b.dataset.clear === "all" ? CLEAR : {[b.dataset.clear]: DEF[b.dataset.clear]}); });
+
+// ---------------- tabs
+const TABS = [["overview", "Overview"], ["attention", "Needs attention"], ["people", "People"]].concat(CO && PK && (PK.groups || []).length > 1 ? [["teams", "HOD teams"]] : []).concat(PK ? [["trends", "Trends"]] : []);
+if (!TABS.some(([k]) => k === S.tab)) S.tab = "overview";
+function tabs(L) {
+  const c = {attention: L.filter((r) => r.exc).length, people: L.length};
+  $("tabs").innerHTML = TABS.map(([k, l]) => `<button role="tab" class="${S.tab === k ? "on" : ""}" data-tab="${k}">${l}${c[k] !== undefined ? `<span class="cnt">${c[k]}</span>` : ""}</button>`).join("");
+  ["overview", "attention", "people", "teams", "trends"].forEach((k) => { $("v-" + k).hidden = S.tab !== k; });
+}
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { S.tab = b.dataset.tab; render(); window.scrollTo({top: 0}); } });
+
+// ---------------- charts
+function trendSvg(T, metric, h) {
+  if (!T || T.length < 2) return '<p class="muted">Not enough report days yet.</p>';
+  const W = 760, H = h || 220, L = 40, Rr = 12, top = 10, bot = 34, n = T.length, x = (i) => L + i * (W - L - Rr) / (n - 1);
+  const val = (t) => metric === "pct" ? t.pct : t.off_day ? null : metric === "absent" ? t.absent : t.late;
+  const vals = T.map(val).filter((v) => v !== null && v !== undefined), hi = metric === "pct" ? 100 : Math.max(5, ...vals) * 1.15, lo = metric === "pct" ? Math.max(0, Math.floor(Math.min(...vals, 90) / 10) * 10 - 10) : 0;
+  const y = (v) => top + (hi - v) * (H - top - bot) / (hi - lo || 1), bw = Math.max(3, (W - L - Rr) / n * .55), mA = Math.max(1, ...T.map((t) => t.absent));
+  let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="Trend">`;
+  (metric === "pct" ? [lo, (lo + 100) / 2, 90, 100].filter((v, i, a) => a.indexOf(v) === i) : [0, Math.round(hi / 2), Math.round(hi)])
+    .forEach((g) => s += `<line class="gl" x1="${L}" x2="${W - Rr}" y1="${y(g)}" y2="${y(g)}" ${g === 90 && metric === "pct" ? 'stroke="#86efac"' : ""}/><text class="ax" x="${L - 5}" y="${y(g) + 4}" text-anchor="end">${Math.round(g)}${metric === "pct" ? "%" : ""}</text>`);
+  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="var(--soft)"><title>${t.label} (${t.weekday}): week off / holiday – left out</title></rect>`;
+    if (metric === "pct") { const bh = t.absent / mA * 44; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - bh}" width="${bw}" height="${bh}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; }
+    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text class="ax" x="${x(i)}" y="${H - 12}" text-anchor="middle">${t.label}</text>`; });
+  if (metric !== "pct") T.forEach((t, i) => { const v = val(t); if (v !== null && v !== undefined) s += `<rect x="${x(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${H - bot - y(v)}" rx="2" fill="${metric === "absent" ? "#ef4444" : "#f59e0b"}"><title>${t.label} (${t.weekday}): ${v}</title></rect>`; });
+  else { let d = ""; T.forEach((t, i) => { if (t.pct !== null) d += (d && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
+    s += `<path d="${d}" fill="none" stroke="var(--navy-2)" stroke-width="2.2"/>`;
+    T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="${i === n - 1 ? 5.5 : 3.8}" fill="${pc(t.pct)}" stroke="var(--card)" stroke-width="1.5"><title>${t.label} (${t.weekday}): ${t.pct}%\n${t.absent} absent · ${t.late} late</title></circle>`; }); }
+  const ok = T.filter((t) => t.pct !== null).map((t) => t.pct);
+  return s + "</svg>" + (metric === "pct" && ok.length ? `<p class="small muted" style="margin:4px 0 0">Average on working days <b>${Math.round(10 * ok.reduce((a, b) => a + b, 0) / ok.length) / 10}%</b> · best ${Math.max(...ok)}% · lowest ${Math.min(...ok)}%.</p>` : "");
+}
+function donut(L) {
+  const parts = Object.keys(B).map((k) => [k, L.filter((r) => r.bucket === k).length]).filter(([, v]) => v), tot = parts.reduce((a, [, v]) => a + v, 0);
+  if (!tot) return '<p class="muted">Nobody in this filter.</p>';
+  let a0 = -Math.PI / 2, s = '<svg class="ch" viewBox="0 0 220 220" style="max-width:220px;margin:auto">';
+  parts.forEach(([k, v]) => { const a1 = a0 + 2 * Math.PI * v / tot, big = a1 - a0 > Math.PI ? 1 : 0, p = (a, rr) => `${110 + rr * Math.cos(a)} ${110 + rr * Math.sin(a)}`;
+    s += parts.length === 1 ? `<circle class="hit" data-b="${k}" cx="110" cy="110" r="76" fill="none" stroke="${B[k].color}" stroke-width="37"><title>${B[k].label}: ${v}</title></circle>`
+      : `<path class="hit" data-b="${k}" d="M${p(a0, 95)} A95 95 0 ${big} 1 ${p(a1, 95)} L${p(a1, 58)} A58 58 0 ${big} 0 ${p(a0, 58)}Z" fill="${B[k].color}"><title>${B[k].label}: ${v} (${Math.round(100 * v / tot)}%)</title></path>`; a0 = a1; });
+  const pv = filtered().length === R.length ? V.attendance_pct : pctOf(L);
+  s += `<text x="110" y="108" text-anchor="middle" font-size="30" font-weight="800" fill="${pc(pv)}">${pctS(pv)}</text><text x="110" y="130" text-anchor="middle" class="ax">attendance</text></svg>`;
+  return s + `<div class="legend" style="justify-content:center">${parts.map(([k, v]) => `<span><i style="background:${B[k].color}"></i>${esc(B[k].label)} ${v}</span>`).join("")}</div>`;
+}
+function arrivals(L) {
+  const late = mins(M.late_after) || 600, Bk = [[0, 480]]; for (let m = 480; m < 720; m += 30) Bk.push([m, m + 30]); Bk.push([720, 1440]);
+  const rows = Bk.map(([a, b]) => [a, b, L.filter((r) => r.inM !== null && r.inM >= a && r.inM < b).length]);
+  if (!rows.some((r) => r[2])) return '<p class="muted">No in-punches in this filter.</p>';
+  const mx = Math.max(1, ...rows.map((r) => r[2])), W = 640, H = 200, bw = (W - 40) / rows.length;
+  let s = `<svg class="ch" viewBox="0 0 ${W} ${H}">`;
+  rows.forEach(([a, b, c], i) => { const h = c / mx * (H - 60), on = S.arr && S.arr[0] === a;
+    s += `<g class="hit" data-arr="${a},${b}"><rect x="${20 + i * bw + 3}" y="${H - 34 - h}" width="${bw - 6}" height="${Math.max(h, 1)}" rx="4" fill="${b > late ? "#f59e0b" : "#0d9488"}" ${on ? 'stroke="var(--ink)" stroke-width="2"' : ""}><title>${a === 0 ? "Before 8:00 AM" : b >= 1440 ? "After 12:00 PM" : t12(a) + " – " + t12(b)}: ${c} people</title></rect>
+      <text class="ax" x="${20 + i * bw + bw / 2}" y="${H - 38 - h}" text-anchor="middle">${c || ""}</text><text class="ax" x="${20 + i * bw + bw / 2}" y="${H - 18}" text-anchor="middle">${a === 0 ? "<8" : b >= 1440 ? "12+" : t12(a).replace(":00", "").replace(" AM", "a").replace(" PM", "p")}</text></g>`; });
+  return s + `</svg><p class="small muted" style="margin:2px 0 0">Amber = after ${esc(t12(late))} (late).</p>`;
+}
+function heat(rows, el) {
+  if (!PK) return; const W = PK.weekdays, show = W.map((_, k) => rows.some((r) => r.heat[k] !== null && r.heat[k] !== undefined));
+  $(el).innerHTML = `<tr><th></th>${W.map((w, k) => show[k] ? `<th>${w}</th>` : "").join("")}${rows.some((r) => r.pct30 !== undefined) ? "<th>30 days</th>" : ""}</tr>` + rows.map((r) => `<tr class="${r.click ? "ck" : ""}" ${r.click ? `data-hod="${esc(r.name)}"` : ""}><td>${esc(r.name)}</td>${r.heat.map((v, k) => show[k] ? `<td class="hc" style="background:${v === null ? "var(--soft)" : pc(v)};${v === null ? "color:var(--muted)" : ""}" title="${esc(r.name)} · ${W[k]}: ${v === null ? "no working days" : v + "%"}">${v === null ? "–" : Math.round(v)}</td>` : "").join("")}${r.pct30 !== undefined ? `<td class="num"><b style="color:${pc(r.pct30)}">${pctS(r.pct30)}</b></td>` : ""}</tr>`).join("");
+}
+const strip = (h, big) => h && h.strip && PK ? `<span class="${big ? "strip" : "mini"}">${h.strip.split("").map((c, i) => `<i style="background:${(SC[c] || SC["-"])[1]}" title="${PK.labels[i]} ${PK.weekday_of[i]}: ${(SC[c] || SC["-"])[0]}">${big ? PK.labels[i].split("-")[0] : ""}</i>`).join("")}</span>` : "";
+const pill = (r) => `<span class="pill" style="background:${r.exc ? r.exc.color : B[r.bucket] ? B[r.bucket].color : "#94a3b8"}">${esc(r.exc ? r.exc.status : r.status_label)}</span>`;
+
+// ---------------- Overview
+function vOverview(L) {
+  const whole = L.length === R.length, spk = PK ? APIS.spark(PK.trend.map((t) => t.pct), "#5e3c0f", 130, 26) : "";
+  const cnt = (b) => L.filter((r) => r.bucket === b).length, fl = (f) => L.filter((r) => r.flags.includes(f)).length;
+  const met = Object.fromEntries((V.metrics || []).map((m) => [m.label, m]));
+  const d = (lab) => whole && met[lab] && met[lab].trend !== "none" ? `<div class="d" style="color:${met[lab].trend === "good" ? "var(--ok)" : met[lab].trend === "bad" ? "var(--bad)" : "var(--muted)"}">${esc(met[lab].delta)} vs ${esc(M.previous_day || "previous day")}</div>` : "";
+  const pv = whole ? V.attendance_pct : pctOf(L);
+  const T = [["", "Attendance", pctS(pv), pc(pv), `${cnt("present")} present · ${L.length} people`, d("Attendance") + spk],
+    ["absent", "Absent", cnt("absent"), "#dc2626", "no punch, no leave", d("Absent")],
+    ["f:LATE", "Late arrival", fl("LATE"), "#d97706", "counted present", d("Late arrivals")],
+    ["missing", "Missing punch", cnt("missing"), "#7c3aed", "one punch only", d("Missing punch")],
+    ["f:LEFT_EARLY", "Left early", fl("LEFT_EARLY"), "#ea580c", "short of required hours", d("Left early")],
+    ["leave", "On leave", cnt("leave"), "#64748b", `${cnt("wfh")} WFH · ${cnt("od")} on duty`, d("On leave")],
+    ["att", "Needs attention", L.filter((r) => r.exc).length, "#5e3c0f", `${L.filter((r) => r.exc && r.exc.pattern).length} with a repeat pattern`, ""]];
+  $("tiles").innerHTML = T.map(([k, l, v, c, s, x]) => `<button class="tile" data-tile="${k}" style="--c:${c}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${x}</button>`).join("");
+  $("ovTrend").innerHTML = PK ? trendSvg(PK.trend, "pct") : '<p class="muted">No history yet.</p>';
+  $("donut").innerHTML = donut(L);
+  $("arr").innerHTML = arrivals(filtered("arr"));
+  if (PK) heat([{name: "Everyone", heat: PK.heat_all}], "heat"); else $("heat").innerHTML = '<tr><td class="muted">No history yet.</td></tr>';
+  let more = "";
+  if (CO && PK && (PK.groups || []).length > 1) more += `<div class="card"><h3>HOD teams to watch <span class="muted">– lowest 30-day attendance</span></h3><table class="t dense"><tbody>${PK.groups.filter((g) => g.pct30 !== null).slice(0, 7).map((g) => `<tr class="ck" data-hod="${esc(g.name)}"><td><b>${esc(g.name)}</b><div class="small muted">${g.absent30} absent days in 30</div></td><td class="num"><span class="pbar"><i style="width:${g.pct30}%;background:${pc(g.pct30)}"></i></span><b style="color:${pc(g.pct30)}">${g.pct30}%</b></td></tr>`).join("")}</tbody></table></div>`;
+  if ((D.highlights || []).length) more += `<div class="card"><h3>Highlights</h3><ul class="hl">${D.highlights.map((h) => `<li style="--c:${h.kind === "bad" ? "#dc2626" : h.kind === "good" ? "#16a34a" : "#d97706"}">${esc(h.text)}</li>`).join("")}</ul></div>`;
+  const top = L.filter((r) => r.exc).slice(0, 8);
+  more += `<div class="card"><h3>First to act on <span class="muted">– ${L.filter((r) => r.exc).length} need attention</span></h3>${top.length ? `<table class="t dense"><tbody>${top.map((r) => `<tr class="ck" data-p="${esc(r.code)}"><td><b>${esc(r.name)}</b><div class="small muted">${esc(r.exc.details)}</div></td><td>${pill(r)}</td></tr>`).join("")}</tbody></table>` : '<p class="ok" style="color:var(--ok);font-weight:600">Nothing needs attention.</p>'}</div>`;
+  $("ovMore").innerHTML = more;
 }
 
-// ---------------- full list
-const routingCols = {% if emailed and company_view %}[["hod","HOD"]]{% elif emailed %}[]{% else %}[["department","Department"],["hod","HOD"],["team","Team"],["manager","Reporting manager"]]{% endif %};
-const cols = [["code","Code"],["name","Name"], ...(ROWS.some((r) => r.department || r.hod) ? routingCols : []),
-  ["status_label","Status"],["in_time","In"],["out_time","Out"],["work_hours","Hours (h:mm)"],["late_minutes","Late by (h:mm)"],
-  ["early_minutes","Short by (h:mm)"],["leave_type","Leave"],["permission","Permission"]];
-let sortKey = "name", sortDir = 1;
-$("thead").innerHTML = cols.map(([k, l]) => `<th data-sort="${k}">${esc(l)}</th>`).join("");
-$("thead").addEventListener("click", (e) => {
-  const th = e.target.closest("th"); if (!th) return;
-  const k = th.dataset.sort; sortDir = sortKey === k ? -sortDir : 1; sortKey = k;
-  $("thead").querySelectorAll("th").forEach((x) => x.classList.remove("asc", "desc"));
-  th.classList.add(sortDir > 0 ? "asc" : "desc"); renderAll();
+// ---------------- Needs attention
+let ATT = [];
+function vAttention(L) {
+  ATT = L.filter((r) => r.exc);
+  $("attN").textContent = `– ${ATT.length} people`;
+  const g = {}; ATT.forEach((r) => { (g[r.exc.status] = g[r.exc.status] || []).push(r); });
+  $("attT").innerHTML = `<thead><tr><th>Employee</th>${CO ? "<th>HOD</th>" : ""}<th>In</th><th>Out</th><th>Hours</th><th>What happened</th><th>Action</th><th>Last 30 days</th></tr></thead><tbody class="grp">`
+    + (Object.entries(g).map(([k, rs]) => `<tr><td class="gh" colspan="${CO ? 8 : 7}"><span class="dot" style="background:${rs[0].exc.color}"></span> ${esc(k)} · ${rs.length}</td></tr>`
+      + rs.map((r) => `<tr class="ck" data-p="${esc(r.code)}"><td><b>${esc(r.name)}</b> <span class="small muted">${esc(r.code)}</span></td>${CO ? `<td>${esc(r.hod)}</td>` : ""}<td class="num">${t12(r.in_time) || "–"}</td><td class="num">${t12(r.out_time) || "–"}</td><td class="num">${hmm(r.work_hours) || "–"}</td>
+        <td class="small">${esc(r.exc.details)}</td><td><span class="act">${esc(r.exc.action)}</span></td><td>${strip(r.h)} ${r.h.pct30 !== undefined ? `<b style="color:${pc(r.h.pct30)}">${pctS(r.h.pct30)}</b>` : ""}</td></tr>`).join("")).join("")
+      || `<tr><td class="empty" colspan="8">Nothing needs attention in this filter.</td></tr>`) + "</tbody>";
+}
+$("attCsv").addEventListener("click", () => csv(ATT, ["who", "status", "in", "out", "hours", "what", "action"], `attention_${D.day}`));
+
+// ---------------- People grid
+const COLDEF = {
+  who: ["Employee", (r) => r.name, (r) => `<b>${esc(r.name)}</b> <span class="small muted">${esc(r.code)}</span>${r.category ? `<div class="small muted">${esc(r.category)}</div>` : ""}`, (r) => r.name],
+  hod: ["HOD", (r) => r.hod || null, (r) => esc(r.hod), (r) => r.hod],
+  status: ["Status", (r) => r.status_label, (r) => pill(r) + (r.leave_type ? `<div class="small muted">${esc(r.leave_type)}</div>` : ""), (r) => r.exc ? r.exc.status : r.status_label],
+  in: ["In", (r) => r.inM, (r) => t12(r.in_time), (r) => t12(r.in_time)],
+  out: ["Out", (r) => mins(r.out_time), (r) => t12(r.out_time), (r) => t12(r.out_time)],
+  hours: ["Hours", (r) => r.work_hours === "" ? null : r.work_hours, (r) => hmm(r.work_hours), (r) => hmm(r.work_hours)],
+  late: ["Late by", (r) => r.late_minutes || null, (r) => r.late_minutes ? mhm(r.late_minutes) : "", (r) => mhm(r.late_minutes)],
+  early: ["Short by", (r) => r.early_minutes || null, (r) => r.early_minutes ? mhm(r.early_minutes) : "", (r) => mhm(r.early_minutes)],
+  perm: ["Permission / on duty", (r) => r.permission || r.on_duty || null, (r) => esc([r.permission, r.on_duty].filter(Boolean).join(" · ")), (r) => [r.permission, r.on_duty].filter(Boolean).join(" · ")],
+  what: ["What happened", (r) => r.exc ? r.exc.details : null, (r) => r.exc ? `<span class="small">${esc(r.exc.details)}</span>` : "", (r) => r.exc ? r.exc.details : ""],
+  action: ["Action", (r) => r.exc ? r.exc.action : null, (r) => r.exc ? `<span class="act">${esc(r.exc.action)}</span>` : "", (r) => r.exc ? r.exc.action : ""],
+  h30: ["Last 30 days", (r) => r.h.pct30 ?? null, (r) => r.h.strip ? `${strip(r.h)} <b style="color:${pc(r.h.pct30)}">${pctS(r.h.pct30)}</b><div class="small muted">${r.h.absent30 || 0} absent · ${r.h.late30 || 0} late</div>` : "", (r) => r.h.pct30 ?? ""],
+  usual: ["Usual in", (r) => { const m = (r.h.usual_in || "").match(/(\d+):(\d+) (AM|PM)/); return m ? (+m[1] % 12 + (m[3] === "PM" ? 12 : 0)) * 60 + +m[2] : null; }, (r) => esc(r.h.usual_in || ""), (r) => r.h.usual_in || ""],
+};
+if (!CO) delete COLDEF.hod;
+const COLS_DEF = Object.keys(COLDEF).filter((k) => !["usual", "action"].includes(k));
+let COLS = COLS_DEF.slice();
+try { const s = JSON.parse(localStorage.getItem("ho-cols") || "null"); if (Array.isArray(s)) COLS = s.filter((k) => COLDEF[k]); } catch (e) { /* private mode */ }
+const keepCols = () => { try { localStorage.setItem("ho-cols", JSON.stringify(COLS)); } catch (e) { /* private mode */ } };
+let VIS = [];
+function sorted(L) {
+  if (S.sort === "attention") return L.slice().sort((a, b) => (!!b.exc - !!a.exc) || a.name.localeCompare(b.name));
+  const k = COLDEF[S.sort] && COLDEF[S.sort][1]; if (!k) return L;
+  return L.slice().sort((a, b) => { const x = k(a), y = k(b); if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x < y ? -1 : x > y ? 1 : a.name.localeCompare(b.name)) * S.dir; });
+}
+function vPeople(L) {
+  VIS = sorted(L); $("pcnt").textContent = `${L.length} of ${R.length} people`;
+  $("quick").innerHTML = [["attention", "Attention first"], ["who", "A–Z"], ["in", "In-time"], ["h30", "Lowest 30-day %"]].map(([k, l]) => `<button class="${S.sort === k ? "on" : ""}" data-sort="${k}" data-q="1">${l}</button>`).join("");
+  $("colsPop").innerHTML = Object.entries(COLDEF).map(([k, [l]]) => `<label><input type="checkbox" data-col="${k}" ${COLS.includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("") + `<button class="lnk" data-cols="reset" style="margin:6px">Reset columns</button>`;
+  $("ptab").classList.toggle("dense", S.dense); $("dense").textContent = S.dense ? "Comfortable rows" : "Compact rows";
+  $("ptab").tHead.innerHTML = "<tr>" + COLS.map((k) => `<th class="s" data-sort="${k}">${esc(COLDEF[k][0])}<span class="ar">${S.sort === k ? (S.dir > 0 ? "▲" : "▼") : ""}</span></th>`).join("") + "</tr>";
+  const per = S.per || 1e9, pages = Math.max(1, Math.ceil(VIS.length / per)); S.page = Math.min(S.page, pages - 1);
+  $("ptab").tBodies[0].innerHTML = VIS.slice(S.page * per, S.page * per + per).map((r) => `<tr class="ck" data-p="${esc(r.code)}">${COLS.map((k) => `<td class="${["in", "out", "hours", "late", "early"].includes(k) ? "num" : ""}">${COLDEF[k][2](r)}</td>`).join("")}</tr>`).join("")
+    || `<tr><td class="empty" colspan="${COLS.length}">Nobody matches these filters. <button class="lnk" data-clear="all">Clear all filters</button></td></tr>`;
+  $("pager").innerHTML = `<span class="muted">Rows per page</span><select id="per">${[25, 50, 100, 0].map((n) => `<option value="${n}" ${S.per === n ? "selected" : ""}>${n || "All"}</option>`).join("")}</select>`
+    + (pages > 1 ? `<button class="btn" data-page="${S.page - 1}" ${S.page ? "" : "disabled"}>‹</button><span>Page ${S.page + 1} of ${pages}</span><button class="btn" data-page="${S.page + 1}" ${S.page < pages - 1 ? "" : "disabled"}>›</button>` : "");
+}
+$("v-people").addEventListener("click", (e) => {
+  const s = e.target.closest("[data-sort]"); if (s) { const k = s.dataset.sort; if (s.dataset.q) { S.sort = k; S.dir = 1; } else if (S.sort === k) S.dir = -S.dir; else { S.sort = k; S.dir = 1; } render(); return; }
+  const pg = e.target.closest("[data-page]"); if (pg) { S.page = +pg.dataset.page; render(); return; }
+  if (e.target.closest("#colsBtn")) { $("colsPop").hidden = !$("colsPop").hidden; return; }
+  if (e.target.closest("[data-cols]")) { COLS = COLS_DEF.slice(); keepCols(); render(); return; }
+  if (e.target.closest("#dense")) { S.dense = !S.dense; render(); return; }
+  if (e.target.closest("#csv")) csv(VIS, COLS, `attendance_${D.day}`);
 });
-function cell(r, k) {
-  if (k === "status_label") return `<td>${pill(r.status_label, colorOf(r))}</td>`;
-  if (k === "name") return `<td><b>${esc(r.name)}</b>${r.exc ? ` <span title="Needs attention" style="color:#b42318">●</span>` : ""}</td>`;
-  let v = r[k];
-  if (k === "in_time" || k === "out_time") v = t12(v);
-  else if (k === "work_hours") v = hm(v);
-  else if (k === "late_minutes" || k === "early_minutes") v = v ? hm(v / 60) : "";
-  return `<td class="${["in_time","out_time","work_hours","late_minutes","early_minutes"].includes(k) ? "num" : ""}">${esc(v)}</td>`;
-}
-let listed = [];
-function renderAll() {
-  listed = visible().sort((a, b) => { const x = a[sortKey] ?? "", y = b[sortKey] ?? ""; return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
-  $("tbody").innerHTML = listed.length ? listed.map((r) => `<tr data-code="${esc(r.code)}" tabindex="0">${cols.map(([k]) => cell(r, k)).join("")}</tr>`).join("")
-    : `<tr class="noresults"><td colspan="${cols.length}">Nobody matches${filter ? " this filter" : ""}${query ? " this search" : ""}.</td></tr>`;
-  $("allcount").textContent = `(${listed.length === ROWS.length ? ROWS.length : listed.length + " of " + ROWS.length}) – click a person for details`;
-}
-
-// ---------------- exceptions table sorting
-(function () {
-  const t = $("exct"); if (!t) return;
-  let key = "order", dir = 1;
-  t.tHead.addEventListener("click", (e) => {
-    const th = e.target.closest("th[data-sort]"); if (!th) return;
-    dir = key === th.dataset.sort ? -dir : 1; key = th.dataset.sort;
-    t.tHead.querySelectorAll("th").forEach((x) => x.classList.remove("asc", "desc")); th.classList.add(dir > 0 ? "asc" : "desc");
-    const body = t.tBodies[0], rows = [...body.querySelectorAll("tr[data-code]")];
-    const val = (tr) => key === "minutes" || key === "order" ? Number(tr.dataset[key]) : (tr.dataset[key] || "￿");
-    rows.sort((a, b) => { const x = val(a), y = val(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; }).forEach((tr) => body.insertBefore(tr, $("excnone")));
-    apply();
-  });
-})();
-
-// ---------------- person panel
-let current = null, source = "exc";
-// ---------------- last 30 report days: trend, weekday heat, HOD ranking (company views), and the person's 30 days
-const PK = D.pack;
-const C30 = {P: "#16a34a", M: "#7c3aed", D: "#0d9488", W: "#4f46e5", H: "#f59e0b", V: "#64748b", A: "#dc2626", O: "#cbd5e1", N: "#e2e8f0", "-": "#eef1f6"};
-const N30 = {P: "Present", M: "Missing punch", D: "On duty", W: "Work from home", H: "Half day", V: "Leave", A: "Absent", O: "Week off / holiday", N: "Not tracked", "-": "No record"};
-const pc30 = (v) => v === null || v === undefined ? "#e5e7eb" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
-function p30(code) {
-  const h = PK && PK.people[String(code).toUpperCase()]; if (!h) return "";
-  const s = (h.strip || "").split("");
-  const st = (k, v) => `<div class="fact"><div class="k">${esc(k)}</div><div class="v num">${esc(v === null || v === undefined || v === "" ? "–" : v)}</div></div>`;
-  return `<div class="k" style="font-weight:700;color:var(--navy);margin:14px 0 6px">Last ${s.length} report days</div>
-    <div class="facts">${st("Attendance", h.pct30 === null ? "–" : h.pct30 + "%")}${st("Late days", h.late30)}${st("Absent days", h.absent30)}</div>
-    <div class="facts">${st("Leave / half days", h.leave30)}${st("WFH / on duty", h.wfh_od30)}${st("Usual in-time", h.usual_in)}</div>
-    <div class="strip30">${s.map((c, i) => `<span style="background:${C30[c] || "#eef1f6"}" title="${esc(PK.labels[i])} ${esc(PK.weekday_of[i])}: ${N30[c] || c}">${esc((PK.labels[i] || "").split("-")[0])}</span>`).join("")}</div>
-    <div class="leg30">${["P", "D", "W", "M", "H", "V", "A", "O"].map((k) => `<span><i style="background:${C30[k]}"></i>${N30[k]}</span>`).join("")}</div>
-    ${h.avg_hours ? `<p style="color:var(--muted);font-size:12.5px;margin-top:6px">Average duty on working days: ${esc(h.avg_hours)} (h:mm)</p>` : ""}`;
-}
-(function () {
-  if (!PK || !PK.trend || !PK.trend.length || !$("p30")) return;
-  $("p30").hidden = false;
-  const T = PK.trend, W = 640, H = 200, L = 34, R = 10, top = 10, bot = 34, n = T.length;
-  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)), y = (v) => top + (100 - v) * (H - top - bot) / 100;
-  const mA = Math.max(1, ...T.map((t) => t.absent)), bw = Math.max(3, (W - L - R) / n * 0.55);
-  let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">`;
-  [50, 75, 90, 100].forEach((g) => s += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 90 ? "#bbf7d0" : "#eef1f6"}"/><text x="${L - 4}" y="${y(g) + 4}" text-anchor="end" font-size="11" fill="#6b7280">${g}%</text>`);
-  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="#f1f5f9"><title>${t.label} (${t.weekday}): week off / holiday – left out</title></rect>`;
-    const h = t.absent / mA * 40; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - h}" width="${bw}" height="${h}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; });
-  let path = ""; T.forEach((t, i) => { if (t.pct !== null) path += (path && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
-  s += `<path d="${path}" fill="none" stroke="#14213d" stroke-width="2"/>`;
-  T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="${i === n - 1 ? 5 : 3.5}" fill="${pc30(t.pct)}" stroke="#fff"><title>${t.label} (${t.weekday}): ${t.pct}% · ${t.absent} absent · ${t.late} late</title></circle>`;
-    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" font-size="11" fill="#6b7280">${t.label}</text>`; });
-  $("t30").innerHTML = s + "</svg>";
-  const v = T.filter((t) => t.pct !== null).map((t) => t.pct);
-  if (v.length) $("t30n").textContent = `Average on working days ${Math.round(10 * v.reduce((a, b) => a + b, 0) / v.length) / 10}% · best ${Math.max(...v)}% · lowest ${Math.min(...v)}%. Red bars = absent people; grey = week off / holiday (left out). Hover for the day.`;
-  const rows = [["Everyone", PK.heat_all, ""]].concat((PK.groups || []).map((g) => [g.name, g.heat, g.name]));
-  $("h30").innerHTML = `<tr><th></th>${PK.weekdays.map((w) => `<th>${w}</th>`).join("")}</tr>` + rows.map(([nm, hh, f]) => `<tr ${f ? `class="hrow" data-filter="hod:${esc(f)}" data-label="${esc(f)}" title="Show ${esc(f)}'s team"` : ""}><td>${esc(nm)}</td>${hh.map((x, i) =>
-    `<td class="hc" style="background:${x === null ? "#f8fafc" : pc30(x)};color:${x === null ? "#94a3b8" : "#fff"}" title="${esc(nm)} · ${PK.weekdays[i]}: ${x === null ? "no working days" : x + "%"} (last 12 weeks)">${x === null ? "–" : Math.round(x)}</td>`).join("")}</tr>`).join("");
-  if ((PK.groups || []).length > 1 && $("g30")) {
-    $("g30w").hidden = false;
-    $("g30").innerHTML = PK.groups.map((g) => `<div class="bar" data-filter="hod:${esc(g.name)}" data-label="${esc(g.name)}" tabindex="0" title="${esc(g.name)}: ${g.pct30}% over 30 report days, ${g.absent30} absent days - click to filter"><span class="nm">${esc(g.name)}</span>
-      <span class="t"><span class="f" style="display:block;width:${g.pct30 || 0}%;background:${pc30(g.pct30)}"></span></span><b class="num">${g.pct30 ?? "–"}%</b></div>`).join("");
-  }
-})();
-function order() {   // Previous / Next step through the table the person was opened from, as filtered and sorted
-  return source === "exc" ? [...document.querySelectorAll("#exct tbody tr[data-code]:not(.hidden)")].map((tr) => tr.dataset.code)
-                          : listed.map((r) => String(r.code));
-}
-function openPerson(code, from) {
-  const r = BYCODE[code]; if (!r) return;
-  current = String(code);
-  if (from) source = from;
-  $("pname").textContent = r.name || r.code;
-  $("pcode").textContent = `EMP code ${r.code}${r.department ? " · " + r.department : ""}`;
-  $("ppill").innerHTML = r.exc ? pill(r.exc.status, r.exc.color) : pill(r.status_label, colorOf(r));
-  const fact = (k, v) => `<div class="fact"><div class="k">${esc(k)}</div><div class="v num">${esc(v || "–")}</div></div>`;
-  const kv = [["Status", r.status_label], r.late_minutes ? ["Late by", hm(r.late_minutes / 60) + " hrs"] : null,
-    r.early_minutes ? ["Short of required hours by", hm(r.early_minutes / 60) + " hrs"] : null, r.leave_type ? ["Leave type", r.leave_type] : null,
-    r.permission ? ["Permission", r.permission] : null, r.exc && r.exc.pattern ? ["Recent pattern", r.exc.pattern] : null,
-    ...(r.hod ? [["HOD", r.hod]] : []), ...(r.team ? [["Team", r.team]] : []), ...(r.manager ? [["Reporting manager", r.manager]] : [])].filter(Boolean);
-  $("pbody").innerHTML = `<div class="facts">${fact("In", t12(r.in_time))}${fact("Out", t12(r.out_time))}${fact("Duty (h:mm)", hm(r.work_hours))}</div>
-    <dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-    ${r.exc ? `<div class="k" style="font-weight:700;color:var(--navy);margin-bottom:6px">Action required</div>
-      <div class="act"><span>${esc(r.exc.action)}</span></div>
-      <p style="color:var(--muted);font-size:13px;margin-top:10px">${esc(r.exc.details)}</p>`
-      : `<p style="color:var(--good);font-weight:600">Nothing needs attention for this person.</p>`}`;
-  $("pbody").insertAdjacentHTML("beforeend", p30(r.code));
-  const o = order(), i = o.indexOf(current);
-  $("pprev").disabled = i <= 0; $("pnext").disabled = i < 0 || i >= o.length - 1;
-  document.body.classList.add("open");
-  $("pclose").focus();
-}
-function closePerson() { document.body.classList.remove("open"); current = null; }
-function step(d) { const o = order(), i = o.indexOf(current); if (i >= 0 && o[i + d]) openPerson(o[i + d]); }
-$("pclose").addEventListener("click", closePerson);
-$("scrim").addEventListener("click", closePerson);
-$("pprev").addEventListener("click", () => step(-1));
-$("pnext").addEventListener("click", () => step(1));
-
-// ---------------- wiring
-document.addEventListener("click", (e) => {
-  const row = e.target.closest("tr[data-code]");
-  if (row) { openPerson(row.dataset.code, row.closest("#exct") ? "exc" : "all"); return; }
-  const f = e.target.closest("[data-filter]");
-  if (f) setFilter(f.dataset.filter, f.dataset.label, true);
+$("v-people").addEventListener("change", (e) => {
+  if (e.target.dataset.col) { const k = e.target.dataset.col; COLS = e.target.checked ? Object.keys(COLDEF).filter((c) => COLS.includes(c) || c === k) : COLS.filter((c) => c !== k); keepCols(); render(); }
+  if (e.target.id === "per") { S.per = +e.target.value; S.page = 0; render(); }
 });
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu")) $("colsPop").hidden = true; });
+function dl(text, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type: "text/csv;charset=utf-8"})); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+function csv(L, cols, name) {
+  const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  dl("﻿" + [["Code"].concat(cols.map((k) => COLDEF[k][0])).map(q).join(",")].concat(L.map((r) => [r.code].concat(cols.map((k) => COLDEF[k][3](r))).map(q).join(","))).join("\r\n"), name + ".csv");
+}
+
+// ---------------- HOD teams (Director / HR only)
+let scSort = ["pct30", 1];
+function vTeams(L) {
+  if (!CO || !PK) return;
+  const by = {}; L.forEach((r) => { const k = r.hod || "No HOD assigned"; (by[k] = by[k] || []).push(r); });
+  const rows = (PK.groups || []).filter((g) => by[g.name]).map((g) => { const rs = by[g.name];
+    return {name: g.name, people: rs.length, pct: pctOf(rs), pct30: g.pct30, absent30: g.absent30, absent: rs.filter((r) => r.bucket === "absent").length,
+      late: rs.filter((r) => r.flags.includes("LATE")).length, missing: rs.filter((r) => r.bucket === "missing").length, att: rs.filter((r) => r.exc).length, heat: g.heat}; });
+  const [k, dir] = scSort; rows.sort((a, b) => { const x = a[k], y = b[k]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+  const C = [["name", "HOD team"], ["people", "People"], ["pct", "This day"], ["pct30", "Last 30 days"], ["absent", "Absent"], ["late", "Late"], ["missing", "Missing punch"], ["att", "Needs attention"], ["absent30", "Absent days (30)"]];
+  $("sctab").tHead.innerHTML = "<tr>" + C.map(([c, l]) => `<th class="s" data-scs="${c}">${l}<span class="ar">${k === c ? (dir > 0 ? "▲" : "▼") : ""}</span></th>`).join("") + "</tr>";
+  $("sctab").tBodies[0].innerHTML = rows.map((r) => `<tr class="ck" data-hod="${esc(r.name)}"><td><b>${esc(r.name)}</b></td><td class="num">${r.people}</td><td class="num"><b style="color:${pc(r.pct)}">${pctS(r.pct)}</b></td>
+    <td class="num"><span class="pbar"><i style="width:${r.pct30 || 0}%;background:${pc(r.pct30)}"></i></span><b style="color:${pc(r.pct30)}">${pctS(r.pct30)}</b></td><td class="num">${r.absent}</td><td class="num">${r.late}</td><td class="num">${r.missing}</td><td class="num">${r.att}</td><td class="num">${r.absent30}</td></tr>`).join("");
+  heat([{name: "Everyone", heat: PK.heat_all}].concat(rows.slice().sort((a, b) => (a.pct30 ?? 999) - (b.pct30 ?? 999)).map((r) => ({name: r.name, heat: r.heat, click: true}))), "theat");
+  pivot(L);
+}
+$("sctab").addEventListener("click", (e) => { const h = e.target.closest("[data-scs]"); if (h) { scSort = [h.dataset.scs, scSort[0] === h.dataset.scs ? -scSort[1] : 1]; render(); } });
+const DIMS = {hod: ["HOD team", (r) => r.hod || "No HOD assigned"], bucket: ["Status", (r) => (B[r.bucket] || {label: r.bucket}).label], status: ["Detailed status", (r) => r.status_label],
+  category: ["Category", (r) => r.category || "—"], arrival: ["Arrival", (r) => r.inM === null ? "No in-punch" : r.inM < 570 ? "Before 9:30" : r.inM < 600 ? "9:30 – 10:00" : r.inM < 630 ? "10:00 – 10:30" : "After 10:30"],
+  attention: ["Needs attention", (r) => r.exc ? r.exc.status : "No"]};
+let PV = [];
+function pivot(L) {
+  if (!$("pvR").options.length) { const o = Object.entries(DIMS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join(""); $("pvR").innerHTML = o; $("pvC").innerHTML = o; }
+  $("pvR").value = S.pvR; $("pvC").value = S.pvC;
+  const Rf = DIMS[S.pvR][1], Cf = DIMS[S.pvC][1], m = {}, cs = {};
+  L.forEach((r) => { const a = Rf(r), b = Cf(r); m[a] = m[a] || {}; m[a][b] = (m[a][b] || 0) + 1; cs[b] = (cs[b] || 0) + 1; });
+  const cols = Object.keys(cs).sort((a, b) => cs[b] - cs[a]), rows = Object.keys(m).sort((a, b) => Object.values(m[b]).reduce((x, y) => x + y, 0) - Object.values(m[a]).reduce((x, y) => x + y, 0));
+  const mx = Math.max(1, ...rows.flatMap((r) => cols.map((c) => m[r][c] || 0)));
+  PV = [[DIMS[S.pvR][0] + " \\ " + DIMS[S.pvC][0], ...cols, "Total"]].concat(rows.map((r) => [r, ...cols.map((c) => m[r][c] || 0), cols.reduce((a, c) => a + (m[r][c] || 0), 0)]));
+  $("pivot").innerHTML = `<thead><tr><th>${esc(DIMS[S.pvR][0])}</th>${cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>`
+    + rows.map((r) => `<tr><td><b>${esc(r)}</b></td>${cols.map((c) => { const v = m[r][c] || 0; return `<td class="num" style="background:${v ? `rgba(94,60,15,${(.06 + .55 * v / mx).toFixed(2)})` : ""};${v / mx > .55 ? "color:#fff" : ""}" title="${esc(r)} · ${esc(c)}: ${v}">${v || ""}</td>`; }).join("")}<td class="num"><b>${cols.reduce((a, c) => a + (m[r][c] || 0), 0)}</b></td></tr>`).join("")
+    + `</tbody><tfoot><tr><td>Total</td>${cols.map((c) => `<td class="num">${cs[c]}</td>`).join("")}<td class="num">${L.length}</td></tr></tfoot>`;
+}
+$("pvR").addEventListener("change", (e) => { S.pvR = e.target.value; render(); }); $("pvC").addEventListener("change", (e) => { S.pvC = e.target.value; render(); });
+$("pvCsv").addEventListener("click", () => dl("﻿" + PV.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n"), `pivot_${D.day}.csv`));
+
+// ---------------- Trends
+function vTrends(L) {
+  if (!PK) return;
+  $("tmet").innerHTML = [["pct", "Attendance %"], ["absent", "Absent"], ["late", "Late"]].map(([k, l]) => `<button class="${S.tmet === k ? "on" : ""}" data-tmet="${k}">${l}</button>`).join("");
+  $("bigTrend").innerHTML = trendSvg(PK.trend, S.tmet, 260);
+  $("ttab").innerHTML = `<thead><tr><th>Date</th><th>Day</th><th class="num">Attendance</th><th class="num">Absent</th><th class="num">Late</th><th class="num">People</th></tr></thead><tbody>`
+    + PK.trend.slice().reverse().map((t) => `<tr><td>${t.label}</td><td>${t.weekday}</td><td class="num">${t.off_day ? '<span class="muted">week off / holiday</span>' : `<b style="color:${pc(t.pct)}">${pctS(t.pct)}</b>`}</td><td class="num">${t.absent}</td><td class="num">${t.late}</td><td class="num">${t.people}</td></tr>`).join("") + "</tbody>";
+  const top = L.filter((r) => r.h.absent30).sort((a, b) => b.h.absent30 - a.h.absent30 || (a.h.pct30 ?? 999) - (b.h.pct30 ?? 999)).slice(0, 25);
+  $("absTop").innerHTML = `<thead><tr><th>Employee</th><th class="num">Absent (30)</th><th>Last 30 days</th></tr></thead><tbody>` + (top.map((r) => `<tr class="ck" data-p="${esc(r.code)}"><td><b>${esc(r.name)}</b> <span class="small muted">${esc(r.code)}</span></td><td class="num"><b style="color:#dc2626">${r.h.absent30}</b></td><td>${strip(r.h)} ${pctS(r.h.pct30)}</td></tr>`).join("") || '<tr><td class="empty" colspan="3">No absences in 30 days for this filter.</td></tr>') + "</tbody>";
+  const us = L.map((r) => { const s = r.h.usual_in; if (!s) return null; const m = s.match(/(\d+):(\d+) (AM|PM)/); return m ? (+m[1] % 12 + (m[3] === "PM" ? 12 : 0)) * 60 + +m[2] : null; }).filter((v) => v !== null);
+  const late = mins(M.late_after) || 600, Bk = [[0, 540, "Before 9:00"], [540, 570, "9:00 – 9:30"], [570, 600, "9:30 – 10:00"], [600, 630, "10:00 – 10:30"], [630, 660, "10:30 – 11:00"], [660, 1440, "After 11:00"]];
+  const mx = Math.max(1, ...Bk.map(([a, b]) => us.filter((v) => v >= a && v < b).length));
+  $("usual").innerHTML = us.length ? Bk.map(([a, b, l]) => { const c = us.filter((v) => v >= a && v < b).length;
+    return `<div style="display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center;margin:5px 0" title="${l}: ${c} people usually come in"><span class="small">${l}</span><span style="background:var(--soft);border-radius:6px;height:16px;overflow:hidden"><i style="display:block;height:100%;width:${100 * c / mx}%;background:${b > late ? "#f59e0b" : "#0d9488"}"></i></span><b class="num">${c}</b></div>`; }).join("")
+    + `<p class="small muted">People who usually come in after ${esc(t12(late))} are late most days, even when this day looks fine.</p>` : '<p class="muted">Not enough days yet.</p>';
+}
+$("tmet").addEventListener("click", (e) => { const b = e.target.closest("[data-tmet]"); if (b) { S.tmet = b.dataset.tmet; render(); } });
+
+// ---------------- person drawer
+let cur = null;
+function openP(code) {
+  const r = R.find((x) => String(x.code) === String(code)); if (!r) return; cur = r.code; const h = r.h, i = VIS.findIndex((x) => x.code === r.code);
+  $("dh").innerHTML = `<button class="btn" id="dx" style="float:right" aria-label="Close">✕</button><h2>${esc(r.name)}</h2><div class="muted small">EMP code ${esc(r.code)}${r.category ? " · " + esc(r.category) : ""}${CO && r.hod ? " · HOD " + esc(r.hod) : ""}</div>
+    <div class="dnav"><span style="margin-right:auto">${pill(r)}</span>${i >= 0 ? `<button class="btn" data-step="-1" ${i > 0 ? "" : "disabled"}>‹ Previous</button><button class="btn" data-step="1" ${i < VIS.length - 1 ? "" : "disabled"}>Next ›</button>` : ""}</div>`;
+  const f = (k, v) => `<div><span>${esc(k)}</span><b>${v === null || v === undefined || v === "" ? "–" : v}</b></div>`;
+  $("dbody").innerHTML = `<h4>${esc(D.day)}</h4><div class="facts">${f("In", t12(r.in_time))}${f("Out", t12(r.out_time))}${f("Duty hours", hmm(r.work_hours))}${f("Late by", mhm(r.late_minutes))}${f("Short by", mhm(r.early_minutes))}${f("Leave", esc(r.leave_type || ""))}</div>
+    ${r.permission ? `<p class="ev">Permission: ${esc(r.permission)}</p>` : ""}${r.on_duty ? `<p class="ev">On duty / WFH: ${esc(r.on_duty)}</p>` : ""}
+    ${r.exc ? `<h4>Needs attention</h4><p class="ev">${esc(r.exc.details)}</p><span class="act">${esc(r.exc.action)}</span>${r.exc.pattern ? `<p class="ev"><span class="tag t-medium pt">↻ Repeat pattern</span> ${esc(r.exc.pattern)}</p>` : ""}` : ""}
+    ${h.strip ? `<h4>Last ${h.strip.length} report days</h4><div class="facts">${f("Attendance", `<span style="color:${pc(h.pct30)}">${pctS(h.pct30)}</span>`)}${f("Late days", h.late30)}${f("Absent days", h.absent30)}${f("Leave / half days", h.leave30)}${f("WFH / on duty", h.wfh_od30)}${f("Usual in-time", esc(h.usual_in || ""))}${f("Average duty", h.avg_hours ? esc(h.avg_hours) + " h" : "")}</div>
+      ${strip(h, true)}<div class="legend">${["P", "D", "W", "M", "H", "V", "A", "O"].map((c) => `<span><i style="background:${SC[c][1]}"></i>${SC[c][0]}</span>`).join("")}</div>` : ""}
+    ${!r.exc ? '<p class="ev" style="color:var(--ok);font-weight:600;margin-top:14px">Nothing to act on for this day.</p>' : ""}`;
+  $("drawer").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); $("scrim").hidden = false; $("dx").focus();
+}
+function closeP() { cur = null; $("drawer").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); $("scrim").hidden = true; }
+function step(d) { const i = VIS.findIndex((x) => x.code === cur); if (i >= 0 && VIS[i + d]) openP(VIS[i + d].code); }
+$("drawer").addEventListener("click", (e) => { if (e.target.closest("#dx")) closeP(); const s = e.target.closest("[data-step]"); if (s) step(+s.dataset.step); });
+$("scrim").addEventListener("click", closeP);
 document.addEventListener("keydown", (e) => {
-  if (document.body.classList.contains("open")) {
-    if (e.key === "Escape") closePerson();
-    if (e.key === "ArrowDown" || e.key === "ArrowRight") step(1);
-    if (e.key === "ArrowUp" || e.key === "ArrowLeft") step(-1);
-    return;
-  }
-  if (e.key === "Escape" && filter) { setFilter(filter); return; }
-  if (e.key !== "Enter" && e.key !== " ") return;
-  const t = e.target;
-  if (t.matches && t.matches("tr[data-code]")) { e.preventDefault(); openPerson(t.dataset.code, t.closest("#exct") ? "exc" : "all"); }
-  else if (t.matches && t.matches("tr[data-filter], .bar[data-filter], #need")) { e.preventDefault(); setFilter(t.dataset.filter, t.dataset.label, true); }
+  if (e.key === "Escape") { closeP(); return; }
+  if (cur && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); step(e.key === "ArrowDown" ? 1 : -1); return; }
+  if (e.target.matches("input, select, textarea")) return;
+  if (e.key === "/") { e.preventDefault(); $("q").focus(); } if (e.key === "t" || e.key === "T") $("theme").click();
 });
-$("fclear").addEventListener("click", () => setFilter(filter));
-$("q").addEventListener("input", (e) => { query = e.target.value.trim().toLowerCase(); if (query) $("all").open = true; apply(); });
-$("print").addEventListener("click", () => { $("all").open = true; window.print(); });
-$("csv").addEventListener("click", () => {
-  const head = cols.map(([, l]) => l).concat(["Needs attention", "Action required"]);
-  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = [head.map(q).join(",")].concat(listed.map((r) => cols.map(([k]) =>
-    k === "in_time" || k === "out_time" ? t12(r[k]) : k === "work_hours" ? hm(r[k]) : r[k]).concat([r.exc ? r.exc.status : "", r.exc ? r.exc.action : ""]).map(q).join(",")));
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
-  a.download = `attendance${filter ? "_" + filterLabel.replace(/\W+/g, "_") : ""}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
+// ---------------- cross-filtering: every tile, chart mark and row filters the whole dashboard
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-tile],[data-b],[data-hod],[data-arr],[data-p],[data-clear]"); if (!t || t.closest("#act") || t.closest("#drawer")) return;
+  if (t.dataset.p) { openP(t.dataset.p); return; }
+  if (t.dataset.clear === "all") { set(CLEAR); return; }
+  if (t.dataset.tile !== undefined) { const k = t.dataset.tile; set(k === "att" ? {att: true} : k.startsWith("f:") ? {f: k.slice(2), b: ""} : {b: k, f: ""}, k === "att" ? "attention" : "people"); return; }
+  if (t.dataset.b) { set({b: S.b === t.dataset.b ? "" : t.dataset.b}); return; }
+  if (t.dataset.hod) { set({hod: t.dataset.hod}, "people"); return; }
+  if (t.dataset.arr) { const [a, b] = t.dataset.arr.split(",").map(Number); set({arr: S.arr && S.arr[0] === a ? null : [a, b]}); return; }
 });
-// tooltips on the ring
-const tip = $("tip");
-document.querySelectorAll(".ring circle[data-tip]").forEach((c) => {
-  c.addEventListener("mousemove", (e) => { tip.textContent = c.dataset.tip + " – click to filter"; tip.style.display = "block";
-    tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY + 12 + "px"; });
-  c.addEventListener("mouseleave", () => { tip.style.display = "none"; });
-});
-apply();
+$("theme").addEventListener("click", APIS.theme("apis-theme"));
+APIS.stickUnder(document.querySelector("header.app"));
+$("share").addEventListener("click", () => { save(); (navigator.clipboard ? navigator.clipboard.writeText(location.href) : Promise.reject()).then(() => { $("share").textContent = "✓ Copied"; }, () => { $("share").textContent = "Saved in the address bar"; });
+  setTimeout(() => { $("share").textContent = "⧉ Copy view"; }, 1800); });
+
+function render() {
+  const L = filtered(); sync(); tabs(L);
+  ({overview: vOverview, attention: vAttention, people: vPeople, teams: vTeams, trends: vTrends})[S.tab](L);
+  if (S.tab !== "people") VIS = sorted(L);
+  save();
+}
+render();
 })();
 </script>
 </body>

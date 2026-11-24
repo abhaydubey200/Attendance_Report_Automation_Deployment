@@ -6,128 +6,7 @@
 <meta name="robots" content="noindex">
 <title>{{ v.title }} – {{ v.date_long }} – {{ v.recipient }}</title>
 <link rel="icon" href="{{ favicon }}">
-<style>
-:root { --navy:#14213d; --gold:#f5b800; --bg:#f4f6fa; --card:#fff; --ink:#1f2937; --muted:#5d6577; --line:#e6e8ef; --soft:#f8fafc;
-  --hover:#fff8e1; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --chip:#fff; --shadow:0 1px 2px rgba(20,33,61,.06),0 6px 18px rgba(20,33,61,.06); }
-:root[data-theme="dark"] { --bg:#0d1424; --card:#151f33; --ink:#e5e9f2; --muted:#9aa5bd; --line:#26324a; --soft:#1a263d; --hover:#2a2a1a; --chip:#1a263d;
-  --shadow:0 1px 2px rgba(0,0,0,.3); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0d1424; --card:#151f33; --ink:#e5e9f2; --muted:#9aa5bd; --line:#26324a;
-  --soft:#1a263d; --hover:#2a2a1a; --chip:#1a263d; --shadow:0 1px 2px rgba(0,0,0,.3); } }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
-button, select, input { font:inherit; color:inherit; }
-.num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
-.muted { color:var(--muted); } .small { font-size:12.5px; }
-/* ---- header + tabs */
-header.app { background:var(--navy); color:#fff; position:sticky; top:0; z-index:30; box-shadow:0 2px 10px rgba(0,0,0,.18); }
-.hd { display:flex; align-items:center; gap:14px; padding:10px 20px; max-width:1500px; margin:0 auto; }
-.hd img { height:38px; background:#fff; border-radius:999px; padding:2px 8px; }
-.hd h1 { font-size:17px; margin:0; letter-spacing:.2px; } .hd .sub { font-size:12.5px; opacity:.8; }
-.hd .sp { flex:1; }
-.ib { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); color:#fff; border-radius:9px; padding:6px 10px; cursor:pointer; font-size:13px; }
-.ib:hover { background:rgba(255,255,255,.2); }
-nav.tabs { display:flex; gap:2px; padding:0 20px; max-width:1500px; margin:0 auto; overflow-x:auto; }
-nav.tabs button { background:none; border:0; color:#cbd3e4; padding:10px 14px; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; white-space:nowrap; }
-nav.tabs button.on { color:#fff; border-bottom-color:var(--gold); } nav.tabs button:hover { color:#fff; }
-nav.tabs .cnt { background:rgba(255,255,255,.14); border-radius:999px; padding:0 7px; margin-left:6px; font-size:11.5px; }
-/* ---- filter bar */
-.fbar { position:sticky; top:96px; z-index:20; background:var(--bg); padding:10px 20px 6px; max-width:1500px; margin:0 auto; }
-.fin { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 12px; box-shadow:var(--shadow); display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.fin input[type=search] { flex:1 1 240px; min-width:180px; padding:8px 11px; border:1px solid var(--line); border-radius:10px; background:var(--soft); }
-.fin select { padding:8px 9px; border:1px solid var(--line); border-radius:10px; background:var(--soft); max-width:230px; }
-.tg { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid var(--line); border-radius:10px; cursor:pointer; background:var(--soft); user-select:none; font-size:13px; }
-.tg input { margin:0; accent-color:var(--navy); }
-.act { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; min-height:4px; }
-.fc { background:#fff3c4; color:#5b4300; border:1px solid #f1d27a; border-radius:999px; padding:3px 10px; font-size:12.5px; cursor:pointer; font-weight:600; }
-:root[data-theme="dark"] .fc { background:#3d3412; color:#f8e3a1; border-color:#6b5a1f; }
-.lnk { background:none; border:0; color:#2563eb; cursor:pointer; padding:0; font-weight:600; font-size:12.5px; }
-main { max-width:1500px; margin:0 auto; padding:6px 20px 40px; }
-section.view[hidden] { display:none; }
-/* ---- cards, tiles */
-.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); min-width:0; }
-.card h3 { margin:0 0 10px; font-size:15px; color:var(--ink); display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
-.card h3 .muted { font-weight:400; font-size:12.5px; }
-.g2 { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px; }
-.g3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-top:16px; }
-.g21 { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:16px; margin-top:16px; }
-@media (max-width:1000px) { .g2, .g3, .g21 { grid-template-columns:minmax(0,1fr); } }
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
-.tile { background:var(--card); border:1px solid var(--line); border-left:5px solid var(--c); border-radius:12px; padding:12px 14px; cursor:pointer; text-align:left; box-shadow:var(--shadow); }
-.tile:hover { transform:translateY(-1px); box-shadow:0 10px 22px rgba(20,33,61,.12); }
-.tile .l { font-size:12.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-.tile .v { font-size:28px; font-weight:800; color:var(--c); line-height:1.2; } .tile .s { font-size:12px; color:var(--muted); }
-.tile .d { font-size:12px; font-weight:700; }
-.hl { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
-.hl li { padding:8px 10px; border-radius:10px; background:var(--soft); border-left:4px solid var(--c, #94a3b8); font-size:13.5px; }
-.wl { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
-.wl button { width:100%; display:grid; grid-template-columns:10px 1fr auto; gap:10px; align-items:center; text-align:left; background:var(--soft);
-  border:1px solid var(--line); border-radius:10px; padding:8px 10px; cursor:pointer; }
-.wl button:hover, .wl button.on { background:var(--hover); border-color:#f1cf6b; }
-.dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-.lv-high { background:#dc2626; } .lv-medium { background:#d97706; } .lv-low { background:#94a3b8; }
-/* ---- tables */
-.tw { overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:12px; }
-table.t { border-collapse:separate; border-spacing:0; width:100%; font-size:13px; }
-table.t th { position:sticky; top:0; background:var(--navy); color:#fff; text-align:left; padding:9px 10px; font-weight:600; white-space:nowrap; z-index:1; }
-table.t th.s { cursor:pointer; user-select:none; } table.t th.s:hover { background:#1f2f57; }
-table.t th .ar { opacity:.85; margin-left:4px; font-size:11px; }
-table.t td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-table.t tbody tr:nth-child(even) td { background:color-mix(in srgb, var(--soft) 55%, transparent); }
-table.t tbody tr.ck { cursor:pointer; } table.t tbody tr.ck:hover td { background:var(--hover); }
-table.t.dense td { padding:4px 8px; } table.t tfoot td { font-weight:700; background:var(--soft); position:sticky; bottom:0; }
-.empty { padding:30px; text-align:center; color:var(--muted); }
-.tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; white-space:nowrap; }
-.t-high { background:#fdecec; color:#b42318; } .t-medium { background:#fff3e0; color:#b45309; } .t-low { background:#eef2f7; color:#475569; }
-:root[data-theme="dark"] .t-high { background:#4a1d1d; color:#fca5a5; } :root[data-theme="dark"] .t-medium { background:#47300f; color:#fcd34d; }
-:root[data-theme="dark"] .t-low { background:#26324a; color:#cbd5e1; }
-.pt { border:1px dashed currentColor; }
-.st { font-weight:700; }
-.pbar { display:inline-block; width:64px; height:7px; background:var(--line); border-radius:9px; margin-right:6px; vertical-align:middle; overflow:hidden; }
-.pbar i { display:block; height:100%; }
-.mini { display:inline-flex; gap:1px; vertical-align:middle; } .mini i { width:5px; height:15px; border-radius:2px; }
-.tb { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
-.btn { border:1px solid var(--line); background:var(--chip); border-radius:9px; padding:6px 11px; cursor:pointer; font-weight:600; font-size:12.5px; }
-.btn:hover { border-color:#c3cad8; } .btn.pri { background:var(--navy); color:#fff; border-color:var(--navy); }
-.menu { position:relative; } .menu .pop { position:absolute; right:0; top:110%; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 30px rgba(0,0,0,.18);
-  padding:8px; z-index:40; min-width:220px; max-height:360px; overflow:auto; } .menu .pop[hidden] { display:none; }
-.menu .pop label { display:flex; gap:8px; padding:5px 6px; border-radius:7px; cursor:pointer; font-size:13px; } .menu .pop label:hover { background:var(--soft); }
-.pager { display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:8px; font-size:12.5px; }
-/* ---- charts */
-svg.ch { width:100%; height:auto; display:block; } svg .ax { font-size:11px; fill:var(--muted); } svg .gl { stroke:var(--line); }
-svg .hit { cursor:pointer; } svg .hit:hover { opacity:.8; }
-table.heat { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat th { color:var(--muted); padding:2px 8px; }
-table.heat td { padding:5px 8px; white-space:nowrap; } td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:42px; color:#fff; }
-table.heat tr.ck { cursor:pointer; } table.heat tr.ck:hover td:first-child { text-decoration:underline; }
-.seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-.seg button { border:0; background:var(--chip); padding:5px 10px; cursor:pointer; font-size:12.5px; font-weight:600; } .seg button.on { background:var(--navy); color:#fff; }
-.legend { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:12px; color:var(--muted); margin-top:6px; } .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; }
-/* ---- drawer */
-.scrim { position:fixed; inset:0; background:rgba(10,15,30,.45); z-index:50; } .scrim[hidden] { display:none; }
-aside.drawer { position:fixed; top:0; right:0; bottom:0; width:min(620px,100%); background:var(--card); z-index:60; box-shadow:-12px 0 40px rgba(0,0,0,.25);
-  transform:translateX(105%); transition:transform .18s ease-out; display:flex; flex-direction:column; }
-aside.drawer.open { transform:none; }
-.dh { padding:16px 20px 10px; border-bottom:1px solid var(--line); } .dh h2 { margin:0; font-size:19px; } .db { padding:14px 20px 30px; overflow:auto; flex:1; }
-.dnav { display:flex; gap:6px; margin-top:10px; }
-.facts { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin:8px 0 4px; }
-.facts div { background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:7px 10px; } .facts span { display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-.facts b { font-size:16px; }
-.db h4 { margin:16px 0 6px; font-size:13.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-.strip { display:flex; flex-wrap:wrap; gap:3px; } .strip i { width:22px; height:26px; border-radius:5px; color:#fff; font-size:10px; font-style:normal; display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; }
-.ev { font-size:13px; margin:4px 0; }
-/* ---- proof */
-.proof { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); }
-.pf { display:flex; gap:10px; border:1px solid var(--line); border-radius:12px; padding:10px; background:var(--card); }
-.pf figure { margin:0; width:92px; flex:none; } .pf img { width:92px; height:122px; object-fit:cover; border-radius:8px; border:1px solid var(--line); display:block; cursor:zoom-in; }
-.pf figcaption { font-size:11px; color:var(--muted); margin-top:3px; } .pf .info { flex:1; min-width:0; font-size:13px; }
-.rk { display:inline-block; color:#fff; padding:1px 8px; border-radius:999px; font-weight:700; margin-right:6px; font-size:12px; }
-.lb { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:80; display:flex; align-items:center; justify-content:center; cursor:zoom-out; } .lb[hidden] { display:none; }
-.lb img { max-width:92vw; max-height:88vh; border-radius:10px; }
-footer { max-width:1500px; margin:0 auto; padding:0 20px 30px; color:var(--muted); font-size:12px; }
-.kbd { font-family:ui-monospace, Consolas, monospace; background:var(--soft); border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
-@media print { header.app, .fbar, .tb .btn, .pager, nav.tabs { display:none !important; } section.view[hidden] { display:block !important; } .tw { max-height:none; overflow:visible; }
-  body { background:#fff; } .card { box-shadow:none; break-inside:avoid; } }
-@media (max-width:700px) { .fbar { top:0; position:static; } .hd .sub { display:none; } }
-</style>
+<style>{% include "_apis_kit.css" %}</style>
 </head>
 <body>
 <header class="app">
@@ -189,7 +68,7 @@ footer { max-width:1500px; margin:0 auto; padding:0 20px 30px; color:var(--muted
   </section>
 
   <section class="view" id="v-teams" hidden>
-    <div class="card"><h3>Team-head scorecard <span class="muted">– today from the people in the current filter; 30-day figures from Bizom history · click a team head to see their people</span></h3>
+    <div class="card"><h3>Team-head scorecard <span class="muted">– this day from the people in the current filter; 30-day figures from Bizom history · click a team head to see their people</span></h3>
       <div class="tw"><table class="t" id="sctab"><thead></thead><tbody></tbody></table></div></div>
     <div class="g2">
       <div class="card"><h3>Attendance by weekday <span class="muted">– last 12 weeks, working days</span></h3><div class="tw" style="border:0;max-height:none"><table class="heat" id="heat"></table></div></div>
@@ -227,6 +106,7 @@ footer { max-width:1500px; margin:0 auto; padding:0 20px 30px; color:var(--muted
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="dh" id="dh"></div><div class="db" id="dbody"></div></aside>
 <div class="lb" id="lb" hidden><img id="lbImg" alt=""></div>
+<script>{% include "_apis_kit.js" %}</script>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
 <script id="extra" type="application/json">{{ extra_json | safe }}</script>
 <script>
@@ -374,7 +254,8 @@ function vOverview(L) {
     ["LATE", "Late", n("LATE"), "#d97706", "marked after 10:30 AM"], ["HALF_DAY", "Half day", n("HALF_DAY"), "#f59e0b", "counted as half"],
     ["LEAVE", "Leave", n("LEAVE"), "#64748b", `${n("WEEK_OFF")} week off / holiday`],
     ["chk", "Needs checking", ck.length, "#7c3aed", `${ser} serious · ${L.filter((p) => (p.patterns || []).length).length} repeat patterns`]];
-  $("tiles").innerHTML = T.map(([k, l, v, c, s, d]) => `<button class="tile" data-tile="${k}" style="--c:${c}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${d !== null && d !== undefined ? `<div class="d" style="color:${d >= 0 ? "var(--ok)" : "var(--bad)"}">${d > 0 ? "▲" : d < 0 ? "▼" : "="} ${Math.abs(d)} pts vs previous day</div>` : ""}</button>`).join("");
+  const sp = PK ? APIS.spark(PK.trend.map((t) => t.pct), "#5e3c0f", 130, 26) : "";
+  $("tiles").innerHTML = T.map(([k, l, v, c, s, d], i) => `<button class="tile" data-tile="${k}" style="--c:${c}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${i === 0 ? sp : ""}${d !== null && d !== undefined ? `<div class="d" style="color:${d >= 0 ? "var(--ok)" : "var(--bad)"}">${d > 0 ? "▲" : d < 0 ? "▼" : "="} ${Math.abs(d)} pts vs previous day</div>` : ""}</button>`).join("");
   $("ovTrend").innerHTML = PK ? trendSvg(PK.trend, "pct") : '<p class="muted">No history yet.</p>';
   $("donut").innerHTML = donut(L);
   $("hl").innerHTML = (X.highlights || []).map((h) => `<li style="--c:${h.level === "high" ? "#dc2626" : h.level === "medium" ? "#d97706" : h.level === "good" ? "#16a34a" : "#94a3b8"}">${esc(h.text)}</li>`).join("") || '<li class="muted">Nothing unusual.</li>';
@@ -382,7 +263,7 @@ function vOverview(L) {
   $("wl").innerHTML = D.warnings.filter((w) => wc[w.code]).map((w) => `<li><button data-sign="w:${w.code}" class="${S.sign === "w:" + w.code ? "on" : ""}" title="${esc(w.why)}"><i class="dot lv-${w.level}"></i><span>${esc(w.label)}</span><b class="num">${wc[w.code]}</b></button></li>`).join("") || '<li class="muted">No warning signs in this filter.</li>';
   const mg = new Set(L.map((p) => p.manager || "No team head"));
   const w = SC.filter((r) => mg.has(r.team_head) && r.pct30 !== null && r.people >= 3).slice(0, 6);   // teams of 1-2 people swing too much to rank
-  $("watch").innerHTML = w.length ? `<table class="t dense"><tbody>${w.map((r) => `<tr class="ck" data-mgr="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b><div class="small muted">${r.people} people · ${r.absent} absent today</div></td><td class="num"><span class="pbar"><i style="width:${r.pct30}%;background:${pc(r.pct30)}"></i></span><b style="color:${pc(r.pct30)}">${r.pct30}%</b>${r.change4 !== null && r.change4 !== undefined ? `<div class="small" style="color:${r.change4 >= 0 ? "var(--ok)" : "var(--bad)"}">${r.change4 > 0 ? "▲" : r.change4 < 0 ? "▼" : "="} ${Math.abs(r.change4)} pts (4 wks)</div>` : ""}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">No team-head history.</p>';
+  $("watch").innerHTML = w.length ? `<table class="t dense"><tbody>${w.map((r) => `<tr class="ck" data-mgr="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b><div class="small muted">${r.people} people · ${r.absent} absent this day</div></td><td class="num"><span class="pbar"><i style="width:${r.pct30}%;background:${pc(r.pct30)}"></i></span><b style="color:${pc(r.pct30)}">${r.pct30}%</b>${r.change4 !== null && r.change4 !== undefined ? `<div class="small" style="color:${r.change4 >= 0 ? "var(--ok)" : "var(--bad)"}">${r.change4 > 0 ? "▲" : r.change4 < 0 ? "▼" : "="} ${Math.abs(r.change4)} pts (4 wks)</div>` : ""}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">No team-head history.</p>';
   $("hist").innerHTML = hist(filtered("att"));
   const dg = {}; L.forEach((p) => { const k = p.designation || "—"; dg[k] = dg[k] || []; dg[k].push(p); });
   const dr = Object.entries(dg).sort((a, b) => b[1].length - a[1].length);
@@ -457,8 +338,8 @@ function csv(L, cols, name) {
 function dl(text, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type: "text/csv;charset=utf-8"})); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
 
 // ------------------------------------------------------------------ Team heads
-const SCC = [["team_head", "Team head"], ["people", "People"], ["pct", "Today"], ["pct30", "Last 30 days"], ["change4", "4-week change"], ["late30_pct", "Late % (30 d)"],
-  ["absent", "Absent today"], ["signs", "Signs"], ["patterns", "Patterns"], ["lowest", "Lowest 30-day attendance"]];
+const SCC = [["team_head", "Team head"], ["people", "People"], ["pct", "This day"], ["pct30", "Last 30 days"], ["change4", "4-week change"], ["late30_pct", "Late % (30 d)"],
+  ["absent", "Absent (this day)"], ["signs", "Signs"], ["patterns", "Patterns"], ["lowest", "Lowest 30-day attendance"]];
 let scSort = ["pct30", 1];
 function vTeams(L) {
   const mg = {}; L.forEach((p) => { const k = p.manager || "No team head"; (mg[k] = mg[k] || []).push(p); });
@@ -535,7 +416,7 @@ function vTrends(L) {
   const mx = Math.max(1, ...B.map(([a, b]) => us.filter((v) => v >= a && v < b).length));
   $("usual").innerHTML = us.length ? B.map(([a, b, l]) => { const c = us.filter((v) => v >= a && v < b).length;
     return `<div style="display:grid;grid-template-columns:110px 1fr 40px;gap:8px;align-items:center;margin:5px 0"><span class="small">${l}</span><span style="background:var(--soft);border-radius:6px;height:16px;overflow:hidden"><i style="display:block;height:100%;width:${100 * c / mx}%;background:${a >= 630 ? "#f59e0b" : "#0d9488"}"></i></span><b class="num">${c}</b></div>`; }).join("")
-    + `<p class="small muted">People who usually start after 10:30 AM are late most days, even when today looks fine.</p>` : '<p class="muted">Not enough marking days yet.</p>';
+    + `<p class="small muted">People who usually start after 10:30 AM are late most days, even when this day looks fine.</p>` : '<p class="muted">Not enough marking days yet.</p>';
 }
 $("tmet").addEventListener("click", (e) => { const b = e.target.closest("[data-tmet]"); if (b) { S.tmet = b.dataset.tmet; render(); } });
 
@@ -562,7 +443,7 @@ function openP(code) {
       ${f("Day end", esc(p.eod))}${f("Visits", p.calls)}${f("With order", p.productive)}${f("Visits < 1 min", p.short_calls)}${f("Away from outlet", p.far_calls)}${f("Order value", p.order_value ? Math.round(p.order_value).toLocaleString("en-IN") : "")}</div>
     ${p.not_marked ? `<p class="ev">Did not mark attendance${p.absent_streak > 1 ? ` – <b>${p.absent_streak} days in a row</b>` : ""}${p.last_marked ? `; last marked ${esc(p.last_marked)}` : ""}.</p>` : ""}
     ${h.strip ? `<h4>Last ${h.strip.length} Bizom days</h4><div class="facts">${f("Attendance", `<span style="color:${pc(h.pct30)}">${pctS(h.pct30)}</span>`)}${f("Days worked", h.worked30)}${f("Absent", h.absent30)}${f("Late", h.late30)}${f("Leave", h.leave30)}${f("Usual start", esc(h.usual_start || ""))}${f("Avg in market", h.avg_market ? dur(h.avg_market) + " h" : "")}</div>${strip}` : ""}
-    ${p.flags.length ? `<h4>Warning signs today</h4>${p.flags.map((x) => `<div class="ev"><span class="tag t-${x.level}">${esc(x.label)}</span> ${esc(x.why)}</div>`).join("")}${p.evidence ? `<div class="ev"><b>Evidence:</b> ${esc(p.evidence)}</div>` : ""}` : ""}
+    ${p.flags.length ? `<h4>Warning signs on this day</h4>${p.flags.map((x) => `<div class="ev"><span class="tag t-${x.level}">${esc(x.label)}</span> ${esc(x.why)}</div>`).join("")}${p.evidence ? `<div class="ev"><b>Evidence:</b> ${esc(p.evidence)}</div>` : ""}` : ""}
     ${(p.checks || []).length ? `<h4>Location &amp; selfie checks${p.risk !== null && p.risk !== undefined ? ` · risk ${p.risk}` : ""}</h4>${p.checks.map((c) => `<div class="ev"><span class="tag t-${c.level}">${esc(c.kind)}: ${esc(c.label)}</span> ${esc(c.why)}</div>`).join("")}` : ""}
     ${(p.patterns || []).length ? `<h4>Repeat patterns</h4>${p.patterns.map((x) => `<div class="ev"><span class="tag t-${x.level} pt">↻ ${esc(x.label)}</span> ${esc(x.text)}</div>`).join("")}` : ""}
     ${(() => { const x = (D.proof || []).find((y) => y.code === code); return x ? `<h4>Proof</h4><div class="pf" style="border:0;padding:0">${x.selfie_uri || x.selfie_url ? `<figure><img src="${esc(x.selfie_uri || x.selfie_url)}" data-big="${esc(x.selfie_uri || x.selfie_url)}" alt="Attendance selfie"><figcaption>Attendance selfie</figcaption></figure>` : ""}${x.matches.map((m) => `<figure><img src="${esc(m.uri || m.url)}" data-big="${esc(m.uri || m.url)}" alt="Match"><figcaption>${esc(m.name)}, ${esc(m.date)}</figcaption></figure>`).join("")}</div>${x.att_map ? `<p class="small"><a href="${esc(x.att_map)}" target="_blank" rel="noopener noreferrer">Attendance place on the map</a></p>` : ""}` : ""; })()}
@@ -594,10 +475,8 @@ document.addEventListener("click", (e) => {
 });
 
 // ------------------------------------------------------------------ theme, share
-const applyTheme = (t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
-try { applyTheme(localStorage.getItem("fs-theme")); } catch (e) { /* private mode */ }
-$("theme").addEventListener("click", () => { const dark = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() === "#0d1424";
-  const t = dark ? "light" : "dark"; applyTheme(t); try { localStorage.setItem("fs-theme", t); } catch (e) { /* private mode */ } });
+$("theme").addEventListener("click", APIS.theme("apis-theme"));
+APIS.stickUnder(document.querySelector("header.app"));
 $("share").addEventListener("click", () => { save(); const u = location.href;
   (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => { $("share").textContent = "✓ Copied"; }, () => { $("share").textContent = "Saved in the address bar"; });
   setTimeout(() => { $("share").textContent = "⧉ Copy view"; }, 1800); });

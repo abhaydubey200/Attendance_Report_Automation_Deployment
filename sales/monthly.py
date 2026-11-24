@@ -257,11 +257,11 @@ def text(v: dict) -> str:
 def excel(v: dict) -> bytes:
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
-    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "border": 1, "valign": "vcenter"})
+    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "text_wrap": True, "border": 1, "valign": "vcenter"})
     cell = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter"})
     wrap = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "text_wrap": True})
-    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
-    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D"})
+    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#3D2A10"})
+    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#3D2A10"})
     flag = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bg_color": "#FDECEC", "text_wrap": True, "valign": "vcenter"})
     note = wb.add_format({"italic": True, "font_color": "#5D6577"})
     day_fmt = {k: wb.add_format({"align": "center", "bold": True, "font_size": 9, "border": 1, "border_color": "#FFFFFF", "bg_color": col,
@@ -303,7 +303,7 @@ def excel(v: dict) -> bytes:
         last = 3 + len(v["trend"])
         ch = wb.add_chart({"type": "line"})
         ch.add_series({"name": "Attendance %", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 2, last, 2],
-                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+                       "line": {"color": "#3D2A10", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
         colc = wb.add_chart({"type": "column"})
         colc.add_series({"name": "Absent", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 3, last, 3],
                          "fill": {"color": "#FCA5A5"}, "y2_axis": True})
@@ -337,7 +337,7 @@ def excel(v: dict) -> bytes:
         ws2.freeze_panes(4, 1)
         bar = wb.add_chart({"type": "bar"})
         bar.add_series({"name": v["label"], "categories": ["Team scorecard", 4, 0, 3 + len(sc), 0], "values": ["Team scorecard", 4, 2, 3 + len(sc), 2],
-                        "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}})
+                        "fill": {"color": "#3D2A10"}, "data_labels": {"value": True, "num_format": "0.0"}})
         bar.add_series({"name": v["prev_label"], "categories": ["Team scorecard", 4, 0, 3 + len(sc), 0], "values": ["Team scorecard", 4, 3, 3 + len(sc), 3],
                         "fill": {"color": "#F5B800"}})
         bar.set_title({"name": f"Attendance by team head: {v['label']} vs {v['prev_label']}", "name_font": {"size": 12}})
@@ -437,6 +437,7 @@ def excel(v: dict) -> bytes:
 
 
 def dashboard(v: dict) -> bytes:
-    data = {k: v[k] for k in ("people", "weeks", "teams", "days", "colors", "trend", "scorecards", "weekdays", "prev_label", "month_long")}
+    data = {k: v[k] for k in ("people", "weeks", "teams", "days", "colors", "trend", "scorecards", "weekdays", "prev_label", "month_long",
+                              "pct", "work_days", "thresholds", "view")}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return _env.get_template("sales_monthly_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js, favicon_fs=favicon_data_uri("fs")).encode("utf-8")

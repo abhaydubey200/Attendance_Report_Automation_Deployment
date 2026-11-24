@@ -269,11 +269,11 @@ def excel(v: dict) -> bytes:
     Columns nobody has data for are left out; every sheet says what it is in its title line."""
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
-    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter", "border": 1})
+    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "text_wrap": True, "valign": "vcenter", "border": 1})
     cell = wb.add_format({"valign": "top"})
     wrap = wb.add_format({"valign": "top", "text_wrap": True})
-    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D", "align": "center"})
-    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
+    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#3D2A10", "align": "center"})
+    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#3D2A10"})
     note = wb.add_format({"italic": True, "font_color": "#5D6577", "text_wrap": True, "valign": "top"})
     lvl = {k: wb.add_format({"bold": True, "font_color": c, "bg_color": b, "valign": "top", "text_wrap": True})
            for k, c, b in (("high", "#B91C1C", "#FEF3F2"), ("medium", "#B45309", "#FFF8EB"), ("low", "#475569", "#F1F5F9"))}
@@ -343,9 +343,9 @@ def excel(v: dict) -> bytes:
         ws.merge_range(5, cs[0], 5, cs[1], val_, fv)
         ws.merge_range(6, cs[0], 6, cs[1], subt, fs)
     ws.set_row(5, 34)
-    sec = wb.add_format({"bold": True, "font_size": 12, "font_color": "#14213D", "bottom": 2, "bottom_color": "#F5B800"})
+    sec = wb.add_format({"bold": True, "font_size": 12, "font_color": "#3D2A10", "bottom": 2, "bottom_color": "#F5B800"})
     # status table + doughnut
-    ws.write(8, 0, "Status today", sec)
+    ws.write(8, 0, "Status on this day", sec)
     ws.write(9, 0, "Status", head)
     ws.write(9, 1, "People", head)
     sts = [k for k in v["status_label"] if v["counts"].get(k)]
@@ -383,7 +383,7 @@ def excel(v: dict) -> bytes:
     dash_charts_at = (8, 8)          # trend + team-head charts go here once those sheets exist (below)
     # warning signs + highlights
     wrow = max(mrow + len(bins) + 2, 8 + 31)
-    ws.write(wrow, 0, "Warning signs today – for checking, not proof", sec)
+    ws.write(wrow, 0, "Warning signs on this day – for checking, not proof", sec)
     if v["warnings"]:
         for j, h_ in enumerate(("Warning sign", "People")):
             ws.write(wrow + 1, j, h_, head)
@@ -423,7 +423,7 @@ def excel(v: dict) -> bytes:
         last = 3 + len(pk["trend"])
         ch = wb.add_chart({"type": "line"})
         ch.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
-                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+                       "line": {"color": "#3D2A10", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
         col = wb.add_chart({"type": "column"})
         col.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3],
                         "fill": {"color": "#FCA5A5"}, "y2_axis": True})
@@ -437,7 +437,7 @@ def excel(v: dict) -> bytes:
         wt.freeze_panes(4, 1)
         tc = wb.add_chart({"type": "line"})
         tc.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
-                       "line": {"color": "#14213D", "width": 2}, "marker": {"type": "circle", "size": 4, "fill": {"color": "#F5B800"}}})
+                       "line": {"color": "#3D2A10", "width": 2}, "marker": {"type": "circle", "size": 4, "fill": {"color": "#F5B800"}}})
         tc2 = wb.add_chart({"type": "column"})
         tc2.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3], "fill": {"color": "#FCA5A5"}, "y2_axis": True})
         tc.combine(tc2)
@@ -451,7 +451,7 @@ def excel(v: dict) -> bytes:
     sc = v.get("scorecards") or []
     if len(sc) > 1:
         cols_sc = [("Team head", 26), ("People", 8), (v["date_long"], 12), ("Last 30 days %", 13), ("4-week change", 12), ("Late % (30 days)", 13),
-                   ("Absent today", 11), ("Signs today", 10), ("Patterns", 9)] + [(w, 7) for w in (pk["weekdays"] if pk else [])] + [("Lowest 30-day attendance", 40)]
+                   ("Absent (this day)", 11), ("Signs (this day)", 10), ("Patterns", 9)] + [(w, 7) for w in (pk["weekdays"] if pk else [])] + [("Lowest 30-day attendance", 40)]
         rows_sc = [[r["team_head"], r["people"], r["pct"], r["pct30"], r["change4"], r["late30_pct"], r["absent"], r["signs"], r["patterns"],
                     *(r["heat"] if pk else []), "; ".join(r["lowest"])] for r in sc]
         nh = len(pk["weekdays"]) if pk else 0
@@ -466,7 +466,7 @@ def excel(v: dict) -> bytes:
                                                                       "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
         bar = wb.add_chart({"type": "bar"})
         bar.add_series({"name": "Last 30 days %", "categories": ["Team scorecard", 4, 0, 3 + len(rows_sc), 0],
-                        "values": ["Team scorecard", 4, 3, 3 + len(rows_sc), 3], "fill": {"color": "#14213D"},
+                        "values": ["Team scorecard", 4, 3, 3 + len(rows_sc), 3], "fill": {"color": "#3D2A10"},
                         "data_labels": {"value": True, "num_format": "0.0"}})
         bar.set_title({"name": "Attendance by team head – last 30 days", "name_font": {"size": 12}})
         bar.set_x_axis({"min": 50, "max": 100})
@@ -476,7 +476,7 @@ def excel(v: dict) -> bytes:
         top_n = min(10, len(rows_sc))
         db = wb.add_chart({"type": "bar"})
         db.add_series({"name": "Last 30 days %", "categories": ["Team scorecard", 4, 0, 3 + top_n, 0], "values": ["Team scorecard", 4, 3, 3 + top_n, 3],
-                       "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}, "gap": 40})
+                       "fill": {"color": "#3D2A10"}, "data_labels": {"value": True, "num_format": "0.0"}, "gap": 40})
         db.set_title({"name": f"Lowest {top_n} team heads – last 30 days %", "name_font": {"size": 11}})
         db.set_x_axis({"min": 50, "max": 100})
         db.set_y_axis({"reverse": True})
@@ -491,7 +491,7 @@ def excel(v: dict) -> bytes:
         fixed = [("Code", 10), ("Name", 24), ("Team head", 18), ("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("Usual start", 10)]
         excel_banner(wb, wg, [w for _, w in fixed] + [4] * len(days), f"Day by day – last {len(days)} uploaded days to {v['date_long']}",
                      "P present · L late · H half day · A absent · V leave · O week off / holiday · - not in that day's data")
-        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
+        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
         for j, (h_, w) in enumerate(fixed):
             wg.write(3, j, h_, head)
             wg.set_column(j, j, w)
@@ -632,7 +632,7 @@ def excel(v: dict) -> bytes:
 
     # ---- live pivots: COUNTIFS over the TeamList table (cached values filled in, so phones / previews show them too)
     pv_st = [k for k in ("PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE", "WEEK_OFF")]
-    pvh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter", "align": "center", "border": 1})
+    pvh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "text_wrap": True, "valign": "vcenter", "align": "center", "border": 1})
     pvn = wb.add_format({"border": 1, "border_color": "#E6E8EF", "align": "center"})
     pvt = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "bg_color": "#F1F5F9", "align": "center"})
     pvp = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "num_format": "0.0", "align": "center"})
@@ -717,7 +717,7 @@ def excel(v: dict) -> bytes:
         wd.write(r, 0, f"'Not Marked' in the EOD report: {v['data'].get('eod_not_marked', 0)} users", note)
         wd.write(r + 1, 0, f"Left out: {', '.join(f'{k} {n}' for k, n in v['data'].get('excluded', {}).items()) or 'none'}", note)
 
-    about = {"Trend": "Day-by-day attendance % and absences, last 30 Bizom days, with chart", "Team scorecard": "Every team head: today, 30 days, 4-week change, weekday heat",
+    about = {"Trend": "Day-by-day attendance % and absences, last 30 Bizom days, with chart", "Team scorecard": "Every team head: this day, 30 days, 4-week change, weekday heat",
              "Last 30 days": "Each person's last 30 days as a colour grid", "By team": "HOD × zonal head, this day", "Needs checking": "Warning signs, most serious first",
              "Patterns": "Repeat patterns with the dates", "Team heads - 4 weeks": "Team heads week by week", "Location & selfie checks": "Location and selfie checks, highest risk first",
              "Proof": "Selfies and map links behind the checks", "Absent": "Who did not mark, longest absence first", "Team list": "Everyone, every column – the master list",
@@ -736,7 +736,7 @@ def excel(v: dict) -> bytes:
            "Patterns": "#D97706", "Staff list to fix": "#64748B", "Data issues": "#64748B"}
     back = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "font_size": 9})
     for wsx in wb.worksheets():
-        wsx.set_tab_color(tab.get(wsx.name, "#14213D"))
+        wsx.set_tab_color(tab.get(wsx.name, "#3D2A10"))
         wsx.set_landscape()
         wsx.set_paper(9)
         wsx.fit_to_pages(1, 0)

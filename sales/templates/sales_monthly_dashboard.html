@@ -6,163 +6,312 @@
 <meta name="robots" content="noindex">
 <title>{{ v.title }} – {{ v.month_long }} – {{ v.recipient }}</title>
 <link rel="icon" href="{{ favicon_fs }}">
-<style>{% include "_dash_style.css" %}
-  .kp { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:16px; }
-  .kc { border-radius:14px; padding:12px 14px; border:1.5px solid; background:#fff; text-align:left; font:inherit; color:inherit; cursor:pointer; }
-  .kc .l { font-weight:700; color:var(--navy); font-size:13.5px; } .kc .v { font-size:28px; font-weight:800; line-height:1.15; margin-top:4px; } .kc .s { font-size:12px; color:var(--muted); }
-  .two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px; }
-  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 10px; }
-  .bar input[type=search] { font:inherit; font-size:13px; padding:7px 10px; border:1px solid #d5d9e3; border-radius:9px; min-width:200px; }
-  .chip { border:1px solid #d5d9e3; background:#fff; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer; font-weight:600; }
-  .chip.on { background:var(--navy); color:#fff; border-color:var(--navy); }
-  .strip { display:inline-flex; gap:1px; } .strip i { width:7px; height:16px; border-radius:2px; display:block; } .strip i.f { box-shadow:inset 0 -3px 0 #7c3aed; }
-  .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; background:#fdecec; color:#b42318; }
-  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:#3a4560; margin-top:8px; } .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
-  .chip .cn { opacity:.65; font-weight:500; margin-left:2px; } .card-h { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
-  .filters select { font:inherit; font-size:13px; padding:7px 8px; border:1px solid #d5d9e3; border-radius:9px; max-width:300px; background:#fff; } .filters input[type=search] { flex:1 1 260px; }
-  table.people th[data-k] { cursor:pointer; user-select:none; white-space:nowrap; } table.people th[data-k]::after { content: attr(data-dir); margin-left:4px; font-size:11px; }
-  tr.p { cursor:pointer; } tr.p:hover td { background:#fffaf0; } svg.chart { width:100%; height:auto; display:block; } svg .ax { font-size:11px; fill:#5d6577; }
-  .pbar { display:inline-block; width:60px; height:7px; background:#eef1f6; border-radius:9px; margin-right:6px; vertical-align:middle; overflow:hidden; } .pbar i { display:block; height:100%; border-radius:9px; }
-  tr.th-row { cursor:pointer; } tr.th-row:hover td { background:#fff8e1; } table.sc td.small { font-size:12px; color:#33405c; }
-  table.heat { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat th { font-weight:700; color:#14213d; padding:2px 8px; text-align:center; }
-  table.heat td { padding:5px 8px; } table.heat td:first-child { white-space:nowrap; } td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:42px; }
-  .modal { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:5vh 12px; z-index:50; overflow:auto; }
-  .modal[hidden] { display:none; } .modal .box { background:#fff; border-radius:16px; max-width:760px; width:100%; padding:20px 22px; position:relative; box-shadow:0 24px 60px rgba(0,0,0,.25); }
-  .mx { position:absolute; right:12px; top:10px; border:0; background:#f1f5f9; border-radius:999px; width:32px; height:32px; cursor:pointer; font-size:15px; }
-  .mstats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; } .ms { border:1px solid #e6e8ef; border-radius:10px; padding:8px 10px; }
-  .ms span { display:block; font-size:11.5px; color:#5d6577; } .ms b { font-size:17px; color:#14213d; }
-  .cal { display:flex; flex-wrap:wrap; gap:3px; } .dc { width:24px; height:26px; border-radius:5px; color:#fff; font-size:10.5px; display:flex; align-items:center; justify-content:center; font-weight:700; }
-  .dc.f { box-shadow:inset 0 -3px 0 #7c3aed; } .modal h4 { margin:14px 0 6px; color:#14213d; } .mi { font-size:13px; margin:3px 0; } .note { font-size:12.5px; color:var(--muted); margin:8px 0 0; }
-  @media (max-width: 900px) { .two { grid-template-columns:minmax(0,1fr); } }
+<style>{% include "_apis_kit.css" %}
+.cal { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; } .cal .h { font-size:11px; color:var(--muted); text-align:center; font-weight:700; }
+.cal .d { height:38px; border-radius:7px; color:#fff; font-size:12px; font-weight:700; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.cal .d small { font-size:9.5px; font-weight:600; opacity:.9; } .cal .d.f { box-shadow:inset 0 -4px 0 #7c3aed; } .cal .d.none { background:var(--soft); color:var(--muted); }
+.mstrip { display:inline-flex; gap:1px; vertical-align:middle; } .mstrip i { width:5px; height:15px; border-radius:2px; } .mstrip i.f { box-shadow:inset 0 -3px 0 #7c3aed; }
 </style>
 </head>
 <body>
-<header class="top"><div class="top-in"><img class="logo" src="{{ logo }}" alt="apis"><div class="vr"></div>
-  <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.month_long }} · {{ v.recipient }}</div></div></div></header>
-<main class="page">
-  <section class="greet"><div><h2>Dear {{ v.recipient }},</h2>
-    <p>{{ "The company's" if v.view != "team" else "Your team's" }} field sales attendance for <b>{{ v.month_long }}</b>: {{ v.work_days }} day{{ "s" if v.work_days != 1 }}, {{ v.n }} people. Click a person's row for their warning signs.</p></div></section>
-  <section class="kp">
-    {% set pc = v.pct %}{% set c = "#94a3b8" if pc is none else ("#15803d" if pc >= 90 else ("#b45309" if pc >= 75 else "#b91c1c")) %}
-    <button class="kc" data-f="all" style="border-color:{{ c }}38;background:{{ c }}0b"><div class="l">Attendance</div><div class="v" style="color:{{ c }}">{{ "–" if pc is none else pc ~ "%" }}</div><div class="s">{{ v.work_days }} day{{ "s" if v.work_days != 1 }}</div></button>
-    <button class="kc" data-f="absent" style="border-color:#dc262638;background:#dc26260b"><div class="l">Absent days</div><div class="v" style="color:#dc2626">{{ v.absent }}</div><div class="s">people with 3+: {{ v.people | selectattr("absent", "ge", 3) | list | length }}</div></button>
-    <button class="kc" data-f="late" style="border-color:#d9770638;background:#d977060b"><div class="l">Late days</div><div class="v" style="color:#d97706">{{ v.late }}</div><div class="s">after 10:30 AM</div></button>
-    <button class="kc" data-f="attention" style="border-color:#b4231838;background:#b423180b"><div class="l">Needs a conversation</div><div class="v" style="color:#b42318">{{ v.attention | length }}</div><div class="s">repeated patterns</div></button>
-    <button class="kc" data-f="perfect" style="border-color:#16a34a38;background:#16a34a0b"><div class="l">Full attendance</div><div class="v" style="color:#16a34a">{{ v.perfect | length }}</div><div class="s">worth a thank-you</div></button>
+<header class="app">
+  <div class="hd">
+    <img src="{{ logo }}" alt="apis">
+    <div><h1>{{ v.title }}</h1><div class="sub">Bizom · {{ v.month_long }} · {{ v.work_days }} working days · {{ v.recipient }}</div></div>
+    <div class="sp"></div>
+    <button class="ib" id="theme" title="Light / dark (T)">◐ Theme</button>
+    <button class="ib" id="share" title="Copy a link to exactly this view (filters + tab)">⧉ Copy view</button>
+    <button class="ib" onclick="window.print()" title="Print or save as PDF">⎙ Print</button>
+  </div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+</header>
+<div class="fbar">
+  <div class="fin" role="search">
+    <input type="search" id="q" placeholder="Search name, code, team head, zone, sign…  ( / )" aria-label="Search">
+    <select id="fP" aria-label="Show"></select>
+    <select id="fM" aria-label="Team head"></select>
+    <select id="fZ" aria-label="Zone"></select>
+    <select id="fD" aria-label="Designation"></select>
+  </div>
+  <div class="act" id="act"></div>
+</div>
+<main>
+  <section class="view" id="v-overview">
+    <div class="tiles" id="tiles"></div>
+    <div class="g21">
+      <div class="card"><h3>Day by day <span class="muted">– attendance % on working days (line), absent people (bars); grey = Sunday / holiday, left out</span></h3><div id="ovTrend"></div></div>
+      <div class="card"><h3>Status days <span class="muted">– all person-days of the month in the current filter</span></h3><div id="donut"></div></div>
+    </div>
+    <div class="g3">
+      <div class="card"><h3>Week by week</h3><div id="weeks"></div></div>
+      <div class="card"><h3>Team heads to watch <span class="muted">– lowest attendance</span></h3><div id="watch"></div></div>
+      <div class="card"><h3>Biggest drops vs {{ v.prev_label }} <span class="muted">– same people</span></h3><div id="drops"></div></div>
+    </div>
   </section>
-  <section class="two">
-    <div class="card"><div class="card-h"><h3>Day by day <span class="muted">– attendance % (line), absent people (bars)</span></h3></div><div id="trend"></div><p class="note" id="trendNote"></p></div>
-    <div class="card"><div class="card-h"><h3>Week by week</h3></div><div class="tablewrap"><table class="grid" style="font-size:13px">
-      <thead><tr><th>Week</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="weeks"></tbody></table></div></div>
+  <section class="view" id="v-people" hidden>
+    <div class="card">
+      <div class="tb"><b id="pcnt"></b><span style="flex:1"></span><div class="seg" id="quick"></div>
+        <div class="menu"><button class="btn" id="colsBtn">Columns ▾</button><div class="pop" id="colsPop" hidden></div></div>
+        <button class="btn" id="dense">Compact rows</button><button class="btn pri" id="csv">⭳ CSV (filtered)</button></div>
+      <div class="tw"><table class="t" id="ptab"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="pager"></div>
+      <p class="small muted">Click a heading to sort · click a person for their month calendar · <span class="kbd">/</span> search · <span class="kbd">Esc</span> close · <span class="kbd">↑</span><span class="kbd">↓</span> previous / next</p>
+    </div>
   </section>
-  <section class="card" style="margin-top:16px" id="scCard">
-    <div class="card-h"><h3>Team heads <span class="muted">– lowest attendance first; compared with {{ v.prev_label }}; click a team head to see their people</span></h3></div>
-    <div class="tablewrap"><table class="grid sc" style="font-size:13px"><thead><tr><th>Team head</th><th>People</th><th>{{ v.label }}</th><th>{{ v.prev_label }}</th><th>Change</th>
-      <th>Late %</th><th>Absent days</th><th>Need a conversation</th><th>Full attendance</th><th>Lowest attendance</th></tr></thead><tbody id="sc"></tbody></table></div>
-    <h4 style="margin:16px 0 6px">Attendance by weekday <span class="muted" style="font-weight:400">– {{ v.month_long }}, working days</span></h4>
-    <div class="tablewrap"><table class="heat"><tbody id="heat"></tbody></table></div>
+  <section class="view" id="v-teams" hidden>
+    <div class="card"><h3>Team-head scorecard <span class="muted">– {{ v.month_long }} vs {{ v.prev_label }} · click a team head to see their people</span></h3>
+      <div class="tw"><table class="t" id="sctab"><thead></thead><tbody></tbody></table></div></div>
+    <div class="g2">
+      <div class="card"><h3>Team heads by weekday <span class="muted">– attendance %, working days</span></h3><div class="tw" style="border:0;max-height:none"><table class="heat" id="heat"></table></div></div>
+      <div class="card"><h3>Pivot <span class="muted">– count people by any two fields</span></h3>
+        <div class="tb"><select id="pvR" aria-label="Rows"></select><span class="muted">by</span><select id="pvC" aria-label="Columns"></select><button class="btn" id="pvCsv">⭳ CSV</button></div>
+        <div class="tw"><table class="t dense" id="pivot"></table></div></div>
+    </div>
   </section>
-  <section class="card" style="margin-top:16px" id="people">
-    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3><button type="button" class="chip" id="csv">Download list (CSV)</button></div>
-    <div class="bar" id="chips"></div>
-    <div class="bar filters"><input type="search" id="q" placeholder="Search name, code, team head, reason…" aria-label="Search">
-      <select id="fm" aria-label="Team head"></select><button type="button" class="chip" id="clr" hidden>Clear filters ✕</button></div>
-    <div class="tablewrap" style="max-height:680px"><table class="grid people" style="font-size:13px">
-      <thead><tr><th data-k="name">Employee</th><th data-k="team_head">Team head</th><th data-k="pct">Attendance</th><th data-k="change">vs {{ v.prev_label }}</th><th data-k="absent">Absent</th><th data-k="late">Late</th><th data-k="leave">Leave</th><th data-k="flag_days">Days to check</th><th>Month</th><th>Why</th></tr></thead><tbody id="rows"></tbody></table></div>
-    <div class="legend"><span><i style="background:#16a34a"></i>Present</span><span><i style="background:#d97706"></i>Late</span><span><i style="background:#f59e0b"></i>Half day</span><span><i style="background:#64748b"></i>Leave</span><span><i style="background:#cbd5e1"></i>Week off / holiday</span><span><i style="background:#dc2626"></i>Absent</span><span><i style="background:#f1f5f9;box-shadow:inset 0 -3px 0 #7c3aed"></i>Warning sign that day</span></div>
-    <p class="note">Click a column heading to sort, a person for their month day by day and the reasons.</p>
+  <section class="view" id="v-trends" hidden>
+    <div class="card"><div class="tb"><h3 style="margin:0">Day by day</h3><span style="flex:1"></span><div class="seg" id="tmet"></div></div><div id="bigTrend"></div>
+      <div class="tw" style="margin-top:10px;max-height:340px"><table class="t dense" id="ttab"></table></div></div>
+    <div class="g2">
+      <div class="card"><h3>Most absent days <span class="muted">– current filter</span></h3><div class="tw" style="max-height:420px"><table class="t dense" id="absTop"></table></div></div>
+      <div class="card"><h3>Warning signs this month <span class="muted">– people with each sign, current filter</span></h3><div id="signs"></div></div>
+    </div>
   </section>
-  <footer><span>Source: <i>Bizom</i> · {{ v.month_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
 </main>
-<div id="modal" class="modal" hidden><div class="box" role="dialog" aria-modal="true"><button type="button" id="mx" class="mx" aria-label="Close">✕</button><div id="mbody"></div></div></div>
+<footer>Source: Bizom · {{ v.month_long }}. Attendance % = present + late + half of half days, over the days people were due (week offs left out). Warning signs are for checking, not proof.</footer>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="dh" id="dh"></div><div class="db" id="dbody"></div></aside>
+<script>{% include "_apis_kit.js" %}</script>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
 <script>
 (function () {
 "use strict";
-const D = JSON.parse(document.getElementById("data").textContent), P = D.people, $ = (id) => document.getElementById(id);
+const D = JSON.parse(document.getElementById("data").textContent), P = D.people, SC = D.scorecards || [], TH = D.thresholds || {absent: 3, late: 5};
+const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const col = (v) => v === null || v === undefined ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
-const pctCol = (v) => v === null || v === undefined ? "#e5e7eb" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
-const CC = {P: "#16a34a", LT: "#d97706", HD: "#f59e0b", L: "#64748b", WO: "#cbd5e1", A: "#dc2626"};
-const CN = {P: "Present", LT: "Late", HD: "Half day", L: "Leave", WO: "Week off / holiday", A: "Absent"};
-$("weeks").innerHTML = D.weeks.map((w) => `<tr><td><b>${esc(w.week)}</b> <span class="muted" style="font-size:12px">${esc(w.range)}</span></td><td class="num"><b style="color:${col(w.pct)}">${w.pct ?? "–"}%</b></td><td class="num">${w.absent}</td><td class="num">${w.late}</td><td class="num">${w.flagged}</td></tr>`).join("");
-// day-by-day chart
-(function () { const T = D.trend || [], W = 640, H = 200, L = 34, R = 10, top = 10, bot = 34, n = T.length; if (!n) return;
-  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)), y = (v) => top + (100 - v) * (H - top - bot) / 100;
-  const mA = Math.max(1, ...T.map((t) => t.absent)), bw = Math.max(3, (W - L - R) / n * 0.55);
-  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart">`;
-  [50, 75, 90, 100].forEach((g) => s += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 90 ? "#bbf7d0" : "#eef1f6"}"/><text x="${L - 4}" y="${y(g) + 4}" text-anchor="end" class="ax">${g}%</text>`);
-  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="#f1f5f9"><title>${t.label} (${t.weekday}): Sunday / holiday - left out</title></rect>`;
-    const h = t.absent / mA * 40; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - h}" width="${bw}" height="${h}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; });
-  let path = ""; T.forEach((t, i) => { if (t.pct !== null) path += (path && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
-  s += `<path d="${path}" fill="none" stroke="#14213d" stroke-width="2"/>`;
-  T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="3.5" fill="${pctCol(t.pct)}" stroke="#fff"><title>${t.label} (${t.weekday}): ${t.pct}% · ${t.absent} absent · ${t.late} late</title></circle>`;
-    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" class="ax">${t.label}</text>`; });
-  $("trend").innerHTML = s + "</svg>";
-  const v = T.filter((t) => t.pct !== null).map((t) => t.pct);
-  if (v.length) $("trendNote").textContent = `Best day ${Math.max(...v)}% · weakest ${Math.min(...v)}% · grey = Sunday / holiday (left out). Hover for the day.`;
-})();
-// team scorecard + weekday heat
-const SC = D.scorecards || [];
-const bar = (v) => v === null || v === undefined ? "–" : `<span class="pbar"><i style="width:${v}%;background:${pctCol(v)}"></i></span><b style="color:${pctCol(v)}">${v}%</b>`;
-const chg = (v) => v === null || v === undefined ? "" : `<span style="color:${v <= -5 ? "#b91c1c" : v < 0 ? "#b45309" : "#15803d"};font-weight:700">${v > 0 ? "+" : ""}${v}</span>`;
-if (SC.length < 2) $("scCard").hidden = true;
-$("sc").innerHTML = SC.map((r) => `<tr class="th-row" data-team="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b></td><td class="num">${r.people}</td><td>${bar(r.pct)}</td><td>${bar(r.prev_pct)}</td>
-  <td class="num">${chg(r.change)}</td><td class="num">${r.late_pct ?? "–"}%</td><td class="num">${r.absent}</td><td class="num">${r.attention}</td><td class="num">${r.perfect}</td><td class="small">${r.lowest.map(esc).join("<br>")}</td></tr>`).join("");
-$("heat").innerHTML = `<tr><th>Team head</th>${D.weekdays.map((w) => `<th>${w}</th>`).join("")}</tr>` + SC.map((r) => `<tr class="th-row" data-team="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b></td>${r.heat.map((v, i) =>
-  `<td class="hc" style="background:${v === null ? "#f8fafc" : pctCol(v)};color:${v === null ? "#94a3b8" : "#fff"}" title="${esc(r.team_head)} · ${D.weekdays[i]}: ${v === null ? "no working days" : v + "%"}">${v === null ? "–" : Math.round(v)}</td>`).join("")}</tr>`).join("");
-// people: filters, sort, CSV, drill-down
-const mg = {}; P.forEach((p) => { const t = p.team_head || "No team head"; mg[t] = (mg[t] || 0) + 1; });
-$("fm").innerHTML = '<option value="">All team heads</option>' + Object.keys(mg).sort().map((m) => `<option value="${esc(m)}">${esc(m)} (${mg[m]})</option>`).join("");
-const F = {all: ["Everyone", () => true], attention: ["Needs a conversation", (p) => p.reasons.length], absent: ["3+ absent days", (p) => p.absent >= 3],
-  late: ["Late", (p) => p.late > 0], dropped: ["Dropped vs last month", (p) => p.change !== null && p.change <= -10], checks: ["Had warning signs", (p) => p.flag_days > 0], perfect: ["Full attendance", (p) => p.perfect]};
-const S = {f: "attention", q: "", mgr: "", sort: "", dir: 1};
-if (!P.some(F.attention[1])) S.f = "all";
-const text = (p) => [p.name, p.code, p.team_head, p.designation, p.zone, ...p.reasons, ...p.warnings.map((w) => w.label)].join(" ").toLowerCase();
-function list() { const q = S.q.toLowerCase();
-  const out = P.filter((p) => F[S.f][1](p) && (!S.mgr || (p.team_head || "No team head") === S.mgr) && (!q || text(p).includes(q)));
-  if (S.sort) out.sort((a, b) => { const x = a[S.sort], y = b[S.sort]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1;
-    return x < y ? -S.dir : x > y ? S.dir : a.name.localeCompare(b.name); });
-  return out; }
-function render() {
-  $("chips").innerHTML = Object.entries(F).map(([k, [l, fn]]) => `<button class="chip ${S.f === k ? "on" : ""}" data-f="${k}">${l} <span class="cn">${P.filter(fn).length}</span></button>`).join("");
-  $("fm").value = S.mgr;
-  document.querySelectorAll("th[data-k]").forEach((th) => th.dataset.dir = S.sort === th.dataset.k ? (S.dir > 0 ? "↑" : "↓") : "");
-  const L = list(), active = [S.f !== "all", S.mgr, S.q].filter(Boolean).length;
-  $("cnt").textContent = `– ${L.length} of ${P.length}`; $("clr").hidden = !active;
-  $("rows").innerHTML = L.map((p) => `<tr class="p" data-p="${esc(p.code)}"><td><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
-    <td>${esc(p.team_head)}</td><td class="num"><b style="color:${col(p.pct)}">${p.pct ?? "–"}%</b></td><td class="num">${chg(p.change)}</td><td class="num">${p.absent || ""}</td><td class="num">${p.late || ""}</td><td class="num">${p.leave || ""}</td><td class="num">${p.flag_days || ""}</td>
-    <td><span class="strip">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<i class="${c.endsWith("!") ? "f" : ""}" style="background:${CC[k] || "#f1f5f9"}" title="${d.slice(8)}: ${CN[k] || "no record"}"></i>`; }).join("")}</span></td>
-    <td>${p.reasons.map((r) => `<span class="tag">${esc(r)}</span>`).join("")}</td></tr>`).join("") || '<tr><td colspan="10" class="empty">Nobody matches these filters.</td></tr>';
+const pc = (v) => v === null || v === undefined ? "#94a3b8" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
+const pctS = (v) => v === null || v === undefined ? "–" : v + "%";
+const CC = {P: ["Present", "#16a34a"], LT: ["Late", "#d97706"], HD: ["Half day", "#f59e0b"], L: ["Leave", "#64748b"], WO: ["Week off", "#cbd5e1"], A: ["Absent", "#dc2626"]};
+const chg = (v) => v === null || v === undefined ? '<span class="muted">–</span>' : `<b style="color:${v <= -5 ? "var(--bad)" : v < 0 ? "var(--warn)" : "var(--ok)"}">${v > 0 ? "▲" : v < 0 ? "▼" : "="} ${Math.abs(v)}</b>`;
+const pctOf = (ps) => { let due = 0, eq = 0; ps.forEach((p) => { due += p.days - (p.week_off || 0); eq += (p.present || 0) + (p.late || 0) + 0.5 * (p.half_day || 0); }); return due ? Math.round(1000 * eq / due) / 10 : null; };
+P.forEach((p) => { p.th = p.team_head || "No team head"; p.ck = p.checks || {}; p.text = [p.name, p.code, p.th, p.designation, p.zone, ...(p.reasons || []), ...(p.warnings || []).map((w) => w.label)].join(" ").toLowerCase(); });
+const PRE = {all: ["Everyone", () => true], attention: ["Needs a conversation", (p) => (p.reasons || []).length], absent: [`${TH.absent}+ absent days`, (p) => p.absent >= TH.absent],
+  late: ["Late at least once", (p) => p.late > 0], dropped: ["Dropped 10+ pts vs last month", (p) => p.change !== null && p.change !== undefined && p.change <= -10],
+  signs: ["Had warning signs", (p) => p.flag_days > 0], checks: ["Location / selfie checks", (p) => (p.ck.location_days || 0) + (p.ck.selfie_days || 0) > 0],
+  perfect: ["Full attendance", (p) => p.perfect]};
+
+const DEF = {tab: "overview", q: "", pre: P.some(PRE.attention[1]) ? "attention" : "all", mgr: "", zone: "", des: "", sort: "pct", dir: 1, page: 0, per: 50, dense: false, tmet: "pct", pvR: "th", pvC: "band"};
+const S = Object.assign({}, DEF);
+try { Object.assign(S, JSON.parse(decodeURIComponent(location.hash.slice(1)) || "{}")); } catch (e) { /* ignore a bad link */ }
+const save = () => { const d = {}; Object.keys(S).forEach((k) => { if (JSON.stringify(S[k]) !== JSON.stringify(DEF[k])) d[k] = S[k]; });
+  history.replaceState(null, "", Object.keys(d).length ? "#" + encodeURIComponent(JSON.stringify(d)) : location.pathname + location.search); };
+const cnt = (f) => { const o = {}; P.forEach((p) => { const k = f(p); if (k) o[k] = (o[k] || 0) + 1; }); return o; };
+const opt = (o, all) => `<option value="">${all}</option>` + Object.keys(o).sort().map((k) => `<option value="${esc(k)}">${esc(k)} (${o[k]})</option>`).join("");
+$("fP").innerHTML = Object.entries(PRE).map(([k, [l, f]]) => `<option value="${k}">${l} (${P.filter(f).length})</option>`).join("");
+$("fM").innerHTML = opt(cnt((p) => p.th), "All team heads"); $("fZ").innerHTML = opt(cnt((p) => p.zone), "All zones"); $("fD").innerHTML = opt(cnt((p) => p.designation), "All designations");
+function filtered() { const q = S.q.trim().toLowerCase();
+  return P.filter((p) => PRE[S.pre][1](p) && (!S.mgr || p.th === S.mgr) && (!S.zone || p.zone === S.zone) && (!S.des || p.designation === S.des) && (!q || q.split(/\s+/).every((w) => p.text.includes(w)))); }
+const set = (patch, tab) => { Object.assign(S, patch, {page: 0}); if (tab) S.tab = tab; render(); };
+const CLEAR = {q: "", pre: "all", mgr: "", zone: "", des: ""};
+function sync() {
+  $("q").value = S.q; $("fP").value = S.pre; $("fM").value = S.mgr; $("fZ").value = S.zone; $("fD").value = S.des;
+  const c = []; if (S.q) c.push(["q", `“${S.q}”`]); if (S.pre !== "all") c.push(["pre", PRE[S.pre][0]]); if (S.mgr) c.push(["mgr", "Team head: " + S.mgr]);
+  if (S.zone) c.push(["zone", "Zone: " + S.zone]); if (S.des) c.push(["des", S.des]);
+  $("act").innerHTML = c.length ? c.map(([k, l]) => `<button class="fc" data-clear="${k}">${esc(l)} ✕</button>`).join("") + `<button class="lnk" data-clear="all">Clear all</button><span class="muted small">${filtered().length} of ${P.length} people</span>` : "";
 }
-function drill(code) { const p = P.find((x) => x.code === code); if (!p) return;
-  const st = (l, v) => `<div class="ms"><span>${l}</span><b>${v ?? "–"}</b></div>`;
-  $("mbody").innerHTML = `<h3 style="margin:0 0 2px">${esc(p.name)} <span class="code">(${esc(p.code)})</span></h3><div class="muted small">${[p.designation, p.zone, p.team_head && "Team head: " + p.team_head].filter(Boolean).map(esc).join(" · ")}</div>
-    <div class="mstats" style="margin-top:10px">${st("Attendance", p.pct === null ? "–" : p.pct + "%")}${st("vs " + esc(D.prev_label), p.prev_pct === null || p.prev_pct === undefined ? "–" : p.prev_pct + "%")}${st("Absent days", p.absent)}${st("Late days", p.late)}${st("Leave days", p.leave)}${st("Avg time in market", p.avg_market || "–")}</div>
-    <div class="small muted" style="margin:10px 0 4px">${esc(D.month_long)} day by day</div>
-    <div class="cal">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<span class="dc${c.endsWith("!") ? " f" : ""}" style="background:${CC[k] || "#eef1f6"}" title="${d}: ${CN[k] || "no record"}${c.endsWith("!") ? " · warning sign" : ""}">${+d.slice(8)}</span>`; }).join("")}</div>
-    ${p.reasons.length ? `<h4>Why a conversation</h4>${p.reasons.map((r) => `<div class="mi"><span class="tag">${esc(r)}</span></div>`).join("")}` : ""}
-    ${p.warnings.length ? `<h4>Warning signs this month</h4>${p.warnings.map((w) => `<div class="mi">• ${esc(w.label)} – ${w.days} day${w.days === 1 ? "" : "s"}</div>`).join("")}` : ""}
-    ${p.checks && (p.checks.location_days || p.checks.selfie_days) ? `<h4>Location &amp; selfie checks</h4><div class="mi">Days with location signs: ${p.checks.location_days} · with selfie signs: ${p.checks.selfie_days}${p.checks.top.length ? " · most often: " + p.checks.top.map(esc).join(", ") : ""}</div>` : ""}
-    <p class="note">Warning signs are for checking with the person, not proof of anything.</p>`;
-  $("modal").hidden = false; document.body.style.overflow = "hidden"; }
-const closeM = () => { $("modal").hidden = true; document.body.style.overflow = ""; };
-function csv() { const q = (x) => `"${String(x ?? "").replace(/"/g, '""')}"`;
-  const lines = [["Code", "Name", "Team head", "Attendance %", "Last month %", "Change", "Absent", "Late", "Leave", "Days to check", "Why"].map(q).join(",")]
-    .concat(list().map((p) => [p.code, p.name, p.team_head, p.pct, p.prev_pct, p.change, p.absent, p.late, p.leave, p.flag_days, p.reasons.join("; ")].map(q).join(",")));
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
-  a.download = (document.title.split(" – ").slice(1).join("_") || "field_sales_month").replace(/[^A-Za-z0-9_-]+/g, "_") + "_list.csv"; document.body.appendChild(a); a.click(); a.remove(); }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeM(); });
-document.addEventListener("click", (e) => { const f = e.target.closest("[data-f]"), p = e.target.closest("[data-p]"), th = e.target.closest("th[data-k]"), tm = e.target.closest("[data-team]");
-  if (e.target.closest("#mx") || e.target.id === "modal") closeM();
-  else if (f) { S.f = f.dataset.f in F ? f.dataset.f : "all"; render(); if (f.classList.contains("kc")) $("people").scrollIntoView({behavior: "smooth"}); }
-  else if (tm) { S.mgr = tm.dataset.team; S.f = "all"; render(); $("people").scrollIntoView({behavior: "smooth"}); }
-  else if (th) { S.dir = S.sort === th.dataset.k ? -S.dir : (["pct", "change"].includes(th.dataset.k) ? 1 : -1); S.sort = th.dataset.k; render(); }
-  else if (e.target.id === "clr") { Object.assign(S, {f: "all", q: "", mgr: ""}); $("q").value = ""; render(); }
-  else if (e.target.id === "csv") csv();
-  else if (p) drill(p.dataset.p); });
-$("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
-$("fm").addEventListener("change", (e) => { S.mgr = e.target.value; render(); });
+$("q").addEventListener("input", (e) => { S.q = e.target.value; S.page = 0; render(); });
+[["fP", "pre"], ["fM", "mgr"], ["fZ", "zone"], ["fD", "des"]].forEach(([id, k]) => $(id).addEventListener("change", (e) => set({[k]: e.target.value})));
+$("act").addEventListener("click", (e) => { const b = e.target.closest("[data-clear]"); if (b) set(b.dataset.clear === "all" ? CLEAR : {[b.dataset.clear]: b.dataset.clear === "pre" ? "all" : ""}); });
+
+const TABS = [["overview", "Overview"], ["people", "People"]].concat(SC.length > 1 ? [["teams", "Team heads"]] : []).concat([["trends", "Trends"]]);
+if (!TABS.some(([k]) => k === S.tab)) S.tab = "overview";
+function tabs(L) { const c = {people: L.length, teams: new Set(L.map((p) => p.th)).size};
+  $("tabs").innerHTML = TABS.map(([k, l]) => `<button role="tab" class="${S.tab === k ? "on" : ""}" data-tab="${k}">${l}${c[k] !== undefined ? `<span class="cnt">${c[k]}</span>` : ""}</button>`).join("");
+  ["overview", "people", "teams", "trends"].forEach((k) => { $("v-" + k).hidden = S.tab !== k; }); }
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { S.tab = b.dataset.tab; render(); window.scrollTo({top: 0}); } });
+
+function trendSvg(T, metric, h) {
+  if (!T || T.length < 2) return '<p class="muted">Not enough days.</p>';
+  const W = 760, H = h || 220, L = 40, Rr = 12, top = 10, bot = 34, n = T.length, x = (i) => L + i * (W - L - Rr) / (n - 1);
+  const val = (t) => metric === "pct" ? t.pct : t.off_day ? null : metric === "absent" ? t.absent : t.late;
+  const vals = T.map(val).filter((v) => v !== null && v !== undefined), hi = metric === "pct" ? 100 : Math.max(5, ...vals) * 1.15, lo = metric === "pct" ? Math.max(0, Math.floor(Math.min(...vals, 90) / 10) * 10 - 10) : 0;
+  const y = (v) => top + (hi - v) * (H - top - bot) / (hi - lo || 1), bw = Math.max(3, (W - L - Rr) / n * .55), mA = Math.max(1, ...T.map((t) => t.absent));
+  let s = `<svg class="ch" viewBox="0 0 ${W} ${H}">`;
+  (metric === "pct" ? [lo, (lo + 100) / 2, 90, 100].filter((v, i, a) => a.indexOf(v) === i) : [0, Math.round(hi / 2), Math.round(hi)])
+    .forEach((g) => s += `<line class="gl" x1="${L}" x2="${W - Rr}" y1="${y(g)}" y2="${y(g)}"/><text class="ax" x="${L - 5}" y="${y(g) + 4}" text-anchor="end">${Math.round(g)}${metric === "pct" ? "%" : ""}</text>`);
+  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="var(--soft)"><title>${t.label} (${t.weekday}): off day – left out</title></rect>`;
+    if (metric === "pct") { const bh = t.absent / mA * 44; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - bh}" width="${bw}" height="${bh}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; }
+    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text class="ax" x="${x(i)}" y="${H - 12}" text-anchor="middle">${t.label}</text>`; });
+  if (metric !== "pct") T.forEach((t, i) => { const v = val(t); if (v !== null && v !== undefined) s += `<rect x="${x(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${H - bot - y(v)}" rx="2" fill="${metric === "absent" ? "#ef4444" : "#f59e0b"}"><title>${t.label} (${t.weekday}): ${v}</title></rect>`; });
+  else { let d = ""; T.forEach((t, i) => { if (t.pct !== null) d += (d && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
+    s += `<path d="${d}" fill="none" stroke="var(--navy-2)" stroke-width="2.2"/>`;
+    T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="3.8" fill="${pc(t.pct)}" stroke="var(--card)" stroke-width="1.5"><title>${t.label} (${t.weekday}): ${t.pct}%\n${t.absent} absent · ${t.late} late</title></circle>`; }); }
+  const ok = T.filter((t) => t.pct !== null).map((t) => t.pct);
+  return s + "</svg>" + (metric === "pct" && ok.length ? `<p class="small muted" style="margin:4px 0 0">Average on working days <b>${Math.round(10 * ok.reduce((a, b) => a + b, 0) / ok.length) / 10}%</b> · best ${Math.max(...ok)}% · lowest ${Math.min(...ok)}%.</p>` : "");
+}
+const mstrip = (p) => `<span class="mstrip">${D.days.map((d) => { const c = (p.cal || {})[d] || "", k = c.replace("!", ""); return `<i class="${c.endsWith("!") ? "f" : ""}" style="background:${(CC[k] || ["", "var(--soft)"])[1]}" title="${d.slice(8)}: ${(CC[k] || ["No record"])[0]}${c.endsWith("!") ? " · warning sign" : ""}"></i>`; }).join("")}</span>`;
+
+function vOverview(L) {
+  const whole = L.length === P.length, pv = whole ? D.pct : pctOf(L), sum = (k) => L.reduce((a, p) => a + (p[k] || 0), 0);
+  const prevs = L.filter((p) => p.prev_pct !== null && p.prev_pct !== undefined), pvPrev = prevs.length ? Math.round(10 * prevs.reduce((a, p) => a + p.prev_pct, 0) / prevs.length) / 10 : null;
+  const T = [["all", "Attendance", pctS(pv), pc(pv), `${L.length} people · ${D.work_days} working days`, APIS.spark(D.trend.map((t) => t.pct), "#5e3c0f", 130, 26)],
+    ["absent", "Absent days", sum("absent"), "#dc2626", `${L.filter((p) => p.absent >= TH.absent).length} people with ${TH.absent}+`, ""],
+    ["late", "Late days", sum("late"), "#d97706", `${L.filter((p) => p.late > 0).length} people late at least once`, ""],
+    ["attention", "Need a conversation", L.filter(PRE.attention[1]).length, "#5e3c0f", "absences, lateness or repeats", ""],
+    ["signs", "Warning-sign days", sum("flag_days"), "#7c3aed", `${L.filter((p) => p.flag_days > 0).length} people`, ""],
+    ["perfect", "Full attendance", L.filter((p) => p.perfect).length, "#16a34a", "worth a word of thanks", ""]];
+  $("tiles").innerHTML = T.map(([k, l, v, c, s, x]) => `<button class="tile" data-pre="${k}" style="--c:${c}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${x}</button>`).join("");
+  $("ovTrend").innerHTML = trendSvg(D.trend, "pct");
+  const parts = [["P", sum("present")], ["LT", sum("late")], ["HD", sum("half_day")], ["L", sum("leave")], ["A", sum("absent")], ["WO", sum("week_off")]].filter(([, v]) => v), tot = parts.reduce((a, [, v]) => a + v, 0);
+  let a0 = -Math.PI / 2, s = '<svg class="ch" viewBox="0 0 220 220" style="max-width:220px;margin:auto">';
+  parts.forEach(([k, v]) => { const a1 = a0 + 2 * Math.PI * v / tot, big = a1 - a0 > Math.PI ? 1 : 0, p = (a, rr) => `${110 + rr * Math.cos(a)} ${110 + rr * Math.sin(a)}`;
+    s += `<path d="M${p(a0, 95)} A95 95 0 ${big} 1 ${p(a1, 95)} L${p(a1, 58)} A58 58 0 ${big} 0 ${p(a0, 58)}Z" fill="${CC[k][1]}"><title>${CC[k][0]}: ${v} days (${Math.round(100 * v / tot)}%)</title></path>`; a0 = a1; });
+  $("donut").innerHTML = tot ? s + `<text x="110" y="108" text-anchor="middle" font-size="30" font-weight="800" fill="${pc(pv)}">${pctS(pv)}</text><text x="110" y="130" text-anchor="middle" class="ax">attendance</text></svg><div class="legend" style="justify-content:center">${parts.map(([k, v]) => `<span><i style="background:${CC[k][1]}"></i>${CC[k][0]} ${v}</span>`).join("")}</div>` : '<p class="muted">Nobody in this filter.</p>';
+  $("weeks").innerHTML = `<table class="t dense"><thead><tr><th>Week</th><th class="num">Attendance</th><th class="num">Absent</th><th class="num">Late</th></tr></thead><tbody>${(D.weeks || []).map((w) => `<tr><td><b>${esc(w.week)}</b><div class="small muted">${esc(w.range)}</div></td><td class="num"><span class="pbar"><i style="width:${w.pct || 0}%;background:${pc(w.pct)}"></i></span><b style="color:${pc(w.pct)}">${pctS(w.pct)}</b></td><td class="num">${w.absent}</td><td class="num">${w.late}</td></tr>`).join("")}</tbody></table>`;
+  const ths = new Set(L.map((p) => p.th)), w = SC.filter((r) => ths.has(r.team_head) && r.pct !== null && r.people >= 3).slice(0, 6);
+  $("watch").innerHTML = w.length ? `<table class="t dense"><tbody>${w.map((r) => `<tr class="ck" data-mgr="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b><div class="small muted">${r.people} people · ${r.absent} absent days</div></td><td class="num"><b style="color:${pc(r.pct)}">${pctS(r.pct)}</b><div class="small">${chg(r.change)} pts</div></td></tr>`).join("")}</tbody></table>` : '<p class="muted">No team heads to compare.</p>';
+  const dr = L.filter((p) => p.change !== null && p.change !== undefined && p.change < 0).sort((a, b) => a.change - b.change).slice(0, 7);
+  $("drops").innerHTML = dr.length ? `<table class="t dense"><tbody>${dr.map((p) => `<tr class="ck" data-p="${esc(p.code)}"><td><b>${esc(p.name)}</b><div class="small muted">${esc(p.th)}</div></td><td class="num">${pctS(p.prev_pct)} → <b style="color:${pc(p.pct)}">${pctS(p.pct)}</b><div class="small">${chg(p.change)} pts</div></td></tr>`).join("")}</tbody></table>` : `<p class="muted">${pvPrev === null ? "No " + esc(D.prev_label) + " data to compare with." : "Nobody dropped."}</p>`;
+}
+
+const COLDEF = {
+  who: ["Employee", (p) => p.name, (p) => `<b>${esc(p.name)}</b> <span class="small muted">${esc(p.code)}</span><div class="small muted">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</div>`, (p) => p.name],
+  th: ["Team head", (p) => p.th, (p) => esc(p.th), (p) => p.th],
+  pct: ["Attendance", (p) => p.pct ?? null, (p) => `<span class="pbar"><i style="width:${p.pct || 0}%;background:${pc(p.pct)}"></i></span><b style="color:${pc(p.pct)}">${pctS(p.pct)}</b>`, (p) => p.pct ?? ""],
+  change: ["vs " + D.prev_label, (p) => p.change ?? null, (p) => chg(p.change), (p) => p.change ?? ""],
+  absent: ["Absent", (p) => p.absent, (p) => p.absent || "", (p) => p.absent],
+  late: ["Late", (p) => p.late, (p) => p.late || "", (p) => p.late],
+  half: ["Half day", (p) => p.half_day, (p) => p.half_day || "", (p) => p.half_day],
+  leave: ["Leave", (p) => p.leave, (p) => p.leave || "", (p) => p.leave],
+  days: ["Days", (p) => p.days, (p) => p.days, (p) => p.days],
+  market: ["Avg in market", (p) => p.avg_market || null, (p) => esc(p.avg_market), (p) => p.avg_market],
+  month: ["Month", (p) => p.pct ?? null, (p) => mstrip(p), (p) => ""],
+  signs: ["Warning signs", (p) => p.flag_days || null, (p) => (p.warnings || []).slice(0, 3).map((w) => `<span class="tag t-${w.level}" title="${esc(w.label)}: ${w.days} days">${esc(w.label)} ×${w.days}</span>`).join(""), (p) => (p.warnings || []).map((w) => `${w.label} x${w.days}`).join("; ")],
+  checks: ["Location / selfie", (p) => p.ck.max_risk || null, (p) => (p.ck.location_days || p.ck.selfie_days) ? `<span class="tag t-high">${p.ck.location_days || 0} loc · ${p.ck.selfie_days || 0} selfie</span>` : "", (p) => `${p.ck.location_days || 0} location, ${p.ck.selfie_days || 0} selfie`],
+  reasons: ["Why a conversation", (p) => (p.reasons || []).length || null, (p) => `<span class="small">${(p.reasons || []).map(esc).join("<br>")}</span>`, (p) => (p.reasons || []).join("; ")],
+};
+const COLS_DEF = ["who", "th", "pct", "change", "absent", "late", "leave", "month", "signs", "reasons"];
+let COLS = COLS_DEF.slice();
+try { const s = JSON.parse(localStorage.getItem("fsm-cols") || "null"); if (Array.isArray(s)) COLS = s.filter((k) => COLDEF[k]); } catch (e) { /* private mode */ }
+const keepCols = () => { try { localStorage.setItem("fsm-cols", JSON.stringify(COLS)); } catch (e) { /* private mode */ } };
+let VIS = [];
+function sorted(L) { const k = COLDEF[S.sort] && COLDEF[S.sort][1]; if (!k) return L;
+  return L.slice().sort((a, b) => { const x = k(a), y = k(b); if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x < y ? -1 : x > y ? 1 : a.name.localeCompare(b.name)) * S.dir; }); }
+function vPeople(L) {
+  VIS = sorted(L); $("pcnt").textContent = `${L.length} of ${P.length} people`;
+  $("quick").innerHTML = [["pct", "Lowest attendance", 1], ["absent", "Most absent", -1], ["change", "Biggest drop", 1], ["who", "A–Z", 1]].map(([k, l, d]) => `<button class="${S.sort === k && S.dir === d ? "on" : ""}" data-sort="${k}" data-d="${d}">${l}</button>`).join("");
+  $("colsPop").innerHTML = Object.entries(COLDEF).map(([k, [l]]) => `<label><input type="checkbox" data-col="${k}" ${COLS.includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("") + `<button class="lnk" data-cols="reset" style="margin:6px">Reset columns</button>`;
+  $("ptab").classList.toggle("dense", S.dense); $("dense").textContent = S.dense ? "Comfortable rows" : "Compact rows";
+  $("ptab").tHead.innerHTML = "<tr>" + COLS.map((k) => `<th class="s" data-sort="${k}">${esc(COLDEF[k][0])}<span class="ar">${S.sort === k ? (S.dir > 0 ? "▲" : "▼") : ""}</span></th>`).join("") + "</tr>";
+  const per = S.per || 1e9, pages = Math.max(1, Math.ceil(VIS.length / per)); S.page = Math.min(S.page, pages - 1);
+  $("ptab").tBodies[0].innerHTML = VIS.slice(S.page * per, S.page * per + per).map((p) => `<tr class="ck" data-p="${esc(p.code)}">${COLS.map((k) => `<td class="${["absent", "late", "half", "leave", "days", "change"].includes(k) ? "num" : ""}">${COLDEF[k][2](p)}</td>`).join("")}</tr>`).join("")
+    || `<tr><td class="empty" colspan="${COLS.length}">Nobody matches these filters. <button class="lnk" data-clear="all">Clear all filters</button></td></tr>`;
+  $("pager").innerHTML = `<span class="muted">Rows per page</span><select id="per">${[25, 50, 100, 0].map((n) => `<option value="${n}" ${S.per === n ? "selected" : ""}>${n || "All"}</option>`).join("")}</select>`
+    + (pages > 1 ? `<button class="btn" data-page="${S.page - 1}" ${S.page ? "" : "disabled"}>‹</button><span>Page ${S.page + 1} of ${pages}</span><button class="btn" data-page="${S.page + 1}" ${S.page < pages - 1 ? "" : "disabled"}>›</button>` : "");
+}
+$("v-people").addEventListener("click", (e) => {
+  const s = e.target.closest("[data-sort]"); if (s) { const k = s.dataset.sort; if (s.dataset.d) { S.sort = k; S.dir = +s.dataset.d; } else if (S.sort === k) S.dir = -S.dir; else { S.sort = k; S.dir = 1; } render(); return; }
+  const pg = e.target.closest("[data-page]"); if (pg) { S.page = +pg.dataset.page; render(); return; }
+  if (e.target.closest("#colsBtn")) { $("colsPop").hidden = !$("colsPop").hidden; return; }
+  if (e.target.closest("[data-cols]")) { COLS = COLS_DEF.slice(); keepCols(); render(); return; }
+  if (e.target.closest("#dense")) { S.dense = !S.dense; render(); return; }
+  if (e.target.closest("#csv")) csv(VIS, COLS.filter((k) => k !== "month"), `field_sales_${D.month_long.replace(" ", "_")}`);
+});
+$("v-people").addEventListener("change", (e) => {
+  if (e.target.dataset.col) { const k = e.target.dataset.col; COLS = e.target.checked ? Object.keys(COLDEF).filter((c) => COLS.includes(c) || c === k) : COLS.filter((c) => c !== k); keepCols(); render(); }
+  if (e.target.id === "per") { S.per = +e.target.value; S.page = 0; render(); }
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu")) $("colsPop").hidden = true; });
+function dl(text, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type: "text/csv;charset=utf-8"})); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+function csv(L, cols, name) { const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  dl("﻿" + [["Code", "Designation", "Zone"].concat(cols.map((k) => COLDEF[k][0])).map(q).join(",")].concat(L.map((p) => [p.code, p.designation, p.zone].concat(cols.map((k) => COLDEF[k][3](p))).map(q).join(","))).join("\r\n"), name + ".csv"); }
+
+let scSort = ["pct", 1];
+function vTeams(L) {
+  const ths = {}; L.forEach((p) => { (ths[p.th] = ths[p.th] || []).push(p); });
+  const rows = SC.filter((r) => ths[r.team_head]).map((r) => Object.assign({}, r, {shown: ths[r.team_head].length}));
+  const [k, dir] = scSort; rows.sort((a, b) => { const x = a[k], y = b[k]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+  const C = [["team_head", "Team head"], ["people", "People"], ["pct", D.month_long.split(" ")[0]], ["prev_pct", D.prev_label], ["change", "Change"], ["late_pct", "Late %"], ["absent", "Absent days"], ["attention", "Need a conversation"], ["perfect", "Full attendance"], ["lowest", "Lowest attendance"]];
+  $("sctab").tHead.innerHTML = "<tr>" + C.map(([c, l]) => `<th class="s" data-scs="${c}">${l}<span class="ar">${k === c ? (dir > 0 ? "▲" : "▼") : ""}</span></th>`).join("") + "</tr>";
+  $("sctab").tBodies[0].innerHTML = rows.map((r) => `<tr class="ck" data-mgr="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b></td><td class="num">${r.people}</td><td class="num"><span class="pbar"><i style="width:${r.pct || 0}%;background:${pc(r.pct)}"></i></span><b style="color:${pc(r.pct)}">${pctS(r.pct)}</b></td>
+    <td class="num">${pctS(r.prev_pct)}</td><td class="num">${chg(r.change)}</td><td class="num">${r.late_pct ?? "–"}%</td><td class="num">${r.absent}</td><td class="num">${r.attention}</td><td class="num">${r.perfect}</td><td class="small">${(r.lowest || []).map(esc).join(", ")}</td></tr>`).join("")
+    || `<tr><td class="empty" colspan="${C.length}">No team heads in this filter.</td></tr>`;
+  const W = D.weekdays, show = W.map((_, i) => rows.some((r) => r.heat[i] !== null));
+  $("heat").innerHTML = `<tr><th></th>${W.map((w, i) => show[i] ? `<th>${w}</th>` : "").join("")}</tr>` + rows.slice().sort((a, b) => ((a.people < 3) - (b.people < 3)) || (a.pct ?? 999) - (b.pct ?? 999)).map((r) => `<tr class="ck" data-mgr="${esc(r.team_head)}"><td>${esc(r.team_head)}</td>${r.heat.map((v, i) => show[i] ? `<td class="hc" style="background:${v === null ? "var(--soft)" : pc(v)};${v === null ? "color:var(--muted)" : ""}" title="${esc(r.team_head)} · ${W[i]}: ${v === null ? "no working days" : v + "%"}">${v === null ? "–" : Math.round(v)}</td>` : "").join("")}</tr>`).join("");
+  pivot(L);
+}
+$("sctab").addEventListener("click", (e) => { const h = e.target.closest("[data-scs]"); if (h) { scSort = [h.dataset.scs, scSort[0] === h.dataset.scs ? -scSort[1] : 1]; render(); } });
+const DIMS = {th: ["Team head", (p) => p.th], zone: ["Zone", (p) => p.zone || "—"], designation: ["Designation", (p) => p.designation || "—"],
+  band: ["Attendance band", (p) => p.pct === null || p.pct === undefined ? "No working days" : p.pct >= 90 ? "90%+" : p.pct >= 75 ? "75–90%" : p.pct >= 50 ? "50–75%" : "Below 50%"],
+  absent: ["Absent days", (p) => p.absent === 0 ? "0" : p.absent <= 2 ? "1–2" : p.absent <= 5 ? "3–5" : "6+"], conv: ["Needs a conversation", (p) => (p.reasons || []).length ? "Yes" : "No"]};
+let PV = [];
+function pivot(L) {
+  if (!$("pvR").options.length) { const o = Object.entries(DIMS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join(""); $("pvR").innerHTML = o; $("pvC").innerHTML = o; }
+  $("pvR").value = S.pvR; $("pvC").value = S.pvC;
+  const Rf = DIMS[S.pvR][1], Cf = DIMS[S.pvC][1], m = {}, cs = {};
+  L.forEach((p) => { const a = Rf(p), b = Cf(p); m[a] = m[a] || {}; m[a][b] = (m[a][b] || 0) + 1; cs[b] = (cs[b] || 0) + 1; });
+  const cols = Object.keys(cs).sort(), rows = Object.keys(m).sort((a, b) => Object.values(m[b]).reduce((x, y) => x + y, 0) - Object.values(m[a]).reduce((x, y) => x + y, 0));
+  const mx = Math.max(1, ...rows.flatMap((r) => cols.map((c) => m[r][c] || 0)));
+  PV = [[DIMS[S.pvR][0] + " \\ " + DIMS[S.pvC][0], ...cols, "Total"]].concat(rows.map((r) => [r, ...cols.map((c) => m[r][c] || 0), cols.reduce((a, c) => a + (m[r][c] || 0), 0)]));
+  $("pivot").innerHTML = `<thead><tr><th>${esc(DIMS[S.pvR][0])}</th>${cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>`
+    + rows.map((r) => `<tr><td><b>${esc(r)}</b></td>${cols.map((c) => { const v = m[r][c] || 0; return `<td class="num" style="background:${v ? `rgba(94,60,15,${(.06 + .55 * v / mx).toFixed(2)})` : ""};${v / mx > .55 ? "color:#fff" : ""}" title="${esc(r)} · ${esc(c)}: ${v}">${v || ""}</td>`; }).join("")}<td class="num"><b>${cols.reduce((a, c) => a + (m[r][c] || 0), 0)}</b></td></tr>`).join("")
+    + `</tbody><tfoot><tr><td>Total</td>${cols.map((c) => `<td class="num">${cs[c]}</td>`).join("")}<td class="num">${L.length}</td></tr></tfoot>`;
+}
+$("pvR").addEventListener("change", (e) => { S.pvR = e.target.value; render(); }); $("pvC").addEventListener("change", (e) => { S.pvC = e.target.value; render(); });
+$("pvCsv").addEventListener("click", () => dl("﻿" + PV.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n"), "pivot.csv"));
+
+function vTrends(L) {
+  $("tmet").innerHTML = [["pct", "Attendance %"], ["absent", "Absent"], ["late", "Late"]].map(([k, l]) => `<button class="${S.tmet === k ? "on" : ""}" data-tmet="${k}">${l}</button>`).join("");
+  $("bigTrend").innerHTML = trendSvg(D.trend, S.tmet, 260);
+  $("ttab").innerHTML = `<thead><tr><th>Date</th><th>Day</th><th class="num">Attendance</th><th class="num">Absent</th><th class="num">Late</th><th class="num">Week off</th></tr></thead><tbody>`
+    + D.trend.map((t) => `<tr><td>${t.label}</td><td>${t.weekday}</td><td class="num">${t.off_day ? '<span class="muted">off day</span>' : `<b style="color:${pc(t.pct)}">${pctS(t.pct)}</b>`}</td><td class="num">${t.absent}</td><td class="num">${t.late}</td><td class="num">${t.off}</td></tr>`).join("") + "</tbody>";
+  const top = L.filter((p) => p.absent).sort((a, b) => b.absent - a.absent || (a.pct ?? 999) - (b.pct ?? 999)).slice(0, 25);
+  $("absTop").innerHTML = `<thead><tr><th>Employee</th><th>Team head</th><th class="num">Absent</th><th>Month</th></tr></thead><tbody>${top.map((p) => `<tr class="ck" data-p="${esc(p.code)}"><td><b>${esc(p.name)}</b></td><td>${esc(p.th)}</td><td class="num"><b style="color:#dc2626">${p.absent}</b></td><td>${mstrip(p)}</td></tr>`).join("") || '<tr><td class="empty" colspan="4">No absences.</td></tr>'}</tbody>`;
+  const sg = {}; L.forEach((p) => (p.warnings || []).forEach((w) => { sg[w.label] = sg[w.label] || [w.level, 0, 0]; sg[w.label][1]++; sg[w.label][2] += w.days; }));
+  const rows = Object.entries(sg).sort((a, b) => b[1][1] - a[1][1]), mx = Math.max(1, ...rows.map(([, v]) => v[1]));
+  $("signs").innerHTML = rows.length ? rows.map(([l, [lv, n, d]]) => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 140px 50px;gap:8px;align-items:center;margin:5px 0" title="${esc(l)}: ${n} people, ${d} days"><span class="small"><i class="dot lv-${lv}"></i> ${esc(l)}</span><span style="background:var(--soft);border-radius:6px;height:14px;overflow:hidden"><i style="display:block;height:100%;width:${100 * n / mx}%;background:${lv === "high" ? "#dc2626" : lv === "medium" ? "#d97706" : "#94a3b8"}"></i></span><b class="num">${n}</b></div>`).join("") : '<p class="muted">No warning signs this month.</p>';
+}
+$("tmet").addEventListener("click", (e) => { const b = e.target.closest("[data-tmet]"); if (b) { S.tmet = b.dataset.tmet; render(); } });
+
+let cur = null;
+function openP(code) {
+  const p = P.find((x) => x.code === code); if (!p) return; cur = code; const i = VIS.findIndex((x) => x.code === code);
+  $("dh").innerHTML = `<button class="btn" id="dx" style="float:right" aria-label="Close">✕</button><h2>${esc(p.name)}</h2><div class="muted small">${esc(p.code)} · ${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")} · team head ${esc(p.th)}</div>
+    <div class="dnav"><span style="margin-right:auto"><b style="color:${pc(p.pct)};font-size:18px">${pctS(p.pct)}</b> <span class="small">${chg(p.change)} vs ${esc(D.prev_label)}</span></span>${i >= 0 ? `<button class="btn" data-step="-1" ${i > 0 ? "" : "disabled"}>‹ Previous</button><button class="btn" data-step="1" ${i < VIS.length - 1 ? "" : "disabled"}>Next ›</button>` : ""}</div>`;
+  const f = (k, v) => `<div><span>${esc(k)}</span><b>${v === null || v === undefined || v === "" ? "–" : v}</b></div>`;
+  const first = new Date(D.days[0] + "T00:00:00"), lead = (first.getDay() + 6) % 7, dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(), mm = D.days[0].slice(0, 8);
+  let cal = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => `<div class="h">${w}</div>`).join("") + "<div></div>".repeat(lead);
+  for (let d = 1; d <= dim; d++) { const iso = mm + String(d).padStart(2, "0"), c = (p.cal || {})[iso] || "", k = c.replace("!", "");
+    cal += `<div class="d ${k ? "" : "none"} ${c.endsWith("!") ? "f" : ""}" style="${k ? `background:${CC[k][1]};${k === "WO" ? "color:#3d2a10" : ""}` : ""}" title="${iso}: ${k ? CC[k][0] : "no record"}${c.endsWith("!") ? " · warning sign" : ""}">${d}<small>${k && k !== "P" ? k : ""}</small></div>`; }
+  $("dbody").innerHTML = `<h4>${esc(D.month_long)}</h4><div class="facts">${f("Days", p.days)}${f("Present", p.present)}${f("Late", p.late)}${f("Half day", p.half_day)}${f("Leave", p.leave)}${f("Absent", p.absent)}${f("Avg in market", esc(p.avg_market))}${f("Warning-sign days", p.flag_days)}</div>
+    <div class="cal" style="margin-top:8px">${cal}</div><div class="legend">${Object.entries(CC).map(([k, [l, c]]) => `<span><i style="background:${c}"></i>${l}</span>`).join("")}<span><i style="background:#fff;box-shadow:inset 0 -3px 0 #7c3aed"></i>Warning sign that day</span></div>
+    ${(p.reasons || []).length ? `<h4>Why a conversation</h4>${p.reasons.map((x) => `<p class="ev">• ${esc(x)}</p>`).join("")}` : ""}
+    ${(p.warnings || []).length ? `<h4>Warning signs</h4>${p.warnings.map((w) => `<p class="ev"><span class="tag t-${w.level}">${esc(w.label)}</span> ${w.days} day${w.days === 1 ? "" : "s"}</p>`).join("")}` : ""}
+    ${(p.ck.location_days || p.ck.selfie_days) ? `<h4>Location &amp; selfie checks</h4><p class="ev">${p.ck.location_days} location day(s) · ${p.ck.selfie_days} selfie day(s) · highest risk ${p.ck.max_risk}</p>${(p.ck.reasons || []).map((x) => `<p class="ev small">• ${esc(x)}</p>`).join("")}` : ""}
+    ${p.perfect ? '<p class="ev" style="color:var(--ok);font-weight:700;margin-top:14px">Full attendance – worth a word of thanks.</p>' : ""}`;
+  $("drawer").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); $("scrim").hidden = false; $("dx").focus();
+}
+function closeP() { cur = null; $("drawer").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); $("scrim").hidden = true; }
+function step(d) { const i = VIS.findIndex((x) => x.code === cur); if (i >= 0 && VIS[i + d]) openP(VIS[i + d].code); }
+$("drawer").addEventListener("click", (e) => { if (e.target.closest("#dx")) closeP(); const s = e.target.closest("[data-step]"); if (s) step(+s.dataset.step); });
+$("scrim").addEventListener("click", closeP);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeP(); return; }
+  if (cur && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); step(e.key === "ArrowDown" ? 1 : -1); return; }
+  if (e.target.matches("input, select, textarea")) return;
+  if (e.key === "/") { e.preventDefault(); $("q").focus(); } if (e.key === "t" || e.key === "T") $("theme").click();
+});
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-pre],[data-mgr],[data-p],[data-clear]"); if (!t || t.closest("#act") || t.closest("#drawer")) return;
+  if (t.dataset.p) { openP(t.dataset.p); return; }
+  if (t.dataset.clear === "all") { set(CLEAR); return; }
+  if (t.dataset.pre) { set({pre: t.dataset.pre}, "people"); return; }
+  if (t.dataset.mgr) { set({mgr: t.dataset.mgr}, "people"); return; }
+});
+$("theme").addEventListener("click", APIS.theme("apis-theme"));
+APIS.stickUnder(document.querySelector("header.app"));
+$("share").addEventListener("click", () => { save(); (navigator.clipboard ? navigator.clipboard.writeText(location.href) : Promise.reject()).then(() => { $("share").textContent = "✓ Copied"; }, () => { $("share").textContent = "Saved in the address bar"; });
+  setTimeout(() => { $("share").textContent = "⧉ Copy view"; }, 1800); });
+function render() { const L = filtered(); sync(); tabs(L); ({overview: vOverview, people: vPeople, teams: vTeams, trends: vTrends})[S.tab](L); if (S.tab !== "people") VIS = sorted(L); save(); }
 render();
 })();
 </script>

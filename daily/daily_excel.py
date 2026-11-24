@@ -48,12 +48,12 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
     border = {"border": 1, "border_color": "#E6E8EF", "valign": "vcenter"}
-    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter",
-                          "border": 1, "border_color": "#14213D"})
+    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "text_wrap": True, "valign": "vcenter",
+                          "border": 1, "border_color": "#3D2A10"})
     cell = wb.add_format(border)
     wrap = wb.add_format({**border, "text_wrap": True})
-    bold = wb.add_format({**border, "bold": True, "font_color": "#14213D"})
-    big = wb.add_format({**border, "bold": True, "font_size": 13, "font_color": "#14213D"})
+    bold = wb.add_format({**border, "bold": True, "font_color": "#3D2A10"})
+    big = wb.add_format({**border, "bold": True, "font_size": 13, "font_color": "#3D2A10"})
     flag = wb.add_format({**border, "bg_color": "#FDECEC"})
     act = wb.add_format({"border": 1, "border_color": "#F5E3A6", "bg_color": "#FFF8E1", "text_wrap": True, "valign": "vcenter"})
     note = wb.add_format({"italic": True, "font_color": "#5D6577"})
@@ -128,7 +128,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
         chart.add_series({"name": "Attendance %", "categories": ["Summary", r + 1, 0, r + len(trend), 0],
                           "values": ["Summary", r + 1, 1, r + len(trend), 1], "fill": {"color": "#16A34A"}, "gap": 50,
                           "data_labels": {"value": True, "num_format": "0", "font": {"size": 8}}})
-        chart.set_title({"name": "Attendance % - last report days", "name_font": {"size": 11, "color": "#14213D"}})
+        chart.set_title({"name": "Attendance % - last report days", "name_font": {"size": 11, "color": "#3D2A10"}})
         chart.set_legend({"none": True})
         chart.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
         chart.set_size({"width": 470, "height": 250})
@@ -304,7 +304,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
         last = 3 + len(pack["trend"])
         ch = wb.add_chart({"type": "line"})
         ch.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
-                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+                       "line": {"color": "#3D2A10", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
         colc = wb.add_chart({"type": "column"})
         colc.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3],
                          "fill": {"color": "#FCA5A5"}, "y2_axis": True})
@@ -322,7 +322,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
                 [("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("WFH / OD", 8), ("Usual in-time", 10), ("Avg hours", 8)]
         excel_banner(wb, w3, [w for _, w in fixed] + [4] * len(labels), f"{who} – day by day, last {len(labels)} report days to {day}",
                      "P present · LT late · OD on duty · WFH · HD half day · L leave · A absent · MP missing punch · WO week off / holiday")
-        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
+        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
         for j, (h, w) in enumerate(fixed):
             w3.write(3, j, h, head)
             w3.set_column(j, j, w)
@@ -365,7 +365,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
                                   "max_color": "#63BE7B", "min_type": "num", "min_value": 60, "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
             barc = wb.add_chart({"type": "bar"})
             barc.add_series({"name": "Last 30 days %", "categories": ["HOD scorecard", 4, 0, 3 + len(g), 0], "values": ["HOD scorecard", 4, 1, 3 + len(g), 1],
-                             "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}})
+                             "fill": {"color": "#3D2A10"}, "data_labels": {"value": True, "num_format": "0.0"}})
             barc.set_title({"name": "Attendance by HOD team – last 30 report days", "name_font": {"size": 12}})
             barc.set_x_axis({"min": 50, "max": 100})
             barc.set_legend({"none": True})

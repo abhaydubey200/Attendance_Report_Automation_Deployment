@@ -8,6 +8,12 @@
 <link rel="icon" href="{{ favicon_ho }}">
 {% from "_icons.html" import icon %}
 <style>{% include "_dash_style.css" %}
+  /* APIS app header, same as the daily dashboards */
+  .top { background:linear-gradient(100deg,#2e1f0b 0%,#4a3313 60%,#6b4a14 100%); border-bottom:3px solid var(--honey); }
+  .top-in { padding:14px 20px 12px; } .top img.logo { width:112px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+  .top h1 { color:#fff; font-size:24px; } .top .sub { color:#f3e3bf; font-size:14.5px; } .vr { background:linear-gradient(var(--honey),#8a6420); }
+  .hex { opacity:.18; }
+  .appbar { background:rgba(247,245,240,.96); } .tabs { background:#efe9dc; } .tab.on { color:#3d2a10; box-shadow:inset 0 -3px 0 var(--honey), 0 1px 3px rgba(61,42,16,.12); }
   /* ================= month-end app ================= */
   .js .static { display:none; }
   .app { display:none; } .js .app { display:block; }
@@ -16,7 +22,7 @@
   .tabs { display:flex; gap:4px; background:#e9ecf3; padding:4px; border-radius:12px; flex-wrap:wrap; }
   .tab { border:0; background:transparent; font:inherit; font-weight:700; font-size:13.5px; color:#3a4560; padding:8px 14px; border-radius:9px; cursor:pointer;
          display:inline-flex; gap:7px; align-items:center; }
-  .tab:hover { background:#fff8; } .tab.on { background:#fff; color:var(--navy); box-shadow:0 1px 3px rgba(20,33,61,.12); }
+  .tab:hover { background:#fff8; } .tab.on { background:#fff; color:var(--navy); box-shadow:0 1px 3px rgba(61,42,16,.12); }
   .tab .cnt { background:#fdecec; color:#b42318; border-radius:999px; padding:0 7px; font-size:11.5px; }
   .period { display:flex; gap:6px; align-items:center; margin-left:auto; flex-wrap:wrap; }
   .period select, .period input[type=search] { font:inherit; font-size:13px; padding:8px 10px; border:1px solid #d5d9e3; border-radius:10px; background:#fff; color:var(--navy); }
@@ -32,7 +38,7 @@
   .kpis8 { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
   .kpis8 .k { position:relative; text-align:left; font:inherit; color:inherit; border-radius:14px; padding:12px 14px; border:1.5px solid; cursor:pointer; background:#fff;
        transition:transform .12s, box-shadow .12s; min-height:118px; display:flex; flex-direction:column; gap:2px; }
-  .kpis8 .k:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(20,33,61,.12); }
+  .kpis8 .k:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(61,42,16,.12); }
   .kpis8 .k .top2 { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:13.5px; }
   .kpis8 .k .bdg { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:none; }
   .kpis8 .k .v { font-size:28px; font-weight:800; line-height:1.1; margin-top:4px; font-variant-numeric:tabular-nums; }
@@ -117,7 +123,7 @@
     body.one #onepage { display:block !important; }
   }
   #onepage { font-size:12px; color:#1e2433; }
-  #onepage h1 { font-size:20px; margin:0; color:#14213d; } #onepage h2 { font-size:14px; margin:14px 0 6px; color:#14213d; border-bottom:2px solid #f5b800; padding-bottom:3px; }
+  #onepage h1 { font-size:20px; margin:0; color:#3d2a10; } #onepage h2 { font-size:14px; margin:14px 0 6px; color:#3d2a10; border-bottom:2px solid #f5b800; padding-bottom:3px; }
   #onepage .ophead { display:flex; align-items:center; gap:14px; border-bottom:3px solid #f5b800; padding-bottom:8px; }
   #onepage .ophead img { height:44px; }
   #onepage .opk { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:10px; }
@@ -223,6 +229,7 @@
 {% for n in ["bars", "trend", "users", "calendar", "check-square", "alert", "user-x", "clock", "scan", "check", "pin", "download", "chat", "user-cog"] %}<template data-icon="{{ n }}">{{ icon(n, 20) }}</template>{% endfor %}
 <template id="logo-src"><img src="{{ logo }}" alt="apis"></template>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
+<script>{% include "_apis_kit.js" %}</script>
 <script>
 {% raw %}
 (function () {
@@ -383,7 +390,7 @@ function bars(items, o) {
        + (x.l2 ? `<text x="${X + w / 2}" y="${o.h - B + 25}" text-anchor="middle" font-size="8.5" fill="${x.l2c || "#5d6577"}">${esc(x.l2)}</text>` : "") + `</g>`;
   });
   if (o.prev) { const pts = o.prev.map((v, k) => v === null || k >= n ? null : `${L + 2 + k * bw + (bw - 4) / 2},${y(v)}`).filter(Boolean);
-    if (pts.length > 1) g += `<polyline points="${pts.join(" ")}" fill="none" stroke="#14213d" stroke-width="1.6" stroke-dasharray="4 3" opacity=".7"/>`; }
+    if (pts.length > 1) g += `<polyline points="${pts.join(" ")}" fill="none" stroke="#3d2a10" stroke-width="1.6" stroke-dasharray="4 3" opacity=".7"/>`; }
   return `<svg class="ch" viewBox="0 0 ${W} ${o.h}" role="img">${g}</svg>`;
 }
 function hbars(items, o) {
@@ -404,15 +411,15 @@ function gauge(pct) {
   const ta = Math.PI * (1 - R.target / 100), tx = 100 + 80 * Math.cos(ta), ty = 100 - 80 * Math.sin(ta);
   return `<svg viewBox="0 -6 200 126" style="width:100%;max-width:260px;display:block;margin:0 auto"><path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#eef1f6" stroke-width="16" stroke-linecap="round"/>`
     + `<path d="M20 100 A80 80 0 0 1 ${x} ${y}" fill="none" stroke="${color(pct)}" stroke-width="16" stroke-linecap="round"/>`
-    + `<line x1="${100 + 68 * Math.cos(ta)}" y1="${100 - 68 * Math.sin(ta)}" x2="${tx + 12 * Math.cos(ta)}" y2="${ty - 12 * Math.sin(ta)}" stroke="#14213d" stroke-width="2.5"/>`
-    + `<text x="100" y="92" text-anchor="middle" font-size="30" font-weight="800" fill="#14213d">${pctS(pct)}</text>`
+    + `<line x1="${100 + 68 * Math.cos(ta)}" y1="${100 - 68 * Math.sin(ta)}" x2="${tx + 12 * Math.cos(ta)}" y2="${ty - 12 * Math.sin(ta)}" stroke="#3d2a10" stroke-width="2.5"/>`
+    + `<text x="100" y="92" text-anchor="middle" font-size="30" font-weight="800" fill="#3d2a10">${pctS(pct)}</text>`
     + `<text x="100" y="112" text-anchor="middle" font-size="11" fill="#5d6577">attendance · target ${R.target}%</text></svg>`;
 }
 function spark(vals) {
   const v = vals.filter((x) => x !== null); if (v.length < 2) return "";
   const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
   const pts = vals.map((x, k) => x === null ? null : `${(k / (vals.length - 1)) * 70},${24 - ((x - lo) / span) * 22}`).filter(Boolean).join(" ");
-  return `<svg class="spark" viewBox="0 0 70 26"><polyline points="${pts}" fill="none" stroke="#14213d" stroke-width="1.6" opacity=".55"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 70 26"><polyline points="${pts}" fill="none" stroke="#3d2a10" stroke-width="1.6" opacity=".55"/></svg>`;
 }
 const stripOf = (p, I) => `<span class="strip">${I.map((i) => { const x = p.d[i]; const c = x ? C[x[0]] : null;
   return `<i class="${x && (x[7] || "").includes("L") ? "lt" : ""}" style="background:${c ? c.color : "#f1f5f9"}" title="${esc(fmtD(i))}: ${esc(c ? c.label : "no record")}"></i>`; }).join("")}</span>`;
@@ -663,7 +670,7 @@ function vActions(I) {
 function onePage() {
   const I = idx(), ss = allStats(I), t = total(ss), tk = takeaways(ss, t, I).slice(0, 6), wk = weeks(I);
   const need = ss.filter((s) => s.attention).sort((a, b) => b.A - a.A || b.MP - a.MP).slice(0, 12), pf = ss.filter((s) => s.perfect).sort(SORTS.name);
-  const k = (l, v, c) => `<div><span style="color:#5d6577">${l}</span><b style="color:${c || "#14213d"}">${v}</b></div>`;
+  const k = (l, v, c) => `<div><span style="color:#5d6577">${l}</span><b style="color:${c || "#3d2a10"}">${v}</b></div>`;
   const teams = COMPANY ? teamRows(I) : [];
   $("onepage").innerHTML = `<div class="ophead">${document.getElementById("logo-src").innerHTML}<div><h1>${esc(document.querySelector("header h1").textContent)}</h1>
       <div style="color:#5d6577">${esc(D.recipient)} · ${esc(periodText())} · ${ss.length} employees</div></div></div>

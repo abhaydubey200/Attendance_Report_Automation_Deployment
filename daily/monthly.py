@@ -472,17 +472,17 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
     company = view in ("director", "hr")
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
-    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter",
-                          "border": 1, "border_color": "#14213D"})
+    head = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "text_wrap": True, "valign": "vcenter",
+                          "border": 1, "border_color": "#3D2A10"})
     cell = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter"})
     num = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center"})
     zero = wb.add_format({"border": 1, "border_color": "#E6E8EF", "valign": "vcenter", "align": "center", "font_color": "#B6BCC8"})
-    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#14213D"})
+    bold = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#3D2A10"})
     flag = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bg_color": "#FDECEC", "valign": "vcenter"})
     wrap = wb.add_format({"border": 1, "border_color": "#E6E8EF", "text_wrap": True, "valign": "vcenter"})
     act = wb.add_format({"border": 1, "border_color": "#F5E3A6", "bg_color": "#FFF8E1", "text_wrap": True, "valign": "vcenter"})
     note = wb.add_format({"italic": True, "font_color": "#5D6577"})
-    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#14213D"})
+    big = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_size": 13, "font_color": "#3D2A10"})
     up = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#15803D", "align": "center"})
     down = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#B91C1C", "align": "center"})
     pct_fmt = {"good": wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#15803D", "bg_color": "#F0FAF3"}),
@@ -539,7 +539,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             chart = wb.add_chart({"type": "column"})
             chart.add_series({"name": "Attendance %", "categories": ["Summary", r + 1, 0, r + len(totals["trend"]), 0],
                               "values": ["Summary", r + 1, 1, r + len(totals["trend"]), 1], "fill": {"color": "#16A34A"}, "gap": 40})
-            chart.set_title({"name": "Daily attendance %", "name_font": {"size": 11, "color": "#14213D"}})
+            chart.set_title({"name": "Daily attendance %", "name_font": {"size": 11, "color": "#3D2A10"}})
             chart.set_legend({"none": True})
             chart.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
             chart.set_size({"width": 620, "height": 260})
@@ -587,11 +587,11 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             ws.autofilter(3, 0, last, len(cols) - 1)
             chart = wb.add_chart({"type": "bar"})
             chart.add_series({"name": label(month), "categories": ["Teams", 4, 1, last, 1], "values": ["Teams", 4, 3, last, 3],
-                              "fill": {"color": "#14213D"}, "gap": 50, "data_labels": {"value": True, "num_format": "0.0"}})
+                              "fill": {"color": "#3D2A10"}, "gap": 50, "data_labels": {"value": True, "num_format": "0.0"}})
             if any(g.get("before") is not None for g in groups):
                 chart.add_series({"name": label(previous_month_of(month)), "categories": ["Teams", 4, 1, last, 1],
                                   "values": ["Teams", 4, 4, last, 4], "fill": {"color": "#F5B800"}, "gap": 50})
-            chart.set_title({"name": "Attendance % by team", "name_font": {"size": 11, "color": "#14213D"}})
+            chart.set_title({"name": "Attendance % by team", "name_font": {"size": 11, "color": "#3D2A10"}})
             chart.set_legend({"position": "bottom"})
             chart.set_x_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
             chart.set_y_axis({"reverse": True})
@@ -648,7 +648,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             c1 = wb.add_chart({"type": "column"})
             c1.add_series({"name": "Attendance %", "categories": ["Weeks", 4, 1, last, 1], "values": ["Weeks", 4, 3, last, 3],
                            "fill": {"color": "#16A34A"}, "gap": 60, "data_labels": {"value": True, "num_format": "0.0"}})
-            c1.set_title({"name": "Attendance % by week", "name_font": {"size": 11, "color": "#14213D"}})
+            c1.set_title({"name": "Attendance % by week", "name_font": {"size": 11, "color": "#3D2A10"}})
             c1.set_legend({"none": True})
             c1.set_y_axis({"min": 0, "max": 100, "major_gridlines": {"visible": True, "line": {"color": "#E6E8EF"}}})
             c1.set_size({"width": 480, "height": 260})
@@ -657,7 +657,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
             for col, name, colour in ((4, "Absent", "#DC2626"), (5, "Late", "#D97706"), (6, "Missing punch", "#7C3AED")):
                 c2.add_series({"name": name, "categories": ["Weeks", 4, 1, last, 1], "values": ["Weeks", 4, col, last, col],
                                "fill": {"color": colour}, "gap": 60})
-            c2.set_title({"name": "Absences, late arrivals and missing punches by week", "name_font": {"size": 11, "color": "#14213D"}})
+            c2.set_title({"name": "Absences, late arrivals and missing punches by week", "name_font": {"size": 11, "color": "#3D2A10"}})
             c2.set_legend({"position": "bottom"})
             c2.set_size({"width": 480, "height": 260})
             ws.insert_chart(last + 2, 4, c2)
@@ -686,7 +686,7 @@ def _xlsx(settings: Settings, item: MailItem, month: str, days: list[date], peop
         last = 3 + len(tr)
         ch = wb.add_chart({"type": "line"})
         ch.add_series({"name": "Attendance %", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 2, last, 2],
-                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+                       "line": {"color": "#3D2A10", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
         colc = wb.add_chart({"type": "column"})
         colc.add_series({"name": "Absent", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 3, last, 3],
                          "fill": {"color": "#FCA5A5"}, "y2_axis": True})

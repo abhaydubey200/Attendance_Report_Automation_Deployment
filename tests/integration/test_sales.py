@@ -129,7 +129,7 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         assert items["DIRECTOR"].status == "HELD" and items["ravi@example.com"].status == "PENDING"
         assert json.loads(items["zonal2@example.com"].content)["codes"] == ["SL00006"]
         html, text, files = mail.render(s, items["ravi@example.com"])
-        assert "Needs checking" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
+        assert "Needs attention" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
         assert [f.filename.split("_")[-1] for f in files] == ["Manager.xlsx", "dashboard.html"]
         names = load_workbook(io.BytesIO(files[0].content)).sheetnames
         assert names[0] == "Dashboard" and {"Trend", "Last 30 days", "Needs checking", "Location & selfie checks", "Absent", "Team list"} <= set(names)
@@ -138,7 +138,7 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         assert any(str(c.value).startswith("=COUNTIFS(TeamList[") for row in wbx[next(n for n in names if n.startswith("Pivot"))].iter_rows() for c in row)
         assert "9999999999" not in html + text + files[1].content.decode() and "<img src=x>" not in files[1].content.decode()
         hr_html, _, hr_files = mail.render(s, items["HR"])
-        assert "Data to fix" in hr_html and "Data issues" in load_workbook(io.BytesIO(hr_files[0].content)).sheetnames
+        assert "could not be routed" in hr_html and "SL09999" in hr_html and "Data issues" in load_workbook(io.BytesIO(hr_files[0].content)).sheetnames
         # test mode: approving saves to the outbox, nothing is sent; a second approve sends nothing
         assert get_email(s).mode == "test"
         done = mail.send_items(s, [i for i in items.values() if i.status == "PENDING"], "tester", settings.storage.area("sales_outbox"))
@@ -184,7 +184,7 @@ def test_sales_api_end_to_end(staffed, settings, tmp_path):
         m = api.get(f"/api/v1/sales/days/{D}/mail").json()
         assert m["mode"] == "test" and len(m["items"]) == 6
         first = next(i for i in m["items"] if i["status"] == "PENDING")
-        assert "Needs checking" in api.get(f"/api/v1/sales/mail/{first['id']}/preview").text
+        assert "Needs attention" in api.get(f"/api/v1/sales/mail/{first['id']}/preview").text
         assert api.get(f"/api/v1/sales/mail/{first['id']}/attachment/excel").status_code == 200
         assert api.get(f"/api/v1/sales/mail/{first['id']}/attachment/dashboard").status_code == 200
         sent = api.post(f"/api/v1/sales/days/{D}/mail/approve", headers=H, json={}).json()
@@ -232,9 +232,9 @@ def test_hr_amendment_file_only_field_sales_and_right_names(engine):
         sm = staff.summary(s)
         assert sm["total"] == 3 and sm["with_email"] == {"manager": 2, "asm": 0, "zonal": 0, "hod": 3}
     assert display_name("ARUN MISHRA", "avdhesh@apisindia.com") == "Avdhesh"
-    assert display_name("SHAKIL AHMED", "shakeel@apisindia.com") == "SHAKIL AHMED"
+    assert display_name("SHAKIL AHMED", "shakeel@apisindia.com") == "Shakil Ahmed"                       # brief: names title-cased
     assert display_name("GOURI SHANKAR", "vaibhav.mishra@apisindia.com") == "Vaibhav Mishra"
-    assert display_name("ASIF ALI ANSARI", "asifansari@apisindia.com") == "ASIF ALI ANSARI"
+    assert display_name("ASIF ALI ANSARI", "asifansari@apisindia.com") == "Asif Ali Ansari"
 
 
 def test_staff_add_and_edit(staffed):
@@ -359,3 +359,56 @@ def test_testing_sends_only_to_the_testers_with_cc(staffed, settings, monkeypatc
                    and not m["Bcc"] for mode, m in sent)
         ravi = next(m for _, m in sent if "ravi@example.com" in m.get_body(("html",)).get_content())   # pilot too: only the testers
         assert ravi["To"] == "tester@example.com"
+
+
+def test_build_brief_routing_rules():
+    """Brief: one email per Sub split ID; HOD = own direct reports in detail + department summary; HR only on exception days;
+    a manager listed inside their own team is flagged, never guessed; roles by codes/emails, not exact names."""
+    from database.models.sales import SalesEmployee as E
+    from sales import routing
+
+    def emp(code, name, mgr, mgr_email, hod="HOD One", hod_email="hod@x.com"):
+        return E(code=code, name=name, manager_name=mgr, manager_email=mgr_email, hod_name=hod, hod_email=hod_email, status="ACTIVE")
+    staff = {"S1": emp("S1", "GULSHAN KUMAR", "HOD One", "hod@x.com"),        # manager: reports to the HOD, leads 'GULSHAN'
+             "S2": emp("S2", "Team Member", "GULSHAN", "gulshan@x.com"),
+             "S3": emp("S3", "Another Member", "GULSHAN", "gulshan@x.com"),
+             "S4": emp("S4", "AVDHESH SHARMA", "AVDHESH SHARMA", "avdhesh@x.com")}   # inside his own team
+    cfg = SalesEmail(levels=["manager", "hod"])
+    clean = {k: v for k, v in staff.items() if k != "S4"}
+    recs = {r.key: r for r in routing.recipients(set(clean), clean, cfg, hr_always=False)}
+    assert set(recs) == {"gulshan@x.com", "hod@x.com", "DIRECTOR"}                        # no exceptions -> no HR email
+    assert recs["hod@x.com"].detail == {"S1"} and recs["hod@x.com"].codes == {"S1", "S2", "S3"}
+    assert recs["gulshan@x.com"].detail == recs["gulshan@x.com"].codes == {"S2", "S3"} and recs["gulshan@x.com"].name == "Gulshan"
+    recs = {r.key: r for r in routing.recipients(set(staff), staff, cfg, hr_always=False)}
+    assert "HR" in recs                                                                    # exception day -> HR email
+    assert [x["issue"] for x in routing.exceptions(set(staff), staff)] == ["MANAGER_IN_OWN_TEAM"]
+    assert routing.managers(staff) == {"S1", "S4"}
+    assert routing.exceptions({"ZZ1"}, staff)[0]["issue"] == "NOT_IN_MASTER"
+
+
+def test_excluded_codes_and_staff_import_preview(staffed, settings, tmp_path):
+    """Brief: people reported in another run are left out by code; a new staff list shows its changes before it is saved."""
+    from sales.config import get_rules, save_rules
+
+    with session_scope(staffed) as s:
+        r = get_rules(s)
+        save_rules(s, r.model_copy(update={"exclude_codes": r.exclude_codes + ["^SL00003$"]}), "tester")
+        up = service.process(s, [("a.csv", attendance_csv()), ("e.csv", eod_csv()), ("c.csv", calls_csv())], "tester")
+        assert "SL00003" not in {x.code for x in service.rows_for(s, up.upload_id)}
+    from sqlalchemy import select
+
+    from database.models.sales import SalesEmployee
+    with TestClient(create_app(settings, staffed, frontend_dist=tmp_path / "x")) as api:
+        book = csv_bytes(["Emp Code", "Name", "Sub split ID", "Reporting Manager", "HOD", "Email ID - HOD", "GTR"],
+                         [["SL07777", "New Joiner", "ravi@example.com", "Ravi Manager", "Hod One", "hod1@example.com", "GTR09"],
+                          ["SL00001", "Asha Field", "zonal1@example.com", "Zonal One", "Hod One", "hod1@example.com", "GTR01"]])
+        p = api.post("/api/v1/sales/staff/import", headers=H, files={"file": ("list.csv", book, "text/csv")}, data={"preview": "true"}).json()
+        assert p["preview"] and p["added"] == 1 and p["joiners"] == ["SL07777 New Joiner"] and p["manager_change_count"] == 1 and p["not_in_file_count"] >= 5
+        with session_scope(staffed) as s:
+            assert s.scalar(select(SalesEmployee).where(SalesEmployee.code == "SL07777")) is None              # nothing saved
+        a = api.post("/api/v1/sales/staff/import", headers=H, files={"file": ("list.csv", book, "text/csv")}).json()
+        assert a["added"] == 1 and not a["preview"]
+        with session_scope(staffed) as s:
+            assert s.scalar(select(SalesEmployee).where(SalesEmployee.code == "SL07777")).zone == "GTR09"      # GTR read as zone
+        rv = api.get("/api/v1/sales/routing", headers=H).json()
+        assert rv["rows"] and all(r["goes_to"] or r["check"] == "VERIFY" for r in rv["rows"]) and rv["emails_per_day"] >= 2

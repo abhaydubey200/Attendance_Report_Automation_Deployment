@@ -31,7 +31,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "code": ("empcode", "employeecode", "empid", "employeeid", "code", "emp_code", "ecode"),
     "name": ("name", "employeename", "empname", "fullname"),
     "designation": ("designation", "empdesignation", "role", "rolename"),
-    "zone": ("zone", "region"),
+    "zone": ("zone", "region", "gtr", "territory"),
     "hq": ("hq", "headquarter", "headquarterhq", "hqname", "location"),
     "channel": ("channel", "department", "businessunit", "businessunits", "division"),
     "manager_name": ("reportingmanager", "reportingmanagername", "manager", "managername", "immediatemanager", "asetsm"),
@@ -88,6 +88,8 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
     existing = {e.code: e for e in session.scalars(select(SalesEmployee))}
     added = updated = unchanged = not_field_sales = 0
     problems: list[str] = []
+    joiners: list[str] = []
+    manager_changes: list[str] = []
     seen: set[str] = set()
     for n, r in enumerate(rows[at + 1:], start=at + 2):
         g = lambda f: str(r[cols[f]]).strip() if f in cols and cols[f] < len(r) and r[cols[f]] is not None else ""  # noqa: E731
@@ -138,8 +140,11 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
             session.add(emp)
             existing[code] = emp
             added += 1
+            joiners.append(f"{code} {values.get('name', '')}")
         else:
             changed = {f: v for f, v in values.items() if getattr(emp, f) != v}
+            if "manager_email" in changed or "hod_email" in changed:
+                manager_changes.append(f"{code} {emp.name}: {emp.manager_email or '-'} -> {values.get('manager_email', emp.manager_email) or '-'}")
             for f, v in changed.items():
                 setattr(emp, f, v)
             if changed:
@@ -148,8 +153,11 @@ def import_rows(session: Session, rows: list[list[str]], actor: str, source: str
             else:
                 unchanged += 1
     session.flush()
+    not_in_file = sorted(f"{c} {e.name}" for c, e in existing.items() if e.status == "ACTIVE" and c not in seen
+                         and (not keep or any(k.search(c) for k in keep)))
     return {"added": added, "updated": updated, "unchanged": unchanged, "not_field_sales": not_field_sales, "problems": problems[:50],
-            "problem_count": len(problems), "columns": sorted(cols)}
+            "problem_count": len(problems), "columns": sorted(cols), "joiners": joiners[:200], "manager_changes": manager_changes[:200],
+            "manager_change_count": len(manager_changes), "not_in_file": not_in_file[:200], "not_in_file_count": len(not_in_file)}
 
 
 def to_dict(e: SalesEmployee) -> dict:

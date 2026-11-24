@@ -454,6 +454,22 @@ export function SalesStaffPage() {
   }
   async function importFile(f: File | undefined) {
     if (!f) return;
+    type Res = { added: number; updated: number; unchanged: number; problem_count: number; joiners: string[]; manager_changes: string[];
+      manager_change_count: number; not_in_file: string[]; not_in_file_count: number; problems: string[] };
+    const check = new FormData();
+    check.append("file", f);
+    check.append("preview", "true");
+    let p: Res;
+    try { p = await api.upload<Res>("/v1/sales/staff/import", check); } catch (e) { await run(() => Promise.reject(e), ""); return; }
+    const list = (xs: string[], n: number) => (xs.length ? <ul className="small" style={{ maxHeight: 140, overflow: "auto", margin: "4px 0 8px" }}>{xs.slice(0, 60).map((x) => <li key={x}>{x}</li>)}{n > 60 && <li>… and {n - 60} more</li>}</ul> : null);
+    const ok = await ask({ title: "Apply this staff list?", confirmLabel: "Apply changes", message: <div>
+      <p><b>{p.added}</b> joiner(s), <b>{p.updated}</b> updated ({p.manager_change_count} reporting change(s)), {p.unchanged} unchanged{p.problem_count ? `, ${p.problem_count} problem(s)` : ""}.</p>
+      {p.joiners.length > 0 && <><b>Joiners</b>{list(p.joiners, p.added)}</>}
+      {p.manager_changes.length > 0 && <><b>Reporting changes</b>{list(p.manager_changes, p.manager_change_count)}</>}
+      {p.not_in_file_count > 0 && <><b>Active but not in this file ({p.not_in_file_count})</b> – not changed; mark them Left if they have gone{list(p.not_in_file, p.not_in_file_count)}</>}
+      {p.problems.length > 0 && <><b>Problems</b>{list(p.problems, p.problem_count)}</>}
+    </div> });
+    if (!ok) return;
     const form = new FormData();
     form.append("file", f);
     await run(() => api.upload<{ added: number; updated: number; unchanged: number; problem_count: number }>("/v1/sales/staff/import", form),

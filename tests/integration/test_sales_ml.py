@@ -74,9 +74,9 @@ def test_unusual_day_risk_and_emails(day):
         learning._save(s, st)
         # ... then they are (right 9 of 10 times, 8+ reviews)
         html, text, files = mail.render(s, item)
-        # short email: highlights only (at most 6 lines); everything else in the attachments
-        assert "Highlights" in html and "Highest risk: Esha Fine (risk" in html and "Asha" not in html and html.count("border-bottom:1px solid #f1f3f8") <= 6
-        assert "Highlights:" in text and "fraud" not in (html + text).lower() and "Absent / did not mark" not in text
+        # build brief: counts, then only the people needing attention (grouped by territory); Esha's proven serious check lists her
+        assert "Needs attention" in html and "Esha Fine" in html and "Asha" not in html
+        assert "Needs attention" in text and "fraud" not in (html + text).lower() and "Absent / did not mark" not in text
         wb = load_workbook(io.BytesIO(next(f for f in files if f.filename.endswith(".xlsx")).content))
         assert "Location & selfie checks" in wb.sheetnames and "Proof" in wb.sheetnames          # HOD: proof sheet with map links
         proof_ws = wb["Proof"]

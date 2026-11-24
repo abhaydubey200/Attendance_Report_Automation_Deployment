@@ -278,7 +278,8 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
                        breakdown_: dict, rows: list[dict], date_format: str, sources: str = "Pocket HRMS",
                        late_after: str | None = None, routing_columns: bool = True, *, recipient: str | None = None,
                        previous_rows: list[dict] | None = None, previous_date: date | None = None,
-                       patterns: dict[str, str] | None = None, subtitle: str | None = None, company_view: bool = False) -> bytes:
+                       patterns: dict[str, str] | None = None, subtitle: str | None = None, company_view: bool = False,
+                       pack: dict | None = None) -> bytes:
     """The self-contained dashboard for any set of people. routing_columns=False (emailed dashboards) leaves out
     each person's department, HOD, team and reporting manager and greets the recipient by name."""
     keys = ("code", "name", "category", "department", "hod", "team", "manager", "permission", "on_duty", "status", "status_label",
@@ -295,11 +296,14 @@ def dashboard_html_for(company: str, report_date: date, title: str, summary: dic
                   "status_label": _list_label(r)} for r in rows],
         "routing_columns": routing_columns,
         "buckets": {k: {"label": label, "color": color} for k, label, _, color, _ in BUCKETS},
+        "pack": pack, "company_view": company_view, "day": f"{report_date:%d-%b-%Y}",
     }
     # Safe to embed inside <script>: no "</" or "<!--" can appear in the JSON text.
     data_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     bd = breakdown_ or {"by": "Category", "rows": []}
-    return _env.get_template("dashboard.html").render(
+    from daily.branding import favicon_data_uri
+
+    return _env.get_template("dashboard.html").render(favicon_ho=favicon_data_uri("ho"),
         title=title, data_json=data_json, logo=logo_data_uri(), v=view, emailed=emailed, recipient=recipient, company_view=company_view,
         heading=("Daily Company Attendance Dashboard" if company_view else "Daily Team Attendance Dashboard") if emailed
         else "Daily Attendance Dashboard",

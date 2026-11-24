@@ -6,6 +6,9 @@
     <one per action> HR only: not in master, routing problems, permissions pending, missing punches, absence streaks
     Team / Company list   everyone, people needing attention first
     Last 7 days      one row per person, one coloured cell per report day
+    Trend            last 30 report days with a chart (working days)
+    Last 30 days     one row per person: 30-day %, late, absent, usual in-time, and a coloured cell per day
+    HOD scorecard    Director / HR only: each HOD's team over 30 days + weekday heat + chart
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ def code_of(row: dict | None) -> str:
 
 
 def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: list[tuple[int, date]],
-          grid: dict[str, dict[date, dict]], notes: dict[str, str]) -> bytes:
+          grid: dict[str, dict[date, dict]], notes: dict[str, str], pack: dict | None = None) -> bytes:
     from daily.mail import ROSTER_COLS, _sort_attention_first, attention
     from daily.render import action_for
 
@@ -279,5 +282,95 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
             wl.write(k, c0 + 1, label)
         wl.freeze_panes(1, c0)
         wl.autofilter(0, 0, len(ordered), c0 + len(days) + 1)
+
+    # ------------------------------------------------------------------ last 30 days: trend (+ chart), grid, HOD scorecard (+ chart)
+    if pack and pack["trend"] and people:
+        P2X = {"P": "P", "M": "MP", "D": "OD", "W": "WFH", "H": "HD", "V": "L", "A": "A", "O": "WO", "N": "-", "-": ""}
+        wt = wb.add_worksheet("Trend")
+        excel_banner(wb, wt, [12, 8, 14, 9, 9], f"{who} – last {len(pack['trend'])} report days to {day}",
+                     "Attendance % on working days (days when most people were on a week off / holiday are left out)")
+        for j, (h, w) in enumerate([("Date", 12), ("Day", 8), ("Attendance %", 14), ("Absent", 9), ("Late", 9)]):
+            wt.write(3, j, h, head)
+            wt.set_column(j, j, w)
+        for i, t in enumerate(pack["trend"], start=4):
+            wt.write(i, 0, t["label"], cell)
+            wt.write(i, 1, t["weekday"], cell)
+            if t["pct"] is None:
+                wt.write(i, 2, "week off / holiday", note)
+            else:
+                wt.write_number(i, 2, t["pct"], pct_fmt[band(t["pct"])])
+            wt.write(i, 3, t["absent"], cell)
+            wt.write(i, 4, t["late"], cell)
+        last = 3 + len(pack["trend"])
+        ch = wb.add_chart({"type": "line"})
+        ch.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
+                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+        colc = wb.add_chart({"type": "column"})
+        colc.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3],
+                         "fill": {"color": "#FCA5A5"}, "y2_axis": True})
+        ch.combine(colc)
+        ch.set_title({"name": "Attendance % and absent people", "name_font": {"size": 12}})
+        ch.set_y_axis({"min": 40, "max": 100})
+        ch.set_legend({"position": "bottom"})
+        ch.set_size({"width": 760, "height": 340})
+        wt.insert_chart(3, 6, ch)
+        wt.freeze_panes(4, 1)
+
+        w3 = wb.add_worksheet("Last 30 days")
+        labels = pack["labels"]
+        fixed = [("Code", 10), ("Name", 24)] + ([("HOD", 18)] if kind != "hod" else []) + \
+                [("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("WFH / OD", 8), ("Usual in-time", 10), ("Avg hours", 8)]
+        excel_banner(wb, w3, [w for _, w in fixed] + [4] * len(labels), f"{who} – day by day, last {len(labels)} report days to {day}",
+                     "P present · LT late · OD on duty · WFH · HD half day · L leave · A absent · MP missing punch · WO week off / holiday")
+        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
+        for j, (h, w) in enumerate(fixed):
+            w3.write(3, j, h, head)
+            w3.set_column(j, j, w)
+        c0 = len(fixed)
+        for k, (lab, wd) in enumerate(zip(labels, pack["weekday_of"])):
+            w3.write(3, c0 + k, f"{lab} {wd}", dh)
+        w3.set_column(c0, c0 + len(labels) - 1, 4.2)
+        w3.set_row(3, 64)
+        pp = pack["people"]
+        ordered = sorted(people, key=lambda p: ((pp.get(p["code"].upper()) or {}).get("pct30") if (pp.get(p["code"].upper()) or {}).get("pct30") is not None else 999, p["name"]))
+        for i, p in enumerate(ordered, start=4):
+            h = pp.get(p["code"].upper()) or {}
+            vals = [p["code"], p["name"]] + ([p.get("hod") or ""] if kind != "hod" else []) + \
+                   [h.get("pct30"), h.get("late30"), h.get("absent30"), h.get("leave30"), h.get("wfh_od30"), h.get("usual_in"), h.get("avg_hours")]
+            for j, x in enumerate(vals):
+                w3.write(i, j, "" if x is None else x, pct_fmt[band(x)] if j == c0 - 7 and isinstance(x, (int, float)) else cell)
+            for k, ch_ in enumerate((h.get("strip") or "-" * len(labels)).ljust(len(labels), "-")[:len(labels)]):
+                c = P2X.get(ch_, "")
+                w3.write(i, c0 + k, c, code_fmt.get(c, code_fmt[""]) if c else code_fmt[""])
+        w3.autofilter(3, 0, 3 + len(ordered), c0 + len(labels) - 1)
+        w3.freeze_panes(4, 2)
+
+        if kind != "hod" and len(pack.get("groups") or []) > 1:
+            g = pack["groups"]
+            w4 = wb.add_worksheet("HOD scorecard")
+            cols = [("HOD", 26), ("Last 30 days %", 13), ("Absent days (30)", 13)] + [(w, 6) for w in pack["weekdays"]]
+            excel_banner(wb, w4, [w for _, w in cols], f"HOD teams – last 30 report days to {day}",
+                         "Lowest first; weekday columns = attendance % on that weekday over the last 12 weeks")
+            for j, (h, w) in enumerate(cols):
+                w4.write(3, j, h, head)
+                w4.set_column(j, j, w)
+            for i, r_ in enumerate(g, start=4):
+                w4.write(i, 0, r_["name"], bold)
+                if r_["pct30"] is not None:
+                    w4.write_number(i, 1, r_["pct30"], pct_fmt[band(r_["pct30"])])
+                w4.write(i, 2, r_["absent30"], cell)
+                for k, x in enumerate(r_["heat"]):
+                    w4.write(i, 3 + k, "" if x is None else x, cell)
+            w4.conditional_format(4, 3, 3 + len(g), 2 + len(pack["weekdays"]), {"type": "3_color_scale", "min_color": "#F8696B", "mid_color": "#FFEB84",
+                                  "max_color": "#63BE7B", "min_type": "num", "min_value": 60, "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
+            barc = wb.add_chart({"type": "bar"})
+            barc.add_series({"name": "Last 30 days %", "categories": ["HOD scorecard", 4, 0, 3 + len(g), 0], "values": ["HOD scorecard", 4, 1, 3 + len(g), 1],
+                             "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}})
+            barc.set_title({"name": "Attendance by HOD team – last 30 report days", "name_font": {"size": 12}})
+            barc.set_x_axis({"min": 50, "max": 100})
+            barc.set_legend({"none": True})
+            barc.set_size({"width": 620, "height": max(260, 26 * len(g) + 80)})
+            w4.insert_chart(6 + len(g), 0, barc)
+            w4.freeze_panes(4, 1)
     wb.close()
     return buf.getvalue()

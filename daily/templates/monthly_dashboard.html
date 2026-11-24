@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ title }}</title>
+<link rel="icon" href="{{ favicon_ho }}">
 {% from "_icons.html" import icon %}
 <style>{% include "_dash_style.css" %}
   /* ================= month-end app ================= */
@@ -124,6 +125,10 @@
   #onepage table { width:100%; border-collapse:collapse; } #onepage td, #onepage th { border-bottom:1px solid #e6e8ef; padding:3px 6px; text-align:left; }
   #onepage .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   #onepage ul { margin:0; padding-left:16px; } #onepage li { margin-bottom:3px; }
+  table.heatw { border-collapse:separate; border-spacing:3px; font-size:13px; } table.heatw th { color:var(--navy); padding:4px 8px; text-align:center; }
+  table.heatw th:first-child { text-align:left; } table.heatw td { padding:6px 8px; white-space:nowrap; }
+  table.heatw td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:44px; } table.heatw tbody tr[data-act] { cursor:pointer; }
+  table.heatw tbody tr[data-act]:hover td:first-child { text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -492,6 +497,20 @@ function teamRows(I) {
             before: b === undefined ? null : b, delta: whole() && b !== undefined && t.pct !== null ? r1(t.pct - b) : null}; })
     .sort((a, b) => (b.t.pct ?? -1) - (a.t.pct ?? -1) || a.name.localeCompare(b.name));
 }
+function teamHeat(I, rows) {   // each team's attendance % by weekday, working weekdays only - spots the team that is always weak on Saturdays
+  const wds = weekdayRows(I);
+  if (!wds.length || rows.length < 2) return "";
+  const cell = (pct) => `<td class="hc" style="background:${pct === null ? "#f8fafc" : color(pct)};color:${pct === null ? "#94a3b8" : "#fff"}">${pct === null ? "–" : Math.round(pct)}</td>`;
+  const body = rows.map((r) => { const ss = SS.filter((s) => (s.hod || "No HOD assigned") === r.name);
+    const tl = r.t.tracked ? r1(100 * r.t.late / r.t.tracked) : null;
+    return `<tr data-act="team:${encodeURIComponent(r.name)}" tabindex="0" title="Show this team's people"><td><b>${esc(r.name)}</b></td>
+      ${wds.map((w) => { const J = I.filter((i) => wdOf(i) === w.k); return cell(total(ss.map((p) => stats(P.find((x) => String(x.code) === String(p.code)), J))).pct); }).join("")}
+      <td class="num">${tl === null ? "–" : tl + "%"}</td></tr>`; }).join("");
+  return `<section class="card" style="margin-top:16px"><div class="card-h"><span style="color:#d99a00">${ICON.calendar}</span><h3>Team × weekday <span class="muted">– attendance % · ${esc(periodText())} · click a team for its people</span></h3></div>
+    <div class="tablewrap"><table class="heatw"><thead><tr><th>HOD's team</th>${wds.map((w) => `<th>${w.short}</th>`).join("")}<th>Late %</th></tr></thead>
+    <tbody><tr><td><b>Everyone</b></td>${wds.map((w) => cell(w.t.pct)).join("")}<td class="num">${(() => { const t = total(SS); return t.tracked ? r1(100 * t.late / t.tracked) + "%" : "–"; })()}</td></tr>${body}</tbody></table></div>
+    <p class="mut" style="font-size:12px;margin:8px 0 0">Late % = late arrivals per working day. Sundays / weekly offs are left out.</p></section>`;
+}
 function vTeams(I) {
   const rows = teamRows(I), n = rows.length;
   const chart = hbars(rows.map((r) => ({l: `${r.name} (${r.n})`, v: r.t.pct ?? 0, vl: pctS(r.t.pct), c: color(r.t.pct), act: `team:${encodeURIComponent(r.name)}`,
@@ -507,7 +526,7 @@ function vTeams(I) {
       <div class="tablewrap" style="max-height:680px"><table class="grid" style="font-size:13px"><thead><tr><th>#</th><th>HOD's team</th><th>People</th><th>Attendance</th>${whole() && D.prevTotals ? `<th>vs ${esc(D.prevLabel)}</th>` : ""}<th>Absent</th><th>Late</th><th>Missing<br>punch</th><th>Leave</th><th>Need<br>attention</th><th>Full<br>attendance</th></tr></thead><tbody>${body}</tbody></table></div></div>
     <div class="card"><div class="card-h"><span style="color:#d99a00">${ICON.bars}</span><h3>Attendance by team</h3></div>${chart}
       <p class="mut" style="font-size:12px;margin:10px 0 0">Green ${R.target}%+ · amber 75–${R.target}% · red below 75%. Top three and bottom three are shaded in the table.</p></div>
-  </section>`;
+  </section>${teamHeat(I, rows)}`;
 }
 const METRICS = {pct: ["Attendance %", (d) => d.pct, (v) => pctS(v), true], absent: ["Absent", (d) => d.A.length, (v) => v], late: ["Late", (d) => d.late.length, (v) => v],
   mp: ["Missing punch", (d) => d.MP.length, (v) => v], leave: ["On leave", (d) => d.L.length, (v) => v],

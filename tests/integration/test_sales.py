@@ -131,7 +131,11 @@ def test_day_counting_warnings_and_emails(staffed, settings):
         html, text, files = mail.render(s, items["ravi@example.com"])
         assert "Needs checking" in html and "not proof" in html and "fraud" not in html.lower() and "today" not in html.lower()
         assert [f.filename.split("_")[-1] for f in files] == ["Manager.xlsx", "dashboard.html"]
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Needs checking", "Location & selfie checks", "Absent", "Team list"]
+        names = load_workbook(io.BytesIO(files[0].content)).sheetnames
+        assert names[0] == "Dashboard" and {"Trend", "Last 30 days", "Needs checking", "Location & selfie checks", "Absent", "Team list"} <= set(names)
+        wbx = load_workbook(io.BytesIO(files[0].content))
+        assert "TeamList" in wbx["Team list"].tables                                    # pivots count from this table
+        assert any(str(c.value).startswith("=COUNTIFS(TeamList[") for row in wbx[next(n for n in names if n.startswith("Pivot"))].iter_rows() for c in row)
         assert "9999999999" not in html + text + files[1].content.decode() and "<img src=x>" not in files[1].content.decode()
         hr_html, _, hr_files = mail.render(s, items["HR"])
         assert "Data to fix" in hr_html and "Data issues" in load_workbook(io.BytesIO(hr_files[0].content)).sheetnames
@@ -280,7 +284,8 @@ def test_inbox_job_reports_and_month_end(staffed, settings, tmp_path):
         html, text, files = mail.render(s, items["MONTHLY:ravi@example.com"])
         assert "November 2026" in html and "Dear Ravi Manager" in html and "Ravi Manager" in text
         assert "fraud" not in html.lower() and "9999999999" not in html + files[1].content.decode()
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Weeks", "Needs a conversation", "People", "Calendar"]
+        mnames = load_workbook(io.BytesIO(files[0].content)).sheetnames
+        assert mnames[0] == "Summary" and {"Day by day", "Weeks", "Needs a conversation", "People", "Calendar"} <= set(mnames)
         assert "Teams" in load_workbook(io.BytesIO(mail.render(s, items["MONTHLY:DIRECTOR"])[2][0].content)).sheetnames
         done = mail.send_items(s, [i for i in items.values() if i.status == "PENDING"], "tester", settings.storage.area("sales_outbox"))
         assert {i.status for i in done} == {"SAVED"}

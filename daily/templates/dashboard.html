@@ -5,8 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{ title }}</title>
+<link rel="icon" href="{{ favicon_ho }}">
 {% from "_icons.html" import icon %}
-<style>{% include "_dash_style.css" %}</style>
+<style>{% include "_dash_style.css" %}
+  .row2b[hidden] { display:none; }
+  .row2b { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:16px; margin-top:16px; }
+  @media (max-width: 900px) { .row2b { grid-template-columns:minmax(0,1fr); } }
+  .note30 { font-size:12.5px; color:var(--muted); margin:8px 0 0; }
+  table.heat30 { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat30 th { color:var(--navy); padding:2px 8px; }
+  table.heat30 td { padding:5px 8px; white-space:nowrap; } table.heat30 td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:40px; }
+  table.heat30 tr.hrow { cursor:pointer; } table.heat30 tr.hrow:hover td:first-child { text-decoration:underline; }
+  .strip30 { display:flex; flex-wrap:wrap; gap:3px; margin-top:8px; } .strip30 span { width:20px; height:24px; border-radius:5px; color:#fff; font-size:10px;
+    display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; }
+  .leg30 { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:var(--muted); margin-top:6px; } .leg30 i { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:3px; }
+</style>
 </head>
 <body>
 <script>document.documentElement.classList.add("js");</script>
@@ -149,6 +161,14 @@
     {% endif %}
   </section>
   {% endif %}
+
+  <section class="row2b" id="p30" hidden>
+    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("bars", 22) }}</span><h3>Last 30 report days</h3></div>
+      <div id="t30"></div><p class="note30" id="t30n"></p></div>
+    <div class="card"><div class="card-h"><span style="color:#d99a00">{{ icon("clock", 22) }}</span><h3>Attendance by weekday</h3></div>
+      <table class="heat30" id="h30"></table><p class="note30">Last 12 weeks, working days only – spot days that are always weak.{% if company_view %} Click a team to filter.{% endif %}</p>
+      <div id="g30w" hidden><div class="k" style="font-weight:700;color:var(--navy);margin:12px 0 6px">HOD teams – last 30 report days (lowest first)</div><div class="bars" id="g30"></div></div></div>
+  </section>
 
   <section class="card section" id="exc">
     <div class="card-h" style="flex-wrap:wrap">
@@ -321,6 +341,48 @@ function renderAll() {
 
 // ---------------- person panel
 let current = null, source = "exc";
+// ---------------- last 30 report days: trend, weekday heat, HOD ranking (company views), and the person's 30 days
+const PK = D.pack;
+const C30 = {P: "#16a34a", M: "#7c3aed", D: "#0d9488", W: "#4f46e5", H: "#f59e0b", V: "#64748b", A: "#dc2626", O: "#cbd5e1", N: "#e2e8f0", "-": "#eef1f6"};
+const N30 = {P: "Present", M: "Missing punch", D: "On duty", W: "Work from home", H: "Half day", V: "Leave", A: "Absent", O: "Week off / holiday", N: "Not tracked", "-": "No record"};
+const pc30 = (v) => v === null || v === undefined ? "#e5e7eb" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
+function p30(code) {
+  const h = PK && PK.people[String(code).toUpperCase()]; if (!h) return "";
+  const s = (h.strip || "").split("");
+  const st = (k, v) => `<div class="fact"><div class="k">${esc(k)}</div><div class="v num">${esc(v === null || v === undefined || v === "" ? "–" : v)}</div></div>`;
+  return `<div class="k" style="font-weight:700;color:var(--navy);margin:14px 0 6px">Last ${s.length} report days</div>
+    <div class="facts">${st("Attendance", h.pct30 === null ? "–" : h.pct30 + "%")}${st("Late days", h.late30)}${st("Absent days", h.absent30)}</div>
+    <div class="facts">${st("Leave / half days", h.leave30)}${st("WFH / on duty", h.wfh_od30)}${st("Usual in-time", h.usual_in)}</div>
+    <div class="strip30">${s.map((c, i) => `<span style="background:${C30[c] || "#eef1f6"}" title="${esc(PK.labels[i])} ${esc(PK.weekday_of[i])}: ${N30[c] || c}">${esc((PK.labels[i] || "").split("-")[0])}</span>`).join("")}</div>
+    <div class="leg30">${["P", "D", "W", "M", "H", "V", "A", "O"].map((k) => `<span><i style="background:${C30[k]}"></i>${N30[k]}</span>`).join("")}</div>
+    ${h.avg_hours ? `<p style="color:var(--muted);font-size:12.5px;margin-top:6px">Average duty on working days: ${esc(h.avg_hours)} (h:mm)</p>` : ""}`;
+}
+(function () {
+  if (!PK || !PK.trend || !PK.trend.length || !$("p30")) return;
+  $("p30").hidden = false;
+  const T = PK.trend, W = 640, H = 200, L = 34, R = 10, top = 10, bot = 34, n = T.length;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)), y = (v) => top + (100 - v) * (H - top - bot) / 100;
+  const mA = Math.max(1, ...T.map((t) => t.absent)), bw = Math.max(3, (W - L - R) / n * 0.55);
+  let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">`;
+  [50, 75, 90, 100].forEach((g) => s += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 90 ? "#bbf7d0" : "#eef1f6"}"/><text x="${L - 4}" y="${y(g) + 4}" text-anchor="end" font-size="11" fill="#6b7280">${g}%</text>`);
+  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="#f1f5f9"><title>${t.label} (${t.weekday}): week off / holiday – left out</title></rect>`;
+    const h = t.absent / mA * 40; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - h}" width="${bw}" height="${h}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; });
+  let path = ""; T.forEach((t, i) => { if (t.pct !== null) path += (path && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
+  s += `<path d="${path}" fill="none" stroke="#14213d" stroke-width="2"/>`;
+  T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="${i === n - 1 ? 5 : 3.5}" fill="${pc30(t.pct)}" stroke="#fff"><title>${t.label} (${t.weekday}): ${t.pct}% · ${t.absent} absent · ${t.late} late</title></circle>`;
+    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" font-size="11" fill="#6b7280">${t.label}</text>`; });
+  $("t30").innerHTML = s + "</svg>";
+  const v = T.filter((t) => t.pct !== null).map((t) => t.pct);
+  if (v.length) $("t30n").textContent = `Average on working days ${Math.round(10 * v.reduce((a, b) => a + b, 0) / v.length) / 10}% · best ${Math.max(...v)}% · lowest ${Math.min(...v)}%. Red bars = absent people; grey = week off / holiday (left out). Hover for the day.`;
+  const rows = [["Everyone", PK.heat_all, ""]].concat((PK.groups || []).map((g) => [g.name, g.heat, g.name]));
+  $("h30").innerHTML = `<tr><th></th>${PK.weekdays.map((w) => `<th>${w}</th>`).join("")}</tr>` + rows.map(([nm, hh, f]) => `<tr ${f ? `class="hrow" data-filter="hod:${esc(f)}" data-label="${esc(f)}" title="Show ${esc(f)}'s team"` : ""}><td>${esc(nm)}</td>${hh.map((x, i) =>
+    `<td class="hc" style="background:${x === null ? "#f8fafc" : pc30(x)};color:${x === null ? "#94a3b8" : "#fff"}" title="${esc(nm)} · ${PK.weekdays[i]}: ${x === null ? "no working days" : x + "%"} (last 12 weeks)">${x === null ? "–" : Math.round(x)}</td>`).join("")}</tr>`).join("");
+  if ((PK.groups || []).length > 1 && $("g30")) {
+    $("g30w").hidden = false;
+    $("g30").innerHTML = PK.groups.map((g) => `<div class="bar" data-filter="hod:${esc(g.name)}" data-label="${esc(g.name)}" tabindex="0" title="${esc(g.name)}: ${g.pct30}% over 30 report days, ${g.absent30} absent days - click to filter"><span class="nm">${esc(g.name)}</span>
+      <span class="t"><span class="f" style="display:block;width:${g.pct30 || 0}%;background:${pc30(g.pct30)}"></span></span><b class="num">${g.pct30 ?? "–"}%</b></div>`).join("");
+  }
+})();
 function order() {   // Previous / Next step through the table the person was opened from, as filtered and sorted
   return source === "exc" ? [...document.querySelectorAll("#exct tbody tr[data-code]:not(.hidden)")].map((tr) => tr.dataset.code)
                           : listed.map((r) => String(r.code));
@@ -343,6 +405,7 @@ function openPerson(code, from) {
       <div class="act"><span>${esc(r.exc.action)}</span></div>
       <p style="color:var(--muted);font-size:13px;margin-top:10px">${esc(r.exc.details)}</p>`
       : `<p style="color:var(--good);font-weight:600">Nothing needs attention for this person.</p>`}`;
+  $("pbody").insertAdjacentHTML("beforeend", p30(r.code));
   const o = order(), i = o.indexOf(current);
   $("pprev").disabled = i <= 0; $("pnext").disabled = i < 0 || i >= o.length - 1;
   document.body.classList.add("open");

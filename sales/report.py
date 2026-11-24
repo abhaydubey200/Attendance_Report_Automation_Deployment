@@ -31,6 +31,13 @@ def pct_of(rows) -> float | None:
     return round(100 * (c["PRESENT"] + c["LATE"] + 0.5 * c["HALF_DAY"]) / due, 1) if due else None
 
 
+def pct_of_people(ps: list[dict]) -> float | None:
+    """Attendance % of view rows (same rule as pct_of): (present + late + half of half days) / everyone not on a week off."""
+    due = sum(1 for p in ps if p["status"] != "WEEK_OFF")
+    eq = sum(1 for p in ps if p["status"] in ("PRESENT", "LATE")) + 0.5 * sum(1 for p in ps if p["status"] == "HALF_DAY")
+    return round(100 * eq / due, 1) if due else None
+
+
 def hm(minutes: int | None) -> str:
     return "" if minutes is None else f"{minutes // 60}:{minutes % 60:02d}"
 
@@ -139,6 +146,15 @@ def build_view(rows, day: dict, view: str, recipient: str, d: date, checks: list
         p["risk"] = next((c["risk"] for c in (checks or []) if c["code"] == p["code"]), None)
         ai = ((ctx or {}).get("absent_info") or {}).get(p["code"])
         p["last_marked"], p["absent_streak"] = (ai or {}).get("last_marked"), (ai or {}).get("streak")
+    pk = (ctx or {}).get("pack")
+    if pk:
+        from sales import insights
+        for p in people:
+            p["hist"] = pk["people"].get(p["code"]) or {}
+        out["pack"] = {k: pk[k] for k in ("days", "labels", "weekday_of", "trend", "heat_all", "weekdays")}
+        out["scorecards"] = insights.scorecards(people, pk, (ctx or {}).get("team_trend") or [])
+    else:
+        out["pack"], out["scorecards"] = None, []
     out["trend"] = _trend(out)
     out["highlights"] = highlights(out)
     return out
@@ -271,7 +287,7 @@ def excel(v: dict) -> bytes:
         return None if x in (None, "") else pctf["good" if x >= 90 else "warn" if x >= 75 else "bad"]
 
     def table(name: str, title: str, subtitle: str, cols: list[tuple[str, int]], rows: list[list], empty: str,
-              fmt=None, freeze: int = 2, height: int | None = None, footnote: str | None = None):
+              fmt=None, freeze: int = 2, height: int | None = None, footnote: str | None = None, tname: str | None = None):
         """cols: (header, width); fmt(i, j, value) -> a cell format or None (default: wrap text in wide columns)."""
         ws = wb.add_worksheet(name[:31])
         excel_banner(wb, ws, [w for _, w in cols], title, subtitle)
@@ -284,7 +300,7 @@ def excel(v: dict) -> bytes:
         clean = [["" if x is None else x for x in r] for r in rows]
         ws.add_table(top, 0, top + len(clean), len(cols) - 1, {
             "data": clean, "style": "Table Style Light 15", "autofilter": True, "banded_rows": True,
-            "columns": [{"header": h, "header_format": head} for h, _ in cols]})
+            "columns": [{"header": h, "header_format": head} for h, _ in cols], **({"name": tname} if tname else {})})
         ws.set_row(top, 30)
         for i, r in enumerate(clean):
             if height:
@@ -298,40 +314,206 @@ def excel(v: dict) -> bytes:
         ws.freeze_panes(top + 1, freeze)
         return ws
 
-    # ---- Summary
-    ws = wb.add_worksheet("Summary")
-    excel_banner(wb, ws, [40, 14, 14, 14], f"Field sales attendance – {v['date_long']} ({v['weekday']})", v["recipient"])
-    ws.set_column(0, 0, 44)
-    ws.set_column(1, 3, 14)
-    kpis = [("People", v["n"]), ("Attendance %", v["pct"] if v["pct"] is not None else "-")] + \
-           [(v["status_label"][k], v["counts"][k]) for k in v["counts"]] + \
-           [("Need checking", len(v["flagged"])), ("Need checking – serious", v["flagged_high"]),
-            ("Repeat patterns (people)", len(v.get("patterns") or [])), ("Location & selfie checks (people)", len(v["checks"]))]
-    r = 4
-    ws.write(3, 0, "Figure", head)
-    ws.write(3, 1, "Value", head)
-    for i, (k, val) in enumerate(kpis, start=r):
-        ws.write(i, 0, k, bold)
-        ws.write(i, 1, val, big)
-    r += len(kpis) + 1
-    if v.get("trend"):
-        ws.write(r, 0, f"Trend: {v['trend']}", note)
-        r += 2
+    # ---- Dashboard: KPI cards, charts (status, marking times, 30-day trend, team heads) and a clickable contents list
+    ws = wb.add_worksheet("Dashboard")
+    dash = ws
+    ws.hide_gridlines(2)
+    widths = [24, 9, 3] + [11.5] * 10
+    for j, w in enumerate(widths):
+        ws.set_column(j, j, w)
+    excel_banner(wb, ws, widths, f"Field sales attendance – {v['date_long']} ({v['weekday']})", v["recipient"])
+    n_ = v["counts"]
+    cards = [("ATTENDANCE", f"{v['pct']}%" if v["pct"] is not None else "–", "#15803D" if (v["pct"] or 0) >= 90 else "#B45309" if (v["pct"] or 0) >= 75 else "#B91C1C",
+              f"{n_.get('PRESENT', 0) + n_.get('LATE', 0)} worked · {n_.get('HALF_DAY', 0)} half day"),
+             ("ABSENT", n_.get("ABSENT", 0), "#DC2626", f"{sum(1 for p in v['not_marked'] if p['not_marked'])} did not mark"),
+             ("LATE", n_.get("LATE", 0), "#D97706", "after 10:30 AM"),
+             ("LEAVE", n_.get("LEAVE", 0), "#64748B", f"{n_.get('WEEK_OFF', 0)} week off"),
+             ("NEEDS CHECKING", len(v["flagged"]), "#7C3AED", f"{v['flagged_high']} serious"),
+             ("PATTERNS", len(v.get("patterns") or []), "#0D9488", "people with repeat patterns")]
+
+    for k, (lab, val_, colr, subt) in enumerate(cards):
+        cs = [(0, 1), (3, 4), (5, 6), (7, 8), (9, 10), (11, 12)][k]
+        fl = wb.add_format({"bold": True, "font_size": 9, "font_color": "#5D6577", "bg_color": "#F8FAFC", "top": 5, "top_color": colr, "left": 1, "right": 1,
+                            "left_color": "#E6E8EF", "right_color": "#E6E8EF", "align": "left", "indent": 1})
+        fv = wb.add_format({"bold": True, "font_size": 22, "font_color": colr, "bg_color": "#F8FAFC", "left": 1, "right": 1, "left_color": "#E6E8EF",
+                            "right_color": "#E6E8EF", "align": "left", "indent": 1, "valign": "vcenter"})
+        fs = wb.add_format({"font_size": 9, "font_color": "#5D6577", "bg_color": "#F8FAFC", "bottom": 1, "left": 1, "right": 1, "border_color": "#E6E8EF",
+                            "align": "left", "indent": 1})
+        ws.merge_range(4, cs[0], 4, cs[1], lab, fl)
+        ws.merge_range(5, cs[0], 5, cs[1], val_, fv)
+        ws.merge_range(6, cs[0], 6, cs[1], subt, fs)
+    ws.set_row(5, 34)
+    sec = wb.add_format({"bold": True, "font_size": 12, "font_color": "#14213D", "bottom": 2, "bottom_color": "#F5B800"})
+    # status table + doughnut
+    ws.write(8, 0, "Status today", sec)
+    ws.write(9, 0, "Status", head)
+    ws.write(9, 1, "People", head)
+    sts = [k for k in v["status_label"] if v["counts"].get(k)]
+    for i, k in enumerate(sts, start=10):
+        ws.write(i, 0, v["status_label"][k], st.get(k, bold))
+        ws.write_number(i, 1, v["counts"][k], cell)
+    if sts:
+        dn = wb.add_chart({"type": "doughnut"})
+        dn.add_series({"name": "Status", "categories": ["Dashboard", 10, 0, 9 + len(sts), 0], "values": ["Dashboard", 10, 1, 9 + len(sts), 1],
+                       "points": [{"fill": {"color": COLORS[k]}} for k in sts], "data_labels": {"value": True, "leader_lines": True}})
+        dn.set_hole_size(55)
+        dn.set_title({"name": "People by status", "name_font": {"size": 11}})
+        dn.set_legend({"position": "right"})
+        dn.set_size({"width": 390, "height": 280})
+        dn.set_chartarea({"border": {"none": True}})
+        ws.insert_chart(8, 3, dn, {"x_offset": 4, "y_offset": 4})
+    # marking times table + column chart
+    bins = [(0, 540, "Before 9:00"), (540, 570, "9:00–9:30"), (570, 600, "9:30–10:00"), (600, 630, "10:00–10:30"), (630, 660, "10:30–11:00"),
+            (660, 720, "11:00–12:00"), (720, 1440, "After 12:00")]
+    mrow = 11 + len(sts) + 1
+    ws.write(mrow - 1, 0, "Marking times", sec)
+    ws.write(mrow, 0, "Marked", head)
+    ws.write(mrow, 1, "People", head)
+    for i, (a_, b_, lab) in enumerate(bins, start=mrow + 1):
+        ws.write(i, 0, lab, bold)
+        ws.write_number(i, 1, sum(1 for p in v["people"] if p.get("att_min") is not None and a_ <= p["att_min"] < b_), cell)
+    hc = wb.add_chart({"type": "column"})
+    hc.add_series({"name": "People", "categories": ["Dashboard", mrow + 1, 0, mrow + len(bins), 0], "values": ["Dashboard", mrow + 1, 1, mrow + len(bins), 1],
+                   "points": [{"fill": {"color": "#F59E0B" if a_ >= 630 else "#0D9488"}} for a_, _, _ in bins], "gap": 40, "data_labels": {"value": True}})
+    hc.set_title({"name": "Attendance marking time (amber = late)", "name_font": {"size": 11}})
+    hc.set_legend({"none": True})
+    hc.set_size({"width": 390, "height": 280})
+    hc.set_chartarea({"border": {"none": True}})
+    ws.insert_chart(8 + 15, 3, hc, {"x_offset": 4, "y_offset": 4})
+    dash_charts_at = (8, 8)          # trend + team-head charts go here once those sheets exist (below)
+    # warning signs + highlights
+    wrow = max(mrow + len(bins) + 2, 8 + 31)
+    ws.write(wrow, 0, "Warning signs today – for checking, not proof", sec)
     if v["warnings"]:
-        for j, h_ in enumerate(("Warning sign", "People", "Level")):
-            ws.write(r, j, h_, head)
-        for i, w in enumerate(v["warnings"], start=r + 1):
-            ws.write(i, 0, w["label"], bold)
-            ws.write(i, 1, w["n"], big)
-            ws.write(i, 2, w["level"], lvl[w["level"]])
-        r += 2 + len(v["warnings"])
-    if v["highlights"]:
-        ws.write(r, 0, "Highlights (as in the email)", head)
-        for i, x in enumerate(v["highlights"], start=r + 1):
-            ws.merge_range(i, 0, i, 3, x["text"], lvl[x["level"]])
-            ws.set_row(i, 32)
-        r += 2 + len(v["highlights"])
-    ws.write(r, 0, "Warning signs are for checking with the person, not proof of anything. Each sheet has filter buttons in its header.", note)
+        for j, h_ in enumerate(("Warning sign", "People")):
+            ws.write(wrow + 1, j, h_, head)
+        for i, w in enumerate(v["warnings"], start=wrow + 2):
+            ws.write(i, 0, w["label"], lvl[w["level"]])
+            ws.write_number(i, 1, w["n"], cell)
+    else:
+        ws.write(wrow + 1, 0, "Nothing to check on this day.", note)
+    ws.write(wrow, 3, "Highlights (as in the email)", sec)
+    for i, x in enumerate(v["highlights"], start=wrow + 1):
+        ws.merge_range(i, 3, i, 12, x["text"], lvl[x["level"]])
+        ws.set_row(i, 30)
+    contents_row = max(wrow + 3 + len(v["warnings"]), wrow + 2 + len(v["highlights"])) + 1
+    if v.get("trend"):
+        ws.write(contents_row - 1, 0, f"Trend: {v['trend']}", note)
+        contents_row += 1
+
+    # ---- pivot-style sheets: trend (with a chart), team scorecard (with a chart), 30-day grid
+    pk = v.get("pack")
+    if pk and pk["trend"]:
+        wt = wb.add_worksheet("Trend")
+        excel_banner(wb, wt, [12, 8, 14, 9, 9, 12], f"Last {len(pk['trend'])} uploaded days", "Attendance % on working days (Sundays / holidays left out)")
+        heads = [("Date", 12), ("Day", 8), ("Attendance %", 14), ("Absent", 9), ("Late", 9), ("Off (holiday)", 12)]
+        for j, (h_, w) in enumerate(heads):
+            wt.write(3, j, h_, head)
+            wt.set_column(j, j, w)
+        for i, t in enumerate(pk["trend"], start=4):
+            wt.write(i, 0, t["label"], cell)
+            wt.write(i, 1, t["weekday"], cell)
+            if t["pct"] is None:
+                wt.write(i, 2, "off day", note)
+            else:
+                wt.write_number(i, 2, t["pct"], pfmt(t["pct"]))
+            wt.write(i, 3, t["absent"], cell)
+            wt.write(i, 4, t["late"], cell)
+            wt.write(i, 5, t["off"] if t.get("off_day") else "", cell)
+        last = 3 + len(pk["trend"])
+        ch = wb.add_chart({"type": "line"})
+        ch.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
+                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+        col = wb.add_chart({"type": "column"})
+        col.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3],
+                        "fill": {"color": "#FCA5A5"}, "y2_axis": True})
+        ch.combine(col)
+        ch.set_title({"name": "Attendance % and absent people", "name_font": {"size": 12}})
+        ch.set_y_axis({"min": 40, "max": 100, "name": "%"})
+        col.set_y2_axis({"name": "Absent"})
+        ch.set_legend({"position": "bottom"})
+        ch.set_size({"width": 760, "height": 340})
+        wt.insert_chart(3, 7, ch)
+        wt.freeze_panes(4, 1)
+        tc = wb.add_chart({"type": "line"})
+        tc.add_series({"name": "Attendance %", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 2, last, 2],
+                       "line": {"color": "#14213D", "width": 2}, "marker": {"type": "circle", "size": 4, "fill": {"color": "#F5B800"}}})
+        tc2 = wb.add_chart({"type": "column"})
+        tc2.add_series({"name": "Absent", "categories": ["Trend", 4, 0, last, 0], "values": ["Trend", 4, 3, last, 3], "fill": {"color": "#FCA5A5"}, "y2_axis": True})
+        tc.combine(tc2)
+        tc.set_title({"name": f"Last {len(pk['trend'])} Bizom days – attendance % (off days left out)", "name_font": {"size": 11}})
+        tc.set_y_axis({"min": 40, "max": 100})
+        tc.set_legend({"position": "bottom"})
+        tc.set_size({"width": 580, "height": 280})
+        tc.set_chartarea({"border": {"none": True}})
+        dash.insert_chart(dash_charts_at[0], dash_charts_at[1], tc, {"x_offset": 10, "y_offset": 4})
+
+    sc = v.get("scorecards") or []
+    if len(sc) > 1:
+        cols_sc = [("Team head", 26), ("People", 8), (v["date_long"], 12), ("Last 30 days %", 13), ("4-week change", 12), ("Late % (30 days)", 13),
+                   ("Absent today", 11), ("Signs today", 10), ("Patterns", 9)] + [(w, 7) for w in (pk["weekdays"] if pk else [])] + [("Lowest 30-day attendance", 40)]
+        rows_sc = [[r["team_head"], r["people"], r["pct"], r["pct30"], r["change4"], r["late30_pct"], r["absent"], r["signs"], r["patterns"],
+                    *(r["heat"] if pk else []), "; ".join(r["lowest"])] for r in sc]
+        nh = len(pk["weekdays"]) if pk else 0
+        ws_sc = table("Team scorecard", f"Team heads – {v['date_long']}",
+                      "Lowest 30-day attendance first · weekday columns = attendance % on that weekday over the last 12 weeks (working days)",
+                      cols_sc, rows_sc, "", freeze=1,
+                      fmt=lambda i, j, x: (pfmt(x) if j in (2, 3) and isinstance(x, (int, float)) else
+                                           (neg if isinstance(x, (int, float)) and x <= -10 else pos if isinstance(x, (int, float)) and x > 0 else None) if j == 4 else None))
+        if nh:
+            ws_sc.conditional_format(4, 9, 3 + len(rows_sc), 8 + nh, {"type": "3_color_scale", "min_color": "#F8696B", "mid_color": "#FFEB84",
+                                                                      "max_color": "#63BE7B", "min_type": "num", "min_value": 60,
+                                                                      "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
+        bar = wb.add_chart({"type": "bar"})
+        bar.add_series({"name": "Last 30 days %", "categories": ["Team scorecard", 4, 0, 3 + len(rows_sc), 0],
+                        "values": ["Team scorecard", 4, 3, 3 + len(rows_sc), 3], "fill": {"color": "#14213D"},
+                        "data_labels": {"value": True, "num_format": "0.0"}})
+        bar.set_title({"name": "Attendance by team head – last 30 days", "name_font": {"size": 12}})
+        bar.set_x_axis({"min": 50, "max": 100})
+        bar.set_legend({"none": True})
+        bar.set_size({"width": 620, "height": max(260, 26 * len(rows_sc) + 80)})
+        ws_sc.insert_chart(6 + len(rows_sc), 0, bar)
+        top_n = min(10, len(rows_sc))
+        db = wb.add_chart({"type": "bar"})
+        db.add_series({"name": "Last 30 days %", "categories": ["Team scorecard", 4, 0, 3 + top_n, 0], "values": ["Team scorecard", 4, 3, 3 + top_n, 3],
+                       "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}, "gap": 40})
+        db.set_title({"name": f"Lowest {top_n} team heads – last 30 days %", "name_font": {"size": 11}})
+        db.set_x_axis({"min": 50, "max": 100})
+        db.set_y_axis({"reverse": True})
+        db.set_legend({"none": True})
+        db.set_size({"width": 580, "height": 280})
+        db.set_chartarea({"border": {"none": True}})
+        dash.insert_chart(dash_charts_at[0] + 15, dash_charts_at[1], db, {"x_offset": 10, "y_offset": 4})
+
+    if pk and v["people"]:
+        days = pk["labels"]
+        wg = wb.add_worksheet("Last 30 days")
+        fixed = [("Code", 10), ("Name", 24), ("Team head", 18), ("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("Usual start", 10)]
+        excel_banner(wb, wg, [w for _, w in fixed] + [4] * len(days), f"Day by day – last {len(days)} uploaded days to {v['date_long']}",
+                     "P present · L late · H half day · A absent · V leave · O week off / holiday · - not in that day's data")
+        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
+        for j, (h_, w) in enumerate(fixed):
+            wg.write(3, j, h_, head)
+            wg.set_column(j, j, w)
+        for k, (lab, wd) in enumerate(zip(days, pk["weekday_of"])):
+            wg.write(3, len(fixed) + k, f"{lab} {wd}", dh)
+        wg.set_column(len(fixed), len(fixed) + len(days) - 1, 3.6)
+        wg.set_row(3, 64)
+        center = wb.add_format({"align": "center", "font_size": 9, "border": 1, "border_color": "#FFFFFF"})
+        ppl = sorted(v["people"], key=lambda p: ((p.get("hist") or {}).get("pct30") if (p.get("hist") or {}).get("pct30") is not None else 999, p["name"]))
+        for i, p in enumerate(ppl, start=4):
+            h = p.get("hist") or {}
+            for j, val in enumerate([p["code"], p["name"], p["manager"], h.get("pct30"), h.get("late30"), h.get("absent30"), h.get("leave30"), h.get("usual_start")]):
+                wg.write(i, j, "" if val is None else val, pfmt(val) if j == 3 and isinstance(val, (int, float)) else cell)
+            for k, ch_ in enumerate((h.get("strip") or "-" * len(days)).ljust(len(days), "-")[:len(days)]):
+                wg.write(i, len(fixed) + k, ch_, center)
+        first, lastc = len(fixed), len(fixed) + len(days) - 1
+        for code, bg, fg in (("P", "#C6EFCE", "#006100"), ("L", "#FFEB9C", "#9C5700"), ("H", "#FCE4D6", "#9C5700"), ("A", "#FFC7CE", "#9C0006"),
+                             ("V", "#D9E1F2", "#1F3864"), ("O", "#EDEDED", "#7F7F7F")):
+            wg.conditional_format(4, first, 3 + len(ppl), lastc, {"type": "cell", "criteria": "==", "value": f'"{code}"',
+                                                                  "format": wb.add_format({"bg_color": bg, "font_color": fg, "bold": True})})
+        wg.autofilter(3, 0, 3 + len(ppl), lastc)
+        wg.freeze_panes(4, 2)
 
     if v["teams"]:
         table("By team", f"By team – {v['date_long']}", "Lowest attendance first",
@@ -417,12 +599,14 @@ def excel(v: dict) -> bytes:
           "Nobody absent on this day.", fmt=lambda i, j, x: lvl["high"] if j == 6 and isinstance(x, int) and x >= 3 else None)
 
     has_calls = any(p.get("calls") for p in v["people"])
-    cols = [("Code", "code", 10), ("Name", "name", 26), ("Designation", "designation", 11), ("Zone", "zone", 10), ("Manager", "manager", 22),
+    cols = [("Code", "code", 10), ("Name", "name", 26), ("Designation", "designation", 11), ("Zone", "zone", 10), ("Team head", "manager", 22),
             ("Status", "status_label", 10), ("Leave / holiday", "leave", 16), ("Attendance time", "att", 11), ("First activity", "first", 11),
             ("Last activity", "last", 11), ("Time in market (h:mm)", "market", 11), ("KM", "km", 8), ("Day end", "eod", 10)]
     if has_calls:
         cols += [("Calls", "calls", 7), ("Productive", "productive", 9), ("Order value", "order_value", 11)]
-    cols += [("Warning signs", "warn", 34), ("Location & selfie checks", "chk", 30), ("Patterns", "pat", 30)]
+    if pk:
+        cols += [("30-day %", "h_pct30", 9), ("Absent (30 days)", "h_absent30", 9), ("Late (30 days)", "h_late30", 9), ("Usual start", "h_usual_start", 10)]
+    cols += [("Risk", "risk", 6), ("Warning signs", "warn", 34), ("Location & selfie checks", "chk", 30), ("Patterns", "pat", 30)]
     if v["view"] != "team":
         cols.insert(5, ("HOD", "hod", 18))
     people = v["people"]
@@ -434,11 +618,80 @@ def excel(v: dict) -> bytes:
             return "; ".join(f"{s['kind']}: {s['label']}" for s in p.get("checks") or [])
         if k == "pat":
             return "; ".join(x["label"] for x in p.get("patterns") or [])
+        if k.startswith("h_"):
+            return (p.get("hist") or {}).get(k[2:])
         return p.get(k)
     si = [k for _, k, _ in cols].index("status_label")
-    table("Team list", f"Everyone – {v['date_long']}", f"{v['n']} people; filter any column with the buttons in the header",
-          [(h_, w) for h_, _, w in cols], [[val(p, k) for _, k, _ in cols] for p in people], "No people.",
-          fmt=lambda i, j, x: st.get(people[i]["status"]) if j == si else None)
+    pj = [k for _, k, _ in cols].index("h_pct30") if pk else -1
+    wl_ = table("Team list", f"Everyone – {v['date_long']}", f"{v['n']} people; filter any column with the buttons in the header · the Pivot sheets count from this table",
+                [(h_, w) for h_, _, w in cols], [[val(p, k) for _, k, _ in cols] for p in people], "No people.",
+                fmt=lambda i, j, x: st.get(people[i]["status"]) if j == si else pfmt(x) if j == pj and isinstance(x, (int, float)) else None, tname="TeamList")
+    if people and pk:
+        wl_.conditional_format(4, pj, 3 + len(people), pj, {"type": "data_bar", "bar_color": "#93C5FD", "bar_solid": True, "min_type": "num", "min_value": 0,
+                                                             "max_type": "num", "max_value": 100})
+
+    # ---- live pivots: COUNTIFS over the TeamList table (cached values filled in, so phones / previews show them too)
+    pv_st = [k for k in ("PRESENT", "LATE", "HALF_DAY", "ABSENT", "LEAVE", "WEEK_OFF")]
+    pvh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#14213D", "text_wrap": True, "valign": "vcenter", "align": "center", "border": 1})
+    pvn = wb.add_format({"border": 1, "border_color": "#E6E8EF", "align": "center"})
+    pvt = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "bg_color": "#F1F5F9", "align": "center"})
+    pvp = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "num_format": "0.0", "align": "center"})
+    pvpt = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "num_format": "0.0", "align": "center", "bg_color": "#F1F5F9"})
+
+    def pivot_sheet(sname: str, title: str, key_head: str, key_of):
+        if not people:
+            return
+        keys = sorted({key_of(p) or "—" for p in people}, key=lambda k_: (-sum(1 for p in people if (key_of(p) or "—") == k_), k_))
+        if len(keys) < 2:
+            return
+        wsx = wb.add_worksheet(sname)
+        heads = [key_head, "People"] + [v["status_label"][k] for k in pv_st] + ["Attendance %", "Needs checking"]
+        wds = [28, 8] + [9] * len(pv_st) + [12, 10]
+        excel_banner(wb, wsx, wds, title, "Live: counted with formulas from the Team list sheet – edit or fix a row there and these numbers follow")
+        for j, (h_, w) in enumerate(zip(heads, wds)):
+            wsx.write(3, j, h_, pvh)
+            wsx.set_column(j, j, w)
+        wsx.set_row(3, 32)
+        kcol = {"Team head": "Team head", "Zone": "Zone", "Designation": "Designation"}[key_head]
+        for i, k_ in enumerate(keys, start=4):
+            ps = [p for p in people if (key_of(p) or "—") == k_]
+            crit = f'TeamList[{kcol}],$A{i + 1}' if k_ != "—" else f'TeamList[{kcol}],""'
+            wsx.write(i, 0, k_, bold)
+            wsx.write_formula(i, 1, f"=COUNTIFS({crit})", pvn, len(ps))
+            for j, s_ in enumerate(pv_st, start=2):
+                c_ = sum(1 for p in ps if p["status"] == s_)
+                wsx.write_formula(i, j, f'=COUNTIFS({crit},TeamList[Status],"{v["status_label"][s_]}")', pvn, c_)
+            due = len(ps) - sum(1 for p in ps if p["status"] == "WEEK_OFF")
+            pc_ = pct_of_people(ps)
+            cl = lambda j_: chr(65 + j_)  # noqa: E731
+            wsx.write_formula(i, 2 + len(pv_st), f"=IFERROR(ROUND(100*({cl(2)}{i + 1}+{cl(3)}{i + 1}+0.5*{cl(4)}{i + 1})/({cl(1)}{i + 1}-{cl(7)}{i + 1}),1),\"\")",
+                              pvp, pc_ if due else "")
+            wsx.write_formula(i, 3 + len(pv_st), f'=COUNTIFS({crit},TeamList[Warning signs],"<>")', pvn, sum(1 for p in ps if p["flags"]))
+        tr = 4 + len(keys)
+        wsx.write(tr, 0, "Total", pvt)
+        for j in range(1, 2 + len(pv_st)):
+            col_ = chr(65 + j)
+            wsx.write_formula(tr, j, f"=SUM({col_}5:{col_}{tr})", pvt, sum(1 for p in people if j == 1 or p["status"] == pv_st[j - 2]))
+        wsx.write_formula(tr, 2 + len(pv_st), f"=IFERROR(ROUND(100*(C{tr + 1}+D{tr + 1}+0.5*E{tr + 1})/(B{tr + 1}-H{tr + 1}),1),\"\")", pvpt, v["pct"] if v["pct"] is not None else "")
+        wsx.write_formula(tr, 3 + len(pv_st), f"=SUM(J5:J{tr})", pvt, sum(1 for p in people if p["flags"]))
+        wsx.conditional_format(4, 2 + len(pv_st), tr - 1, 2 + len(pv_st), {"type": "3_color_scale", "min_color": "#F8696B", "mid_color": "#FFEB84",
+                               "max_color": "#63BE7B", "min_type": "num", "min_value": 60, "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
+        wsx.conditional_format(4, 5, tr - 1, 5, {"type": "data_bar", "bar_color": "#FCA5A5", "bar_solid": True})
+        wsx.autofilter(3, 0, tr - 1, len(heads) - 1)
+        wsx.freeze_panes(4, 1)
+        chx = wb.add_chart({"type": "bar", "subtype": "stacked"})
+        for j, s_ in enumerate(pv_st, start=2):
+            chx.add_series({"name": [sname, 3, j], "categories": [sname, 4, 0, tr - 1, 0], "values": [sname, 4, j, tr - 1, j],
+                            "fill": {"color": COLORS[s_]}, "gap": 40})
+        chx.set_title({"name": f"People by status – by {key_head.lower()}", "name_font": {"size": 11}})
+        chx.set_y_axis({"reverse": True})
+        chx.set_legend({"position": "bottom"})
+        chx.set_size({"width": 720, "height": max(300, 24 * len(keys) + 110)})
+        wsx.insert_chart(tr + 2, 0, chx)
+
+    pivot_sheet("Pivot - team heads", f"Team heads × status – {v['date_long']}", "Team head", lambda p: p["manager"])
+    pivot_sheet("Pivot - zones", f"Zones × status – {v['date_long']}", "Zone", lambda p: p["zone"])
+    pivot_sheet("Pivot - designations", f"Designations × status – {v['date_long']}", "Designation", lambda p: p["designation"])
 
     sit = v["ctx"].get("staff_issues") or {}
     if v["view"] == "hr" and (sit.get("possibly_left") or sit.get("never_in_bizom") or sit.get("doj_wrong")):
@@ -463,6 +716,38 @@ def excel(v: dict) -> bytes:
             r += 2 + len(items)
         wd.write(r, 0, f"'Not Marked' in the EOD report: {v['data'].get('eod_not_marked', 0)} users", note)
         wd.write(r + 1, 0, f"Left out: {', '.join(f'{k} {n}' for k, n in v['data'].get('excluded', {}).items()) or 'none'}", note)
+
+    about = {"Trend": "Day-by-day attendance % and absences, last 30 Bizom days, with chart", "Team scorecard": "Every team head: today, 30 days, 4-week change, weekday heat",
+             "Last 30 days": "Each person's last 30 days as a colour grid", "By team": "HOD × zonal head, this day", "Needs checking": "Warning signs, most serious first",
+             "Patterns": "Repeat patterns with the dates", "Team heads - 4 weeks": "Team heads week by week", "Location & selfie checks": "Location and selfie checks, highest risk first",
+             "Proof": "Selfies and map links behind the checks", "Absent": "Who did not mark, longest absence first", "Team list": "Everyone, every column – the master list",
+             "Pivot - team heads": "Live counts by team head and status", "Pivot - zones": "Live counts by zone and status",
+             "Pivot - designations": "Live counts by designation and status", "Staff list to fix": "Staff list problems for HR", "Data issues": "File problems for HR"}
+    link = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "bold": True})
+    dash.write(contents_row, 0, "Contents – click a sheet to open it", sec)
+    k_ = contents_row + 1
+    for wsx in wb.worksheets():
+        if wsx.name == "Dashboard":
+            continue
+        dash.write_url(k_, 0, f"internal:'{wsx.name}'!A1", link, wsx.name)
+        dash.merge_range(k_, 1, k_, 8, about.get(wsx.name, ""), note)
+        k_ += 1
+    tab = {"Dashboard": "#F5B800", "Needs checking": "#DC2626", "Location & selfie checks": "#DC2626", "Proof": "#DC2626", "Absent": "#DC2626",
+           "Patterns": "#D97706", "Staff list to fix": "#64748B", "Data issues": "#64748B"}
+    back = wb.add_format({"font_color": "#1D4ED8", "underline": 1, "font_size": 9})
+    for wsx in wb.worksheets():
+        wsx.set_tab_color(tab.get(wsx.name, "#14213D"))
+        wsx.set_landscape()
+        wsx.set_paper(9)
+        wsx.fit_to_pages(1, 0)
+        wsx.set_margins(0.4, 0.4, 0.5, 0.5)
+        wsx.set_footer(f"&L&8Field sales – {v['date_long']}&R&8Page &P of &N")
+        if wsx.name != "Dashboard":
+            wsx.hide_gridlines(2)
+            wsx.repeat_rows(3)
+            wsx.write_url(0, 0, "internal:'Dashboard'!A1", back, "◂ Dashboard")
+    dash.activate()
+    dash.set_first_sheet()
     wb.close()
     return buf.getvalue()
 
@@ -470,9 +755,13 @@ def excel(v: dict) -> bytes:
 # ---------------------------------------------------------------- dashboard
 def dashboard(v: dict) -> bytes:
     data = {"people": v["people"], "warnings": v["warnings"], "teams": v["teams"], "colors": COLORS, "labels": v["status_label"],
-            "checks": v["checks"], "patterns": v.get("patterns") or [],
+            "checks": v["checks"], "patterns": v.get("patterns") or [], "pack": v.get("pack"), "scorecards": v.get("scorecards") or [], "date": v["date_long"], "view": v["view"],
             "proof": [{k: x[k] for k in ("code", "name", "manager", "risk", "signs", "why", "selfie_url", "selfie_uri", "att_map", "eod_map",
                                           "att_time", "from_usual")} | {"matches": [{k: m[k] for k in ("name", "date", "url", "uri")} for m in x["matches"]]}
                       for x in v["proof"]]}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return _env.get_template("sales_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js).encode("utf-8")
+    ex = json.dumps({"highlights": v.get("highlights") or [], "data": v.get("data") or {}}, ensure_ascii=False, default=str, separators=(",", ":"))
+    ex = ex.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    from daily.branding import favicon_data_uri
+    return _env.get_template("sales_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js, extra_json=ex,
+                                                              favicon=favicon_data_uri("fs")).encode("utf-8")

@@ -162,6 +162,25 @@ def _scope(up: DayUpload, scope: str) -> str:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from None
 
 
+@router.get("/days/{report_date}/pack")
+def day_pack(report_date: date, scope: str = Query("ALL"), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
+             settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> dict:
+    """The last 30 report days for the people in this scope: trend, weekday heatmap, per-person strips and (for 'All
+    employees') one row per HOD's team. Same counting as the daily numbers; off days are left out of every %."""
+    from daily import pack30
+    from daily.settings_store import get_rules
+
+    up = _day(db, report_date)
+    scope = _scope(up, scope)
+    rows = service.rows_for(db, up.upload_id)
+    if scope.startswith("HOD:"):
+        rows = [r for r in rows if r["hod"] == scope[4:]]
+    elif scope != "ALL":
+        rows = [r for r in rows if r["category"] == scope]
+    group = {r["code"].upper(): r["hod"] or "No HOD assigned" for r in rows} if scope == "ALL" and any(r["hod"] for r in rows) else None
+    return pack30.pack(db, up.report_date, {r["code"].upper() for r in rows}, group, get_rules(db, settings).single_punch_counts_present)
+
+
 @router.get("/days/{report_date}/excel")
 def excel(report_date: date, scope: str = Query("ALL"), _: Principal = Depends(require(Perm.VIEW_INSIGHTS)),
           settings: Settings = Depends(get_settings), db: Session = Depends(get_db)) -> Response:

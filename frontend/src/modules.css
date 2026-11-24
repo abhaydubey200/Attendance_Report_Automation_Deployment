@@ -127,3 +127,27 @@
 .sales-module .photo-info { flex: 1 1 260px; min-width: 0; }
 
 .sales-module .risk-badge { min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ---- last 30 report days (insights30.tsx) */
+.heat30-wrap { overflow-x: auto; }
+table.heat30 { border-collapse: separate; border-spacing: 3px; font-size: .85rem; }
+table.heat30 th { color: var(--navy, #14213d); padding: 2px 8px; font-weight: 700; }
+table.heat30 td { padding: 5px 8px; white-space: nowrap; }
+table.heat30 td.nm { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+table.heat30 td.hc { text-align: center; border-radius: 6px; font-weight: 700; min-width: 40px; }
+table.heat30 tr.click { cursor: pointer; }
+table.heat30 tr.click:hover td.nm { text-decoration: underline; }
+.strip30 { display: flex; flex-wrap: wrap; gap: 3px; margin-top: .5rem; }
+.strip30 i { width: 20px; height: 24px; border-radius: 5px; color: #fff; font-size: 10px; font-style: normal; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
+.strip30.mini { flex-wrap: nowrap; gap: 1px; margin: 0; }
+.strip30.mini i { width: 6px; height: 16px; border-radius: 2px; padding: 0; }
+.leg30 { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .78rem; color: var(--muted); margin-top: .5rem; }
+.leg30 i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 4px; }
+.modal.person30 { width: min(720px, 100%); position: relative; max-height: 90vh; overflow: auto; }
+.modal.person30 .x { position: absolute; right: .8rem; top: .7rem; border: 0; background: none; font-size: 1.1rem; cursor: pointer; color: var(--muted); }
+.facts30 { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .5rem; margin: .6rem 0; }
+.facts30 div { background: var(--surface-2, #f6f7fb); border-radius: 10px; padding: .5rem .7rem; }
+.facts30 span { display: block; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.facts30 b { font-size: 1.05rem; }
+.bar30 { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: #eef1f6; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.bar30 i { display: block; height: 100%; }

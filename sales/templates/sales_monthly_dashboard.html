@@ -17,6 +17,21 @@
   .strip { display:inline-flex; gap:1px; } .strip i { width:7px; height:16px; border-radius:2px; display:block; } .strip i.f { box-shadow:inset 0 -3px 0 #7c3aed; }
   .tag { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; margin:1px 3px 1px 0; background:#fdecec; color:#b42318; }
   .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:#3a4560; margin-top:8px; } .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  .chip .cn { opacity:.65; font-weight:500; margin-left:2px; } .card-h { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .filters select { font:inherit; font-size:13px; padding:7px 8px; border:1px solid #d5d9e3; border-radius:9px; max-width:300px; background:#fff; } .filters input[type=search] { flex:1 1 260px; }
+  table.people th[data-k] { cursor:pointer; user-select:none; white-space:nowrap; } table.people th[data-k]::after { content: attr(data-dir); margin-left:4px; font-size:11px; }
+  tr.p { cursor:pointer; } tr.p:hover td { background:#fffaf0; } svg.chart { width:100%; height:auto; display:block; } svg .ax { font-size:11px; fill:#5d6577; }
+  .pbar { display:inline-block; width:60px; height:7px; background:#eef1f6; border-radius:9px; margin-right:6px; vertical-align:middle; overflow:hidden; } .pbar i { display:block; height:100%; border-radius:9px; }
+  tr.th-row { cursor:pointer; } tr.th-row:hover td { background:#fff8e1; } table.sc td.small { font-size:12px; color:#33405c; }
+  table.heat { border-collapse:separate; border-spacing:3px; font-size:12.5px; } table.heat th { font-weight:700; color:#14213d; padding:2px 8px; text-align:center; }
+  table.heat td { padding:5px 8px; } table.heat td:first-child { white-space:nowrap; } td.hc { text-align:center; border-radius:6px; font-weight:700; min-width:42px; }
+  .modal { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:5vh 12px; z-index:50; overflow:auto; }
+  .modal[hidden] { display:none; } .modal .box { background:#fff; border-radius:16px; max-width:760px; width:100%; padding:20px 22px; position:relative; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+  .mx { position:absolute; right:12px; top:10px; border:0; background:#f1f5f9; border-radius:999px; width:32px; height:32px; cursor:pointer; font-size:15px; }
+  .mstats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; } .ms { border:1px solid #e6e8ef; border-radius:10px; padding:8px 10px; }
+  .ms span { display:block; font-size:11.5px; color:#5d6577; } .ms b { font-size:17px; color:#14213d; }
+  .cal { display:flex; flex-wrap:wrap; gap:3px; } .dc { width:24px; height:26px; border-radius:5px; color:#fff; font-size:10.5px; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .dc.f { box-shadow:inset 0 -3px 0 #7c3aed; } .modal h4 { margin:14px 0 6px; color:#14213d; } .mi { font-size:13px; margin:3px 0; } .note { font-size:12.5px; color:var(--muted); margin:8px 0 0; }
   @media (max-width: 900px) { .two { grid-template-columns:minmax(0,1fr); } }
 </style>
 </head>
@@ -35,49 +50,118 @@
     <button class="kc" data-f="perfect" style="border-color:#16a34a38;background:#16a34a0b"><div class="l">Full attendance</div><div class="v" style="color:#16a34a">{{ v.perfect | length }}</div><div class="s">worth a thank-you</div></button>
   </section>
   <section class="two">
+    <div class="card"><div class="card-h"><h3>Day by day <span class="muted">– attendance % (line), absent people (bars)</span></h3></div><div id="trend"></div><p class="note" id="trendNote"></p></div>
     <div class="card"><div class="card-h"><h3>Week by week</h3></div><div class="tablewrap"><table class="grid" style="font-size:13px">
       <thead><tr><th>Week</th><th>Attendance</th><th>Absent</th><th>Late</th><th>To check</th></tr></thead><tbody id="weeks"></tbody></table></div></div>
-    <div class="card" {% if v.teams | length < 2 %}style="display:none"{% endif %}><div class="card-h"><h3>Teams <span class="muted">– lowest first</span></h3></div><div class="tablewrap"><table class="grid" style="font-size:13px">
-      <thead><tr><th>Team head</th><th>HOD</th><th>People</th><th>Attendance</th><th>Absent</th></tr></thead><tbody id="teams"></tbody></table></div></div>
   </section>
-  <section class="card" style="margin-top:16px">
-    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3></div>
+  <section class="card" style="margin-top:16px" id="scCard">
+    <div class="card-h"><h3>Team heads <span class="muted">– lowest attendance first; compared with {{ v.prev_label }}; click a team head to see their people</span></h3></div>
+    <div class="tablewrap"><table class="grid sc" style="font-size:13px"><thead><tr><th>Team head</th><th>People</th><th>{{ v.label }}</th><th>{{ v.prev_label }}</th><th>Change</th>
+      <th>Late %</th><th>Absent days</th><th>Need a conversation</th><th>Full attendance</th><th>Lowest attendance</th></tr></thead><tbody id="sc"></tbody></table></div>
+    <h4 style="margin:16px 0 6px">Attendance by weekday <span class="muted" style="font-weight:400">– {{ v.month_long }}, working days</span></h4>
+    <div class="tablewrap"><table class="heat"><tbody id="heat"></tbody></table></div>
+  </section>
+  <section class="card" style="margin-top:16px" id="people">
+    <div class="card-h"><h3>People <span class="muted" id="cnt"></span></h3><button type="button" class="chip" id="csv">Download list (CSV)</button></div>
     <div class="bar" id="chips"></div>
-    <div class="bar"><input type="search" id="q" placeholder="Find a person or code…" aria-label="Find a person"></div>
-    <div class="tablewrap" style="max-height:640px"><table class="grid" style="font-size:13px">
-      <thead><tr><th>Employee</th><th>Team head</th><th>Attendance</th><th>Absent</th><th>Late</th><th>Leave</th><th>Days to check</th><th>Month</th><th>Why</th></tr></thead><tbody id="rows"></tbody></table></div>
-    <div class="legend"><span><i style="background:#16a34a"></i>Present</span><span><i style="background:#d97706"></i>Late</span><span><i style="background:#f59e0b"></i>Half day</span><span><i style="background:#64748b"></i>Leave</span><span><i style="background:#cbd5e1"></i>Week off</span><span><i style="background:#dc2626"></i>Absent</span><span><i style="background:#fff;box-shadow:inset 0 -3px 0 #7c3aed;border:1px solid #e6e8ef"></i>warning sign that day</span></div>
+    <div class="bar filters"><input type="search" id="q" placeholder="Search name, code, team head, reason…" aria-label="Search">
+      <select id="fm" aria-label="Team head"></select><button type="button" class="chip" id="clr" hidden>Clear filters ✕</button></div>
+    <div class="tablewrap" style="max-height:680px"><table class="grid people" style="font-size:13px">
+      <thead><tr><th data-k="name">Employee</th><th data-k="team_head">Team head</th><th data-k="pct">Attendance</th><th data-k="change">vs {{ v.prev_label }}</th><th data-k="absent">Absent</th><th data-k="late">Late</th><th data-k="leave">Leave</th><th data-k="flag_days">Days to check</th><th>Month</th><th>Why</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div class="legend"><span><i style="background:#16a34a"></i>Present</span><span><i style="background:#d97706"></i>Late</span><span><i style="background:#f59e0b"></i>Half day</span><span><i style="background:#64748b"></i>Leave</span><span><i style="background:#cbd5e1"></i>Week off / holiday</span><span><i style="background:#dc2626"></i>Absent</span><span><i style="background:#f1f5f9;box-shadow:inset 0 -3px 0 #7c3aed"></i>Warning sign that day</span></div>
+    <p class="note">Click a column heading to sort, a person for their month day by day and the reasons.</p>
   </section>
   <footer><span>Source: <i>Bizom</i> · {{ v.month_long }}. Warning signs are for checking with the person, not proof of anything.</span><span class="line"></span></footer>
 </main>
+<div id="modal" class="modal" hidden><div class="box" role="dialog" aria-modal="true"><button type="button" id="mx" class="mx" aria-label="Close">✕</button><div id="mbody"></div></div></div>
 <script id="data" type="application/json">{{ data_json | safe }}</script>
 <script>
 (function () {
 "use strict";
 const D = JSON.parse(document.getElementById("data").textContent), P = D.people, $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const col = (v) => v === null ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
+const col = (v) => v === null || v === undefined ? "#94a3b8" : v >= 90 ? "#15803d" : v >= 75 ? "#b45309" : "#b91c1c";
+const pctCol = (v) => v === null || v === undefined ? "#e5e7eb" : v >= 90 ? "#16a34a" : v >= 80 ? "#65a30d" : v >= 70 ? "#d97706" : v >= 50 ? "#ea580c" : "#dc2626";
 const CC = {P: "#16a34a", LT: "#d97706", HD: "#f59e0b", L: "#64748b", WO: "#cbd5e1", A: "#dc2626"};
+const CN = {P: "Present", LT: "Late", HD: "Half day", L: "Leave", WO: "Week off / holiday", A: "Absent"};
 $("weeks").innerHTML = D.weeks.map((w) => `<tr><td><b>${esc(w.week)}</b> <span class="muted" style="font-size:12px">${esc(w.range)}</span></td><td class="num"><b style="color:${col(w.pct)}">${w.pct ?? "–"}%</b></td><td class="num">${w.absent}</td><td class="num">${w.late}</td><td class="num">${w.flagged}</td></tr>`).join("");
-$("teams").innerHTML = D.teams.map((t) => `<tr><td><b>${esc(t.team_head)}</b></td><td>${esc(t.hod)}</td><td class="num">${t.people}</td><td class="num"><b style="color:${col(t.pct)}">${t.pct ?? "–"}%</b></td><td class="num">${t.absent}</td></tr>`).join("");
+// day-by-day chart
+(function () { const T = D.trend || [], W = 640, H = 200, L = 34, R = 10, top = 10, bot = 34, n = T.length; if (!n) return;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)), y = (v) => top + (100 - v) * (H - top - bot) / 100;
+  const mA = Math.max(1, ...T.map((t) => t.absent)), bw = Math.max(3, (W - L - R) / n * 0.55);
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart">`;
+  [50, 75, 90, 100].forEach((g) => s += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="${g === 90 ? "#bbf7d0" : "#eef1f6"}"/><text x="${L - 4}" y="${y(g) + 4}" text-anchor="end" class="ax">${g}%</text>`);
+  T.forEach((t, i) => { if (t.off_day) s += `<rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${H - top - bot}" fill="#f1f5f9"><title>${t.label} (${t.weekday}): Sunday / holiday - left out</title></rect>`;
+    const h = t.absent / mA * 40; s += `<rect x="${x(i) - bw / 2}" y="${H - bot - h}" width="${bw}" height="${h}" fill="#fecaca"><title>${t.label}: ${t.absent} absent</title></rect>`; });
+  let path = ""; T.forEach((t, i) => { if (t.pct !== null) path += (path && T[i - 1] && T[i - 1].pct !== null ? "L" : "M") + x(i).toFixed(1) + " " + y(t.pct).toFixed(1); });
+  s += `<path d="${path}" fill="none" stroke="#14213d" stroke-width="2"/>`;
+  T.forEach((t, i) => { if (t.pct !== null) s += `<circle cx="${x(i)}" cy="${y(t.pct)}" r="3.5" fill="${pctCol(t.pct)}" stroke="#fff"><title>${t.label} (${t.weekday}): ${t.pct}% · ${t.absent} absent · ${t.late} late</title></circle>`;
+    if (i % Math.ceil(n / 10) === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" class="ax">${t.label}</text>`; });
+  $("trend").innerHTML = s + "</svg>";
+  const v = T.filter((t) => t.pct !== null).map((t) => t.pct);
+  if (v.length) $("trendNote").textContent = `Best day ${Math.max(...v)}% · weakest ${Math.min(...v)}% · grey = Sunday / holiday (left out). Hover for the day.`;
+})();
+// team scorecard + weekday heat
+const SC = D.scorecards || [];
+const bar = (v) => v === null || v === undefined ? "–" : `<span class="pbar"><i style="width:${v}%;background:${pctCol(v)}"></i></span><b style="color:${pctCol(v)}">${v}%</b>`;
+const chg = (v) => v === null || v === undefined ? "" : `<span style="color:${v <= -5 ? "#b91c1c" : v < 0 ? "#b45309" : "#15803d"};font-weight:700">${v > 0 ? "+" : ""}${v}</span>`;
+if (SC.length < 2) $("scCard").hidden = true;
+$("sc").innerHTML = SC.map((r) => `<tr class="th-row" data-team="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b></td><td class="num">${r.people}</td><td>${bar(r.pct)}</td><td>${bar(r.prev_pct)}</td>
+  <td class="num">${chg(r.change)}</td><td class="num">${r.late_pct ?? "–"}%</td><td class="num">${r.absent}</td><td class="num">${r.attention}</td><td class="num">${r.perfect}</td><td class="small">${r.lowest.map(esc).join("<br>")}</td></tr>`).join("");
+$("heat").innerHTML = `<tr><th>Team head</th>${D.weekdays.map((w) => `<th>${w}</th>`).join("")}</tr>` + SC.map((r) => `<tr class="th-row" data-team="${esc(r.team_head)}"><td><b>${esc(r.team_head)}</b></td>${r.heat.map((v, i) =>
+  `<td class="hc" style="background:${v === null ? "#f8fafc" : pctCol(v)};color:${v === null ? "#94a3b8" : "#fff"}" title="${esc(r.team_head)} · ${D.weekdays[i]}: ${v === null ? "no working days" : v + "%"}">${v === null ? "–" : Math.round(v)}</td>`).join("")}</tr>`).join("");
+// people: filters, sort, CSV, drill-down
+const mg = {}; P.forEach((p) => { const t = p.team_head || "No team head"; mg[t] = (mg[t] || 0) + 1; });
+$("fm").innerHTML = '<option value="">All team heads</option>' + Object.keys(mg).sort().map((m) => `<option value="${esc(m)}">${esc(m)} (${mg[m]})</option>`).join("");
 const F = {all: ["Everyone", () => true], attention: ["Needs a conversation", (p) => p.reasons.length], absent: ["3+ absent days", (p) => p.absent >= 3],
-  late: ["Late", (p) => p.late > 0], checks: ["Had warning signs", (p) => p.flag_days > 0], perfect: ["Full attendance", (p) => p.perfect]};
-const S = {f: "attention", q: "", open: null};
+  late: ["Late", (p) => p.late > 0], dropped: ["Dropped vs last month", (p) => p.change !== null && p.change <= -10], checks: ["Had warning signs", (p) => p.flag_days > 0], perfect: ["Full attendance", (p) => p.perfect]};
+const S = {f: "attention", q: "", mgr: "", sort: "", dir: 1};
 if (!P.some(F.attention[1])) S.f = "all";
+const text = (p) => [p.name, p.code, p.team_head, p.designation, p.zone, ...p.reasons, ...p.warnings.map((w) => w.label)].join(" ").toLowerCase();
+function list() { const q = S.q.toLowerCase();
+  const out = P.filter((p) => F[S.f][1](p) && (!S.mgr || (p.team_head || "No team head") === S.mgr) && (!q || text(p).includes(q)));
+  if (S.sort) out.sort((a, b) => { const x = a[S.sort], y = b[S.sort]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1;
+    return x < y ? -S.dir : x > y ? S.dir : a.name.localeCompare(b.name); });
+  return out; }
 function render() {
-  $("chips").innerHTML = Object.entries(F).map(([k, [l, fn]]) => `<button class="chip ${S.f === k ? "on" : ""}" data-f="${k}">${l} (${P.filter(fn).length})</button>`).join("");
-  const q = S.q.toLowerCase(), list = P.filter((p) => F[S.f][1](p) && (!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)));
-  $("cnt").textContent = `– ${list.length} of ${P.length}`;
-  $("rows").innerHTML = list.map((p) => `<tr data-p="${esc(p.code)}" style="cursor:pointer"><td><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
-    <td>${esc(p.team_head)}</td><td class="num"><b style="color:${col(p.pct)}">${p.pct ?? "–"}%</b></td><td class="num">${p.absent || ""}</td><td class="num">${p.late || ""}</td><td class="num">${p.leave || ""}</td><td class="num">${p.flag_days || ""}</td>
-    <td><span class="strip">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<i class="${c.endsWith("!") ? "f" : ""}" style="background:${CC[k] || "#f1f5f9"}" title="${d.slice(8)}: ${k || "no record"}"></i>`; }).join("")}</span></td>
-    <td>${p.reasons.map((r) => `<span class="tag">${esc(r)}</span>`).join("")}</td></tr>` +
-    (S.open === p.code && p.warnings.length ? `<tr><td colspan="9" style="background:#fafbfd;font-size:12.5px">${p.warnings.map((w) => `• ${esc(w.label)} – ${w.days} day${w.days === 1 ? "" : "s"}`).join("<br>")}</td></tr>` : "")).join("")
-    || '<tr><td colspan="9" class="empty">Nobody matches.</td></tr>';
+  $("chips").innerHTML = Object.entries(F).map(([k, [l, fn]]) => `<button class="chip ${S.f === k ? "on" : ""}" data-f="${k}">${l} <span class="cn">${P.filter(fn).length}</span></button>`).join("");
+  $("fm").value = S.mgr;
+  document.querySelectorAll("th[data-k]").forEach((th) => th.dataset.dir = S.sort === th.dataset.k ? (S.dir > 0 ? "↑" : "↓") : "");
+  const L = list(), active = [S.f !== "all", S.mgr, S.q].filter(Boolean).length;
+  $("cnt").textContent = `– ${L.length} of ${P.length}`; $("clr").hidden = !active;
+  $("rows").innerHTML = L.map((p) => `<tr class="p" data-p="${esc(p.code)}"><td><b>${esc(p.name)}</b> <span class="code">(${esc(p.code)})</span><br><span class="muted" style="font-size:12px">${[p.designation, p.zone].filter(Boolean).map(esc).join(" · ")}</span></td>
+    <td>${esc(p.team_head)}</td><td class="num"><b style="color:${col(p.pct)}">${p.pct ?? "–"}%</b></td><td class="num">${chg(p.change)}</td><td class="num">${p.absent || ""}</td><td class="num">${p.late || ""}</td><td class="num">${p.leave || ""}</td><td class="num">${p.flag_days || ""}</td>
+    <td><span class="strip">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<i class="${c.endsWith("!") ? "f" : ""}" style="background:${CC[k] || "#f1f5f9"}" title="${d.slice(8)}: ${CN[k] || "no record"}"></i>`; }).join("")}</span></td>
+    <td>${p.reasons.map((r) => `<span class="tag">${esc(r)}</span>`).join("")}</td></tr>`).join("") || '<tr><td colspan="10" class="empty">Nobody matches these filters.</td></tr>';
 }
-document.addEventListener("click", (e) => { const f = e.target.closest("[data-f]"), p = e.target.closest("[data-p]");
-  if (f) { S.f = f.dataset.f === "absent" ? "absent" : f.dataset.f in F ? f.dataset.f : "all"; render(); } else if (p) { S.open = S.open === p.dataset.p ? null : p.dataset.p; render(); } });
+function drill(code) { const p = P.find((x) => x.code === code); if (!p) return;
+  const st = (l, v) => `<div class="ms"><span>${l}</span><b>${v ?? "–"}</b></div>`;
+  $("mbody").innerHTML = `<h3 style="margin:0 0 2px">${esc(p.name)} <span class="code">(${esc(p.code)})</span></h3><div class="muted small">${[p.designation, p.zone, p.team_head && "Team head: " + p.team_head].filter(Boolean).map(esc).join(" · ")}</div>
+    <div class="mstats" style="margin-top:10px">${st("Attendance", p.pct === null ? "–" : p.pct + "%")}${st("vs " + esc(D.prev_label), p.prev_pct === null || p.prev_pct === undefined ? "–" : p.prev_pct + "%")}${st("Absent days", p.absent)}${st("Late days", p.late)}${st("Leave days", p.leave)}${st("Avg time in market", p.avg_market || "–")}</div>
+    <div class="small muted" style="margin:10px 0 4px">${esc(D.month_long)} day by day</div>
+    <div class="cal">${D.days.map((d) => { const c = p.cal[d] || ""; const k = c.replace("!", ""); return `<span class="dc${c.endsWith("!") ? " f" : ""}" style="background:${CC[k] || "#eef1f6"}" title="${d}: ${CN[k] || "no record"}${c.endsWith("!") ? " · warning sign" : ""}">${+d.slice(8)}</span>`; }).join("")}</div>
+    ${p.reasons.length ? `<h4>Why a conversation</h4>${p.reasons.map((r) => `<div class="mi"><span class="tag">${esc(r)}</span></div>`).join("")}` : ""}
+    ${p.warnings.length ? `<h4>Warning signs this month</h4>${p.warnings.map((w) => `<div class="mi">• ${esc(w.label)} – ${w.days} day${w.days === 1 ? "" : "s"}</div>`).join("")}` : ""}
+    ${p.checks && (p.checks.location_days || p.checks.selfie_days) ? `<h4>Location &amp; selfie checks</h4><div class="mi">Days with location signs: ${p.checks.location_days} · with selfie signs: ${p.checks.selfie_days}${p.checks.top.length ? " · most often: " + p.checks.top.map(esc).join(", ") : ""}</div>` : ""}
+    <p class="note">Warning signs are for checking with the person, not proof of anything.</p>`;
+  $("modal").hidden = false; document.body.style.overflow = "hidden"; }
+const closeM = () => { $("modal").hidden = true; document.body.style.overflow = ""; };
+function csv() { const q = (x) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+  const lines = [["Code", "Name", "Team head", "Attendance %", "Last month %", "Change", "Absent", "Late", "Leave", "Days to check", "Why"].map(q).join(",")]
+    .concat(list().map((p) => [p.code, p.name, p.team_head, p.pct, p.prev_pct, p.change, p.absent, p.late, p.leave, p.flag_days, p.reasons.join("; ")].map(q).join(",")));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], {type: "text/csv"}));
+  a.download = (document.title.split(" – ").slice(1).join("_") || "field_sales_month").replace(/[^A-Za-z0-9_-]+/g, "_") + "_list.csv"; document.body.appendChild(a); a.click(); a.remove(); }
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeM(); });
+document.addEventListener("click", (e) => { const f = e.target.closest("[data-f]"), p = e.target.closest("[data-p]"), th = e.target.closest("th[data-k]"), tm = e.target.closest("[data-team]");
+  if (e.target.closest("#mx") || e.target.id === "modal") closeM();
+  else if (f) { S.f = f.dataset.f in F ? f.dataset.f : "all"; render(); if (f.classList.contains("kc")) $("people").scrollIntoView({behavior: "smooth"}); }
+  else if (tm) { S.mgr = tm.dataset.team; S.f = "all"; render(); $("people").scrollIntoView({behavior: "smooth"}); }
+  else if (th) { S.dir = S.sort === th.dataset.k ? -S.dir : (["pct", "change"].includes(th.dataset.k) ? 1 : -1); S.sort = th.dataset.k; render(); }
+  else if (e.target.id === "clr") { Object.assign(S, {f: "all", q: "", mgr: ""}); $("q").value = ""; render(); }
+  else if (e.target.id === "csv") csv();
+  else if (p) drill(p.dataset.p); });
 $("q").addEventListener("input", (e) => { S.q = e.target.value.trim(); render(); });
+$("fm").addEventListener("change", (e) => { S.mgr = e.target.value; render(); });
 render();
 })();
 </script>

@@ -124,8 +124,43 @@ def build_view(session: Session, month: str, codes: set[str] | None, view: str, 
         gp[(r.hod_name or "No HOD", th)].add(r.code)
     for (hod, th), c in sorted(g.items(), key=lambda kv: (_pct(kv[1]) or 999)):
         teams.append({"hod": hod, "team_head": th, "people": len(gp[(hod, th)]), "pct": _pct(c), "absent": c["ABSENT"], "late": c["LATE"]})
+    # daily trend (Sundays / holidays - most people off - left out) and the team-head scorecard with last month and weekdays
+    per_day: dict[date, Counter] = defaultdict(Counter)
+    for d, r in rows:
+        per_day[d][r.status] += 1
+    off = {d for d, c in per_day.items() if c["WEEK_OFF"] > 0.5 * sum(c.values())}
+    trend = [{"date": d.isoformat(), "label": f"{d.day}-{d:%b}", "weekday": f"{d:%a}", "pct": None if d in off else _pct(per_day[d]),
+              "off_day": d in off, "absent": per_day[d]["ABSENT"], "late": per_day[d]["LATE"], "off": per_day[d]["WEEK_OFF"]} for d in days]
+    th_of = {r.code: ((staff[r.code].manager_name if r.code in staff else None) or "No team head") for _, r in rows}
+    th_c: dict[str, Counter] = defaultdict(Counter)
+    th_w: dict[str, list[Counter]] = defaultdict(lambda: [Counter() for _ in range(7)])
+    for d, r in rows:
+        if d in off:
+            continue
+        th_c[th_of[r.code]][r.status] += 1
+        th_w[th_of[r.code]][d.weekday()][r.status] += 1
+    prev_c: dict[str, Counter] = defaultdict(Counter)
+    for d, r in _month_rows(session, prev):
+        if codes is None or r.code in codes:
+            prev_c[(staff[r.code].manager_name if r.code in staff else None) or "No team head"][r.status] += 1
+    by_th: dict[str, list[dict]] = defaultdict(list)
+    for p in out:
+        by_th[p["team_head"] or "No team head"].append(p)
+    scorecards = []
+    for th, ps in by_th.items():
+        c = th_c[th]
+        worked = c["PRESENT"] + c["LATE"] + c["HALF_DAY"]
+        pc, pp = _pct(c), _pct(prev_c[th]) if prev_c.get(th) else None
+        ranked = sorted((p for p in ps if p["pct"] is not None), key=lambda p: (p["pct"], p["name"]))
+        scorecards.append({"team_head": th, "people": len(ps), "pct": pc, "prev_pct": pp,
+                           "change": round(pc - pp, 1) if pc is not None and pp is not None else None,
+                           "late_pct": round(100 * c["LATE"] / worked, 1) if worked else None, "absent": c["ABSENT"],
+                           "attention": sum(1 for p in ps if p["reasons"]), "perfect": sum(1 for p in ps if p["perfect"]),
+                           "heat": [_pct(w) for w in th_w[th]], "lowest": [f"{p['name']} ({p['pct']:g}%)" for p in ranked[:3]]})
+    scorecards.sort(key=lambda r: (r["pct"] if r["pct"] is not None else 999, r["team_head"]))
     safe = "".join(ch if ch.isalnum() else "_" for ch in recipient).strip("_")
-    return {"view": view, "recipient": recipient, "month": month, "month_long": bounds(month)[0].strftime("%B %Y"), "label": label(month),
+    return {"trend": trend, "scorecards": scorecards, "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "prev_label": label(prev),
+            "view": view, "recipient": recipient, "month": month, "month_long": bounds(month)[0].strftime("%B %Y"), "label": label(month),
             "days": [d.isoformat() for d in days], "work_days": len(days), "people": out, "n": len(out), "pct": _pct(total),
             "absent": total["ABSENT"], "late": total["LATE"], "leave": total["LEAVE"], "flag_days": sum(p["flag_days"] for p in out),
             "attention": [p for p in out if p["reasons"]], "perfect": [p for p in out if p["perfect"]] if len(days) >= PERFECT_MIN_DAYS else [], "weeks": weeks, "teams": teams,
@@ -247,6 +282,70 @@ def excel(v: dict) -> bytes:
     ws.write(13, 0, f"Needs a conversation = {ABSENT_DAYS}+ absent days, {LATE_DAYS}+ late days or a warning sign on {REPEAT_DAYS}+ days.", note)
     ws.write(14, 0, "Warning signs are for checking with the person, not proof of anything.", note)
 
+    good = {k: wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": c, "num_format": "0.0"})
+            for k, c in (("g", "#15803D"), ("w", "#B45309"), ("b", "#B91C1C"))}
+    pf = lambda x: cell if x is None else good["g" if x >= 90 else "w" if x >= 75 else "b"]  # noqa: E731
+    if v.get("trend"):
+        wd = wb.add_worksheet("Day by day")
+        excel_banner(wb, wd, [12, 8, 14, 9, 9], f"Day by day - {v['label']}", "Attendance % on working days (Sundays / holidays left out)")
+        for j, (h, w) in enumerate([("Date", 12), ("Day", 8), ("Attendance %", 14), ("Absent", 9), ("Late", 9)]):
+            wd.write(3, j, h, head)
+            wd.set_column(j, j, w)
+        for i, t in enumerate(v["trend"], start=4):
+            wd.write(i, 0, t["label"], cell)
+            wd.write(i, 1, t["weekday"], cell)
+            if t["pct"] is None:
+                wd.write(i, 2, "off day", note)
+            else:
+                wd.write_number(i, 2, t["pct"], pf(t["pct"]))
+            wd.write(i, 3, t["absent"], cell)
+            wd.write(i, 4, t["late"], cell)
+        last = 3 + len(v["trend"])
+        ch = wb.add_chart({"type": "line"})
+        ch.add_series({"name": "Attendance %", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 2, last, 2],
+                       "line": {"color": "#14213D", "width": 2.25}, "marker": {"type": "circle", "size": 5, "fill": {"color": "#F5B800"}}})
+        colc = wb.add_chart({"type": "column"})
+        colc.add_series({"name": "Absent", "categories": ["Day by day", 4, 0, last, 0], "values": ["Day by day", 4, 3, last, 3],
+                         "fill": {"color": "#FCA5A5"}, "y2_axis": True})
+        ch.combine(colc)
+        ch.set_title({"name": f"{v['label']}: attendance % and absent people", "name_font": {"size": 12}})
+        ch.set_y_axis({"min": 40, "max": 100})
+        ch.set_legend({"position": "bottom"})
+        ch.set_size({"width": 760, "height": 340})
+        wd.insert_chart(3, 6, ch)
+        wd.freeze_panes(4, 1)
+    sc = v.get("scorecards") or []
+    if len(sc) > 1:
+        ws2 = wb.add_worksheet("Team scorecard")
+        cols = [("Team head", 26), ("People", 8), (v["label"], 11), (v["prev_label"], 11), ("Change (points)", 10), ("Late %", 8), ("Absent days", 9),
+                ("Need a conversation", 11), ("Full attendance", 9)] + [(w, 6) for w in v["weekdays"]] + [("Lowest attendance", 46)]
+        excel_banner(wb, ws2, [w for _, w in cols], f"Team heads - {v['label']}", f"Lowest attendance first; compared with {v['prev_label']}; weekday columns = attendance % that weekday")
+        for j, (h, w) in enumerate(cols):
+            ws2.write(3, j, h, head)
+            ws2.set_column(j, j, w)
+        neg = wb.add_format({"border": 1, "border_color": "#E6E8EF", "bold": True, "font_color": "#B91C1C", "num_format": "+0.0;-0.0;0"})
+        pos = wb.add_format({"border": 1, "border_color": "#E6E8EF", "font_color": "#15803D", "num_format": "+0.0;-0.0;0"})
+        for i, r in enumerate(sc, start=4):
+            vals = [r["team_head"], r["people"], r["pct"], r["prev_pct"], r["change"], r["late_pct"], r["absent"], r["attention"], r["perfect"],
+                    *r["heat"], "; ".join(r["lowest"])]
+            for j, x in enumerate(vals):
+                f = pf(x) if j in (2, 3) else (neg if isinstance(x, (int, float)) and x < 0 else pos) if j == 4 and x is not None else wrap if j == len(vals) - 1 else cell
+                ws2.write(i, j, "" if x is None else x, f)
+        ws2.conditional_format(4, 9, 3 + len(sc), 8 + len(v["weekdays"]), {"type": "3_color_scale", "min_color": "#F8696B", "mid_color": "#FFEB84",
+                               "max_color": "#63BE7B", "min_type": "num", "min_value": 60, "mid_type": "num", "mid_value": 85, "max_type": "num", "max_value": 100})
+        ws2.autofilter(3, 0, 3 + len(sc), len(cols) - 1)
+        ws2.freeze_panes(4, 1)
+        bar = wb.add_chart({"type": "bar"})
+        bar.add_series({"name": v["label"], "categories": ["Team scorecard", 4, 0, 3 + len(sc), 0], "values": ["Team scorecard", 4, 2, 3 + len(sc), 2],
+                        "fill": {"color": "#14213D"}, "data_labels": {"value": True, "num_format": "0.0"}})
+        bar.add_series({"name": v["prev_label"], "categories": ["Team scorecard", 4, 0, 3 + len(sc), 0], "values": ["Team scorecard", 4, 3, 3 + len(sc), 3],
+                        "fill": {"color": "#F5B800"}})
+        bar.set_title({"name": f"Attendance by team head: {v['label']} vs {v['prev_label']}", "name_font": {"size": 12}})
+        bar.set_x_axis({"min": 50, "max": 100})
+        bar.set_legend({"position": "bottom"})
+        bar.set_size({"width": 680, "height": max(280, 34 * len(sc) + 90)})
+        ws2.insert_chart(6 + len(sc), 0, bar)
+
     if len(v["teams"]) > 1:
         wt = wb.add_worksheet("Teams")
         cols = [("HOD", "hod", 22), ("Team head", "team_head", 24), ("People", "people", 9), ("Attendance %", "pct", 12), ("Absent days", "absent", 11), ("Late days", "late", 10)]
@@ -338,6 +437,6 @@ def excel(v: dict) -> bytes:
 
 
 def dashboard(v: dict) -> bytes:
-    data = {k: v[k] for k in ("people", "weeks", "teams", "days", "colors")}
+    data = {k: v[k] for k in ("people", "weeks", "teams", "days", "colors", "trend", "scorecards", "weekdays", "prev_label", "month_long")}
     js = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return _env.get_template("sales_monthly_dashboard.html").render(v=v, logo=logo_data_uri(), data_json=js).encode("utf-8")

@@ -281,7 +281,8 @@ def test_inbox_job_reports_and_month_end(staffed, settings, tmp_path):
         html, text, files = mail.render(s, items["MONTHLY:ravi@example.com"])
         assert "November 2026" in html and "Dear Ravi Manager" in html and "Ravi Manager" in text
         assert "fraud" not in html.lower() and "9999999999" not in html + files[1].content.decode()
-        assert load_workbook(io.BytesIO(files[0].content)).sheetnames == ["Summary", "Weeks", "Needs a conversation", "People", "Calendar"]
+        mnames = load_workbook(io.BytesIO(files[0].content)).sheetnames
+        assert mnames[0] == "Summary" and {"Day by day", "Weeks", "Needs a conversation", "People", "Calendar"} <= set(mnames)
         assert "Teams" in load_workbook(io.BytesIO(mail.render(s, items["MONTHLY:DIRECTOR"])[2][0].content)).sheetnames
         done = mail.send_items(s, [i for i in items.values() if i.status == "PENDING"], "tester", settings.storage.area("sales_outbox"))
         assert {i.status for i in done} == {"SAVED"}

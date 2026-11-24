@@ -88,6 +88,17 @@ def day(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), 
     return _day(db, _upload_or_404(db, report_date))
 
 
+@router.get("/days/{report_date}/pack")
+def day_pack(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> dict:
+    """The last 30 Bizom days for this day's people: trend, team-head scorecard + weekday heatmap, per-person strips."""
+    from sales import insights
+
+    up = _upload_or_404(db, report_date)
+    rows = service.rows_for(db, up.upload_id)
+    return insights.pack(db, up.report_date, {r.code for r in rows},
+                         {r.code: report.manager_label(r.manager_name) or "No team head" for r in rows})
+
+
 @router.get("/days/{report_date}/excel")
 def day_excel(report_date: date, _: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depends(get_db)) -> Response:
     up = _upload_or_404(db, report_date)

@@ -5,9 +5,13 @@ import { useApi } from "../api/useApi";
 import type { BreakdownRow, DayDetail, DayListItem, EmployeeRow, Highlight, Insights } from "../api/types";
 import { scopeLabel } from "../api/types";
 import { Link } from "react-router-dom";
-import { HBars, LineChart, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
+import { HBars, STATUS_COLORS, STATUS_LABELS } from "../components/charts";
 import { Card, DataTable, ErrorNotice, Field, KpiCard, Loading, Notice, PageHeader, StatusBadge, Toolbar } from "../components/ui";
 import { formatDate, formatHours, formatMinutes, formatTime } from "../format";
+import { HO_LEGEND, Person30, Strip30, Trend30, WeekdayHeat, pctColor30, type Pack30 } from "../components/insights30";
+
+interface HoPerson30 { strip: string; pct30: number | null; late30: number; absent30: number; leave30: number; wfh_od30: number; usual_in: string; avg_hours: string }
+interface HoPack extends Pack30 { people: Record<string, HoPerson30>; groups: { name: string; pct30: number | null; absent30: number; heat: (number | null)[] }[] }
 
 export function HighlightList({ items }: { items: Highlight[] }) {
   return (
@@ -57,6 +61,8 @@ export function InsightsPage() {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("");
   const day = useApi<DayDetail>(date ? `/v1/days/${date}` : null);
+  const pack = useApi<HoPack>(date ? `/v1/days/${date}/pack?scope=${encodeURIComponent(scope)}` : null);
+  const [person, setPerson] = useState<EmployeeRow | null>(null);
 
   useEffect(() => setScope("ALL"), [date]);
   useEffect(() => setDept(""), [scope]);
@@ -73,7 +79,8 @@ export function InsightsPage() {
   const deptOptions = useMemo(() => [...new Set((day.data?.rows ?? []).filter((r) => inScope(r, scope))
     .map((r) => r.department || r.category))].sort(), [day.data, scope]);
   const bd = ins ? breakdownOf(ins, scope) : { by: "Category", rows: [] };
-  const trend = useMemo(() => [...(days.data ?? [])].reverse().slice(-30), [days.data]);
+  const pk = pack.data;
+  const p30 = (r: EmployeeRow) => pk?.people[r.code.toUpperCase()];
 
   if (days.loading) return <Loading />;
   if (days.data && !days.data.length) {
@@ -149,13 +156,23 @@ export function InsightsPage() {
                   .map((c) => ({ label: c.name, value: c.attendance_pct as number, color: pctColor(c.attendance_pct as number) }))} />
               </Card>
             )}
-            {scope === "ALL" && (
-              <Card title="Attendance trend">
-                <LineChart title="Attendance % per uploaded day" unit="%" labels={trend.map((t) => formatDate(t.report_date).slice(0, 6))}
-                  values={trend.map((t) => t.attendance_pct)} />
-              </Card>
-            )}
           </div>
+
+          {pk && pk.trend.length > 1 && (
+            <div className="grid-2">
+              <Card title={`Last ${pk.trend.length} report days · ${scopeLabel(scope)}`}>
+                <Trend30 trend={pk.trend} title="Attendance % on working days, absent people per day" />
+              </Card>
+              <Card title="Attendance by weekday">
+                <WeekdayHeat weekdays={pk.weekdays} extraHeader={pk.groups.length ? "30 days" : undefined}
+                  note={`Last 12 weeks, working days only.${pk.groups.length ? " HOD teams lowest first – click one to open it." : ""}`}
+                  rows={[{ name: "Everyone", heat: pk.heat_all, extra: "" },
+                    ...pk.groups.map((g) => ({ name: g.name, heat: g.heat,
+                      extra: <><span className="bar30"><i style={{ width: `${g.pct30 ?? 0}%`, background: pctColor30(g.pct30) }} /></span>{g.pct30 ?? "–"}%</>,
+                      onClick: ins.hods?.some((h) => h.scope === `HOD:${g.name}`) ? () => setScope(`HOD:${g.name}`) : undefined }))]} />
+              </Card>
+            </div>
+          )}
 
           {bd.rows.length > 1 && (
             <Card title={`By ${bd.by.toLowerCase()}`}>
@@ -210,6 +227,11 @@ export function InsightsPage() {
                 { header: "Manager", render: (r: EmployeeRow) => r.manager ?? "" },
               ] : [{ header: "Category", render: (r: EmployeeRow) => r.category }]),
               { header: "Status", render: (r) => <span className="st" style={{ background: `${STATUS_COLORS[r.status]}22`, color: STATUS_COLORS[r.status] }}>{r.status_label}</span> },
+              ...(pk ? [{ header: "Last 30 days", value: (r: EmployeeRow) => p30(r)?.pct30 ?? -1, render: (r: EmployeeRow) => {
+                const h = p30(r);
+                return h ? <button type="button" className="link-btn" onClick={() => setPerson(r)} title="Open this person's last 30 report days">
+                  <Strip30 strip={h.strip} pack={pk} legend={HO_LEGEND} mini /> <b style={{ color: pctColor30(h.pct30) }}>{h.pct30 === null ? "–" : `${h.pct30}%`}</b></button> : "";
+              } }] : []),
               { header: "In", render: (r) => formatTime(r.in_time) },
               { header: "Out", render: (r) => formatTime(r.out_time) },
               { header: "Hours", render: (r) => formatHours(r.work_hours) },
@@ -220,6 +242,19 @@ export function InsightsPage() {
               { header: "On duty", render: (r) => r.on_duty ?? "" },
             ]} />
           </Card>
+
+          {person && pk && p30(person) && (() => {
+            const h = p30(person) as HoPerson30;
+            return (
+              <Person30 title={person.name} subtitle={`EMP code ${person.code}${person.department ? ` · ${person.department}` : ""}${person.hod ? ` · HOD ${person.hod}` : ""}`}
+                strip={h.strip} pack={pk} legend={HO_LEGEND} onClose={() => setPerson(null)}
+                facts={[["Attendance", h.pct30 === null ? "–" : `${h.pct30}%`], ["Late days", h.late30], ["Absent days", h.absent30], ["Leave / half days", h.leave30],
+                  ["WFH / on duty", h.wfh_od30], ["Usual in-time", h.usual_in], ["Average duty", h.avg_hours ? `${h.avg_hours} h` : ""],
+                  [`${formatDate(date).slice(0, 6)}`, person.status_label]]}>
+                <p style={{ marginTop: ".8rem" }}><Link className="btn btn-ghost btn-small" to={`/employee-report?code=${encodeURIComponent(person.code)}`}>Full employee report</Link></p>
+              </Person30>
+            );
+          })()}
 
           {day.data && day.data.emails.length > 0 && (
             <Card title="Emails for this day">

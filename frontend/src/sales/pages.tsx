@@ -11,6 +11,10 @@ import { StaffEditor } from "./more";
 import { HistoryImportCard, RiskBadge } from "./geo";
 import type { SalesDay, SalesDayMail, SalesDayRow, SalesEmailSettings, SalesJobs, SalesPerson, SalesReport, SalesRules, SalesStaff, SalesStaffIssues, SalesStaffRow, SalesStates, SalesStatus } from "./types";
 import { STATUS_COLOR } from "./types";
+import { FS_LEGEND, Person30, Strip30, Trend30, WeekdayHeat, pctColor30, type Pack30 } from "../components/insights30";
+
+interface FsPerson30 { strip: string; pct30: number | null; late30: number; absent30: number; leave30: number; worked30: number; usual_start: string | null; avg_market: number | null }
+interface FsPack extends Pack30 { people: Record<string, FsPerson30>; teams: Record<string, { pct30: number | null; late30_pct: number; absent30: number; heat: (number | null)[] }> }
 
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? "–" : `${v}%`);
 const tone = (v: number | null | undefined) => (v === null || v === undefined ? "info" : v >= 90 ? "ok" : v >= 75 ? "warn" : "fail") as "ok" | "warn" | "fail" | "info";
@@ -168,11 +172,15 @@ export function SalesDayPage() {
   const days = useApi<SalesDayRow[]>("/v1/sales/days");
   const [date, setDate] = useDayParam(days.data);
   const day = useApi<SalesDay>(date ? `/v1/sales/days/${date}` : null);
+  const pack = useApi<FsPack>(date ? `/v1/sales/days/${date}/pack` : null);
+  const pk = pack.data;
   const [filter, setFilter] = useState<string>("flagged");
   const [open, setOpen] = useState<string | null>(null);
+  const [person, setPerson] = useState<string | null>(null);
   const rows = useMemo(() => {
     const all = day.data?.rows ?? [];
     if (filter === "all") return all;
+    if (filter.startsWith("m:")) return all.filter((p) => (p.manager || "No team head") === filter.slice(2));
     if (filter === "flagged") return all.filter((p) => p.flags.length);
     if (filter.startsWith("w:")) return all.filter((p) => p.flags.some((f) => f.code === filter.slice(2)));
     return all.filter((p) => p.status === filter);
@@ -227,7 +235,24 @@ export function SalesDayPage() {
               ]} />
             </Card>
           </div>
+          {pk && pk.trend.length > 1 && (
+            <div className="grid-2">
+              <Card title={`Last ${pk.trend.length} Bizom days`}>
+                <Trend30 trend={pk.trend} title="Attendance % on working days, absent people per day" />
+              </Card>
+              <Card title="Team heads — last 30 days, lowest first">
+                <WeekdayHeat weekdays={pk.weekdays} extraHeader="30 days"
+                  note="Weekday cells: attendance % over the last 12 weeks (working days). Click a team head to list their people below."
+                  rows={[{ name: "Everyone", heat: pk.heat_all, extra: "" },
+                    ...Object.entries(pk.teams).sort((a, b) => (a[1].pct30 ?? 999) - (b[1].pct30 ?? 999)).map(([name, tm]) => ({
+                      name, heat: tm.heat,
+                      extra: <span title={`${tm.absent30} absent days · ${tm.late30_pct}% late`}><span className="bar30"><i style={{ width: `${tm.pct30 ?? 0}%`, background: pctColor30(tm.pct30) }} /></span>{tm.pct30 ?? "–"}%</span>,
+                      onClick: () => setFilter(`m:${name}`) }))]} />
+              </Card>
+            </div>
+          )}
           <Card title="People">
+            {filter.startsWith("m:") && <p className="muted small">Showing {filter.slice(2)}'s people · <button type="button" className="link-btn" onClick={() => setFilter("all")}>show everyone</button></p>}
             <div className="chips-row">
               {[["flagged", "Needs checking"], ["all", "Everyone"], ["ABSENT", "Absent"], ["LATE", "Late"], ["HALF_DAY", "Half day"], ["LEAVE", "Leave"], ["WEEK_OFF", "Week off"], ["PRESENT", "Present"]]
                 .map(([k, l]) => <button type="button" key={k} className={`chip-btn${filter === k ? " on" : ""}`} onClick={() => setFilter(k)}>{l}</button>)}
@@ -240,6 +265,11 @@ export function SalesDayPage() {
               { header: "Manager", render: (p) => p.manager },
               { header: "Status", render: (p) => <><StatusText s={p.status} label={p.status_label} />{p.leave && <div className="muted small">{p.leave}</div>}{p.not_marked && <div className="muted small">did not mark</div>}</>, value: (p) => p.status_label },
               { header: "Marked", render: (p) => p.att },
+              ...(pk ? [{ header: "Last 30 days", value: (p: (typeof rows)[number]) => pk.people[p.code]?.pct30 ?? -1, render: (p: (typeof rows)[number]) => {
+                const h = pk.people[p.code];
+                return h ? <button type="button" className="link-btn" onClick={() => setPerson(p.code)} title="Open this person's last 30 days">
+                  <Strip30 strip={h.strip} pack={pk} legend={FS_LEGEND} mini /> <b style={{ color: pctColor30(h.pct30) }}>{h.pct30 === null ? "–" : `${h.pct30}%`}</b></button> : "";
+              } }] : []),
               { header: "Activity", render: (p) => (p.first ? `${p.first} – ${p.last}` : "") },
               { header: "In market", render: (p) => p.market, value: (p) => p.market_min },
               { header: "KM", render: (p) => p.km ?? "", value: (p) => p.km },
@@ -252,6 +282,19 @@ export function SalesDayPage() {
                 ? <Link className="btn btn-ghost btn-small" to={`/sales/map?date=${date}&code=${p.code}`}>Map</Link> : null) },
             ]} />
           </Card>
+          {person && pk?.people[person] && (() => {
+            const h = pk.people[person], p = day.data?.rows.find((x) => x.code === person);
+            return (
+              <Person30 title={p?.name ?? person} subtitle={`${person}${p ? ` · ${p.designation} · team head ${p.manager || "–"}` : ""}`}
+                strip={h.strip} pack={pk} legend={FS_LEGEND} onClose={() => setPerson(null)}
+                facts={[["Attendance", h.pct30 === null ? "–" : `${h.pct30}%`], ["Late days", h.late30], ["Absent days", h.absent30], ["Leave days", h.leave30],
+                  ["Days worked", h.worked30], ["Usual start", h.usual_start ?? ""], ["Avg time in market", h.avg_market === null ? "" : `${Math.floor(h.avg_market / 60)}:${String(h.avg_market % 60).padStart(2, "0")} h`],
+                  ["This day", p?.status_label ?? ""]]}>
+                {p && p.flags.length > 0 && <p className="small" style={{ marginTop: ".8rem" }}><b>Signs this day:</b> {p.flags.map((f) => f.label).join("; ")}</p>}
+                <p style={{ marginTop: ".8rem" }}><Link className="btn btn-ghost btn-small" to={`/sales/employee?code=${encodeURIComponent(person)}`}>Full history</Link></p>
+              </Person30>
+            );
+          })()}
         </>
       )}
     </>

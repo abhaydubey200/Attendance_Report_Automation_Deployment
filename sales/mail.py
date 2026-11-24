@@ -136,19 +136,25 @@ def send_items(session: Session, items: list[SalesMailItem], actor: str, outbox,
             continue
         pilot = (cfg.mode == "test" and not testing and to and all(a.lower() in {p.lower() for p in cfg.pilot_live} for a in to))
         html, text, attachments = render(session, item)
-        subject = item.subject
-        if testing:
-            html = html.replace("<body", f"<body data-test-for=\"{', '.join(to)}\"", 1)
-            text = f"*** TEST EMAIL - in live use this goes to {', '.join(to) or '(address not set yet)'} ***\n\n" + text
+        subject, cc = item.subject, []
+        if testing:      # only the testers receive it (really sent, whatever the mode); the real recipients are named in the banner
+            from daily.mail import _with_banner
+
+            would = ", ".join(to) or "(address not set yet)"
+            html = _with_banner(html.replace("<body", f"<body data-test-for=\"{would}\"", 1), would)
+            text = f"*** TEST EMAIL - in live use this goes to {would} ***\n\n" + text
             subject, to = f"[TEST] {subject}", [testing]
+            cc = [a for a in cfg.test_cc if a.lower() != testing.lower()]
         bcc = [] if testing else [a for a in cfg.always_bcc if a not in to]
-        msg = build_message(sender, to, subject, html, text, attachments, bcc=bcc)
+        msg = build_message(sender, to, subject, html, text, attachments, cc=cc, bcc=bcc)
         item.attempts += 1
         try:
-            res = send(_Cfg("live" if pilot else cfg.mode, sender), msg, outbox / item.report_date.isoformat())
+            res = send(_Cfg("live" if (pilot or testing) else cfg.mode, sender), msg, outbox / item.report_date.isoformat())
             item.status = TEST_SENT if testing else res.status
             item.outbox_file, item.sent_at, item.approved_by = res.outbox_file, now_utc(), actor
-            item.note = (f"Test only: sent to {testing}." if testing else "Pilot: really sent (test mode for everyone else)." if pilot else
+            who = testing + (f" (CC {', '.join(cc)})" if cc else "") if testing else ""
+            item.note = (f"Test only: {'delivered to' if res.status == 'SENT' else 'saved to the outbox for'} {who}. The real recipient has not received it."
+                         if testing else "Pilot: really sent (test mode for everyone else)." if pilot else
                          ("Saved to the outbox (test mode - not sent)." if res.status == SAVED else None))
         except MailError as exc:
             item.status, item.note = FAILED, str(exc)[:500]

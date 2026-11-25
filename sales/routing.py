@@ -124,7 +124,7 @@ def recipients(codes_in_day: set[str], staff: dict[str, SalesEmployee], cfg: Sal
             r.detail = set(r.codes)
     director = Recipient(DIRECTOR, cfg.director_name or "Director", "Director", list(cfg.director_emails), set(codes_in_day), "company")
     hr = Recipient(HR, "HR", "HR", list(cfg.hr_emails), set(codes_in_day), "hr")
-    extra = [director] + ([hr] if hr_always or exceptions(codes_in_day, staff) else [])
+    extra = ([director] if cfg.director_email else []) + ([hr] if cfg.hr_email and (hr_always or exceptions(codes_in_day, staff)) else [])
     for r in extra:
         if not r.to:
             r.status, r.note = "HELD", f"{r.role} email not set (Field Sales -> Settings)."

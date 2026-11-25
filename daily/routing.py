@@ -173,15 +173,12 @@ def recipients(session: Session, cfg: EmailSettings, day: date | None = None, al
                    or (day and sw.effective_to and day > sw.effective_to)):
             rec.status, rec.note = "DISABLED", "Switched off for this recipient."
         out.append(rec)
-    director = Recipient(DIRECTOR, cfg.director_name or "Director", "Director", [m.lower() for m in cfg.director_emails],
-                         team=team.get(DIRECTOR, []), company=True)
-    if not cfg.director_report:
-        director.status, director.note = "DISABLED", "Director report switched off in Settings."
-    out.append(director)
-    hr = Recipient(HR, "HR Attendance", "HR", [m.lower() for m in cfg.hr_emails], team=team.get(HR, []))
-    if not cfg.hr_exceptions:
-        hr.status, hr.note = "DISABLED", "HR exception report switched off in Settings."
-    out.append(hr)
+    # Director / HR emails switched off in Settings are not prepared at all (user 2026-11-25: not sent for now)
+    if cfg.director_report:
+        out.append(Recipient(DIRECTOR, cfg.director_name or "Director", "Director", [m.lower() for m in cfg.director_emails],
+                             team=team.get(DIRECTOR, []), company=True))
+    if cfg.hr_exceptions:
+        out.append(Recipient(HR, "HR Attendance", "HR", [m.lower() for m in cfg.hr_emails], team=team.get(HR, [])))
     always = [a.strip().lower() for a in cfg.always_cc if a.strip()]
     for rec in out:
         if always:

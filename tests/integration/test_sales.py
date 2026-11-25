@@ -413,3 +413,13 @@ def test_excluded_codes_and_staff_import_preview(staffed, settings, tmp_path):
             assert s.scalar(select(SalesEmployee).where(SalesEmployee.code == "SL07777")).zone == "GTR09"      # GTR read as zone
         rv = api.get("/api/v1/sales/routing", headers=H).json()
         assert rv["rows"] and all(r["goes_to"] or r["check"] == "VERIFY" for r in rv["rows"]) and rv["emails_per_day"] >= 2
+
+
+def test_field_sales_director_and_hr_switches():
+    from database.models.sales import SalesEmployee as E
+    from sales import routing
+
+    staff = {"S1": E(code="S1", name="A B", manager_name="X Y", manager_email="x@x.com", hod_email="h@x.com", status="ACTIVE")}
+    on = {r.key for r in routing.recipients({"S1", "ZZ"}, staff, SalesEmail(levels=["manager"]), hr_always=False)}
+    off = {r.key for r in routing.recipients({"S1", "ZZ"}, staff, SalesEmail(levels=["manager"], director_email=False, hr_email=False), hr_always=False)}
+    assert on == {"x@x.com", "DIRECTOR", "HR"} and off == {"x@x.com"}

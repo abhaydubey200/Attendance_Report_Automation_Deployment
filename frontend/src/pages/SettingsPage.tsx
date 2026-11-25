@@ -87,8 +87,8 @@ function EmailForm({ initial, secrets }: { initial: EmailSettings; secrets: Reco
         </div>
         <Check on={e.team_emails} set={(v) => set({ team_emails: v })}>Team leads get their own team's attendance</Check>
         <Check on={e.hod_summary} set={(v) => set({ hod_summary: v })}>HODs get a summary of everyone under them</Check>
-        <Check on={e.director_report} set={(v) => set({ director_report: v })}>Director gets the company summary</Check>
-        <Check on={e.hr_exceptions} set={(v) => set({ hr_exceptions: v })}>HR gets the exception report</Check>
+        <Check on={e.director_report} set={(v) => set({ director_report: v })}>Director gets the company summary (off = not prepared)</Check>
+        <Check on={e.hr_exceptions} set={(v) => set({ hr_exceptions: v })}>HR gets the exception report (off = not prepared)</Check>
         <Check on={e.hod_cc_on_team} set={(v) => set({ hod_cc_on_team: v })}>CC the HOD on team-lead emails (only if HR has approved)</Check>
         <Check on={e.hr_cc_on_hod_summary} set={(v) => set({ hr_cc_on_hod_summary: v })}>CC the HR mailbox on HOD summaries</Check>
       </Card>

@@ -110,6 +110,8 @@ class SalesEmail(BaseModel):
     auto_send: bool = False                        # daily job: send the prepared emails without waiting for Approve
     test_recipient: str | None = None              # testing: every email really goes ONLY here (To), marked [TEST]
     test_cc: list[str] = Field(default_factory=list)  # testing: CC on every test email
+    director_email: bool = True                    # Director gets the company summary (off = not prepared at all)
+    hr_email: bool = True                          # HR gets the exception email (off = not prepared at all)
     director_name: str = "Director"
     director_emails: list[str] = Field(default_factory=list)
     hr_emails: list[str] = Field(default_factory=list)

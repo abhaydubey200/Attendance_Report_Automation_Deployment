@@ -554,6 +554,8 @@ export function SalesSettingsPage() {
             <input value={email.test_recipient ?? ""} onChange={(e) => setEmail({ ...email, test_recipient: e.target.value || null })} /></Field>
           <Field label="Test CC" hint="Comma separated. Copied on every test email.">
             <input value={(email.test_cc ?? []).join(", ")} onChange={(e) => setEmail({ ...email, test_cc: LIST(e.target.value) })} /></Field>
+          <label className="check"><input type="checkbox" checked={email.director_email ?? true} onChange={(e) => setEmail({ ...email, director_email: e.target.checked })} /> Director gets the company summary (off = not prepared)</label>
+          <label className="check"><input type="checkbox" checked={email.hr_email ?? true} onChange={(e) => setEmail({ ...email, hr_email: e.target.checked })} /> HR gets the exception email (off = not prepared)</label>
           <Field label="Director name"><input value={email.director_name} onChange={(e) => setEmail({ ...email, director_name: e.target.value })} /></Field>
           <Field label="Director email(s)" hint="Comma separated. Empty = the Director's email is held.">
             <input value={email.director_emails.join(", ")} onChange={(e) => setEmail({ ...email, director_emails: LIST(e.target.value) })} /></Field>

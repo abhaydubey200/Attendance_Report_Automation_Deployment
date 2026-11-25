@@ -593,3 +593,12 @@ def test_second_hod_also_gets_the_person_counted_once(engine, settings):
         emp.import_rows(s, [{"code": "T4", "name": "No Sub Split", "hod_name": "RAHUL SHARMA", "hod_email": "rahul@example.com"}], "tester")
         assert emp.get(s, "T4").also_to == "arun@example.com"
         assert emp.to_dict(emp.get(s, "T4"))["also_to"] == "arun@example.com"
+
+
+def test_director_and_hr_emails_switched_off_are_not_prepared(engine, settings):
+    """User 2026-11-25: Director / HR emails off for now -> no row at all in the approval list (not 'Held', not 'Disabled')."""
+    with session_scope(engine) as s:
+        load(s, settings, approval_required=True, director_emails=[], director_report=False, hr_exceptions=False)
+        _, items, _ = service.upload_files_and_send(s, settings, [("s.xlsx", summary_file(ATTENDANCE))], "tester")
+        keys = {i.recipient_key for i in items}
+        assert "DIRECTOR" not in keys and "HR" not in keys and keys            # the HOD / team emails are still there

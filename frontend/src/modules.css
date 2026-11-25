@@ -165,3 +165,10 @@ table.heat30 tr.click:hover td.nm { text-decoration: underline; }
 .rt-card.hod { border-top: 4px solid #1f7a4c; } .rt-card.on { outline: 2px solid #f5b800; background: #fff8e1; } .rt-card.dim { opacity: .4; }
 .rt-card .nm { font-weight: 700; } .rt-card .ct { color: #5e3c0f; font-weight: 700; } .rt-card.hod .ct { color: #1f7a4c; }
 .rt-card .sm { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+
+/* ---- Field Sales upload: three named boxes (Bizom 20447 / 4218 / 6472) */
+.fs-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.fs-box { position: relative; display: flex; flex-direction: column; gap: 6px; border: 2px dashed var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--surface); }
+.fs-box:hover { border-color: #f5b800; } .fs-box.on { border-style: solid; border-color: #16a34a; background: #f0faf3; }
+.fs-box input[type=file] { font-size: 12px; } .fs-box .fs-file { color: #15803d; font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
+.fs-id { align-self: flex-start; background: #3d2a10; color: #ffd54d; font-weight: 800; border-radius: 8px; padding: 2px 10px; font-size: 15px; letter-spacing: .04em; }

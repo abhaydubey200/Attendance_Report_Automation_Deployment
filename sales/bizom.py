@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 ATTENDANCE, EOD, CALLS, HISTORY = "ATTENDANCE", "EOD", "CALLS", "HISTORY"
+REPORT_ID = {ATTENDANCE: "20447", EOD: "4218", CALLS: "6472"}      # Bizom's report numbers (user 2026-11-25), shown on the upload boxes
 LABEL = {ATTENDANCE: "Bizom Attendance report", EOD: "Bizom Attendance & EOD report", CALLS: "Bizom Call Variance report",
          HISTORY: "Bizom Attendance history (AttendanceReport, many days)"}
 

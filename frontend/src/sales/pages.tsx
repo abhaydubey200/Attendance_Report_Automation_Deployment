@@ -112,15 +112,22 @@ export function SalesOverview() {
 }
 
 // ---------------------------------------------------------------- Upload
+const SALES_BOXES = [
+  { kind: "ATTENDANCE", id: "20447", title: "Attendance report", required: true, what: "Status, attendance time, time in market, KM." },
+  { kind: "EOD", id: "4218", title: "Attendance & EOD report", required: false, what: "Day-end checks and the attendance / day-end locations." },
+  { kind: "CALLS", id: "6472", title: "Call Variance report", required: false, what: "Outlet-visit checks and the day map. Export the whole team, not one person." },
+] as const;
+
 export function SalesUpload() {
-  const [files, setFiles] = useState<File[]>([]);
+  const [picked, setPicked] = useState<Record<string, File | null>>({ ATTENDANCE: null, EOD: null, CALLS: null });
   const [replace, setReplace] = useState(false);
   const { busy, error, message, run } = useAction();
   const navigate = useNavigate();
+  const files = SALES_BOXES.filter((b) => picked[b.kind]);
   async function submit(e: FormEvent) {
     e.preventDefault();
     const form = new FormData();
-    files.forEach((f) => form.append("files", f));
+    files.forEach((b) => { form.append("files", picked[b.kind] as File); form.append("expect", b.kind); });
     form.append("replace", String(replace));
     const day = await run(() => api.upload<SalesDay>("/v1/sales/upload", form),
       (d) => `${formatDate(d.report_date)} processed: ${d.people} people, ${d.summary.people_flagged} need checking.`);
@@ -128,22 +135,28 @@ export function SalesUpload() {
   }
   return (
     <>
-      <PageHeader title="Upload a Bizom day" subtitle="Choose one to three Bizom reports of the same day. Each file is recognised by its columns." />
+      <PageHeader title="Upload a Bizom day" subtitle="Yesterday's three Bizom reports of the same day – one file in each box. A file put in the wrong box is refused." />
       <Card>
         <form onSubmit={submit} className="sales-upload">
-          <ol className="sales-steps">
-            <li><strong>Attendance report</strong> <span className="badge badge-fail">required</span><span>Status, attendance time, time in market, KM.</span></li>
-            <li><strong>Attendance &amp; EOD report</strong> <span className="badge badge-info">optional</span><span>Adds the day-end checks and the attendance / day-end locations.</span></li>
-            <li><strong>Call Variance report</strong> <span className="badge badge-info">optional</span><span>Adds the outlet-visit checks and the day map (call and outlet locations). Export the whole team, not one person.</span></li>
-          </ol>
-          <Field label="Bizom files (.csv)">
-            <input type="file" multiple accept=".csv,.xlsx" onChange={(e) => setFiles([...(e.target.files ?? [])].slice(0, 3))} />
-          </Field>
-          {files.length > 0 && <p className="muted">{files.map((f) => f.name).join(" · ")}</p>}
+          <div className="fs-boxes">
+            {SALES_BOXES.map((b) => {
+              const f = picked[b.kind];
+              return (
+                <label key={b.kind} className={`fs-box${f ? " on" : ""}`}>
+                  <span className="fs-id">{b.id}</span>
+                  <strong>{b.title}</strong>
+                  <span className={`badge ${b.required ? "badge-fail" : "badge-info"}`}>{b.required ? "required" : "optional"}</span>
+                  <span className="muted small">{b.what}</span>
+                  <input type="file" accept=".csv,.xlsx" onChange={(e) => setPicked((p) => ({ ...p, [b.kind]: e.target.files?.[0] ?? null }))} />
+                  {f ? <span className="fs-file">✓ {f.name}</span> : <span className="muted small">Choose the {b.id} file (.csv)</span>}
+                </label>
+              );
+            })}
+          </div>
           <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace the day if it is already uploaded</label>
           <p className="muted">Locations and photo links are kept for 6 months for the location checks, then deleted. Phone numbers are never stored.</p>
           <ActionMessages error={error} message={message} />
-          <button type="submit" className="btn btn-primary btn-auto" disabled={busy || files.length === 0}>{busy ? "Processing…" : "Process the day"}</button>
+          <button type="submit" className="btn btn-primary btn-auto" disabled={busy || !picked.ATTENDANCE}>{busy ? "Processing…" : "Process the day"}</button>
         </form>
       </Card>
       <HistoryImportCard />

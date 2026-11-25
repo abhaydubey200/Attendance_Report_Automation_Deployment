@@ -69,11 +69,23 @@ def days(_: Principal = Depends(require(Perm.VIEW_INSIGHTS)), db: Session = Depe
 
 
 @router.post("/upload")
-async def upload(files: list[UploadFile] = File(...), replace: bool = Form(False),
+async def upload(files: list[UploadFile] = File(...), replace: bool = Form(False), expect: list[str] = Form(default=[]),
                  principal: Principal = Depends(require(Perm.UPLOAD_AND_SEND)), db: Session = Depends(get_db)) -> dict:
+    """expect (optional, one per file): the report the upload box is for (ATTENDANCE / EOD / CALLS); a different report is refused."""
     if len(files) > 3:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Upload at most three Bizom reports: Attendance, Attendance & EOD, Call Variance.")
     payload = [(f.filename or "bizom.csv", await f.read(service.MAX_MB * 1024 * 1024 + 1)) for f in files]
+    if expect and len(expect) == len(payload):
+        for (name, data), want in zip(payload, expect):
+            try:
+                got = bizom.kind_of(bizom.read_rows(data, name))
+            except bizom.BizomError:
+                got = None
+            if want in bizom.LABEL and got != want:
+                found = bizom.LABEL.get(got, "not a Bizom report") if got else "not a Bizom report"
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                    f"{name} was put in box {bizom.REPORT_ID.get(want, '')} ({bizom.LABEL[want]}) but it is {found}. "
+                                    f"Put it in its own box.")
     try:
         up = service.process(db, payload, principal.username, replace)
     except service.AlreadyUploaded as exc:

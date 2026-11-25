@@ -423,3 +423,14 @@ def test_field_sales_director_and_hr_switches():
     on = {r.key for r in routing.recipients({"S1", "ZZ"}, staff, SalesEmail(levels=["manager"]), hr_always=False)}
     off = {r.key for r in routing.recipients({"S1", "ZZ"}, staff, SalesEmail(levels=["manager"], director_email=False, hr_email=False), hr_always=False)}
     assert on == {"x@x.com", "DIRECTOR", "HR"} and off == {"x@x.com"}
+
+
+def test_three_named_upload_boxes(staffed, settings, tmp_path):
+    """Upload page: box 20447 = Attendance, 4218 = Attendance & EOD, 6472 = Call Variance; a file in the wrong box is refused."""
+    with TestClient(create_app(settings, staffed, frontend_dist=tmp_path / "x")) as api:
+        wrong = api.post("/api/v1/sales/upload", headers=H, files=[("files", ("eod.csv", eod_csv(), "text/csv"))], data={"expect": ["ATTENDANCE"]})
+        assert wrong.status_code == 422 and "box 20447" in wrong.text and "Attendance & EOD" in wrong.text
+        ok = api.post("/api/v1/sales/upload", headers=H, data={"expect": ["ATTENDANCE", "EOD", "CALLS"]},
+                      files=[("files", ("a.csv", attendance_csv(), "text/csv")), ("files", ("e.csv", eod_csv(), "text/csv")),
+                             ("files", ("c.csv", calls_csv(), "text/csv"))])
+        assert ok.status_code == 200, ok.text

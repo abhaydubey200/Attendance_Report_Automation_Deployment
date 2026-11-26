@@ -1,20 +1,28 @@
 # APIS Daily Attendance
 
-A small automation tool for APIS India Limited:
+An internal attendance automation platform for APIS India Limited with two modules:
 
-**Upload one day's attendance (Pocket HRMS "Attendance Summary" + "Permission Report") → the app works out who reports to whom → each team lead and HOD gets ONE email with their own team's attendance (counts first, then only the people needing attention; their full list attached), the Director gets the company summary, and HR gets the records that could not be routed.**
+1. **Module 1 — Head Office (Pocket HRMS)**: Upload one day's attendance (Pocket HRMS "Attendance Summary" + "Permission Report" + optional "On Duty Report") → the app works out who reports to whom → each team lead and HOD gets ONE email with their own team's attendance (counts first, then only the people needing attention; their full list attached), the Director gets the company summary, and HR gets the records that could not be routed.
+2. **Module 2 — Field Sales (Bizom)**: Upload daily Bizom reports (Attendance required, optional Attendance & EOD and Call Variance) + multi-day AttendanceReport history → classifies attendance, checks field activity/GPS/device/selfie anomalies ("needs checking", never "fraud"), learns usual places and unusual days, scores risk from HR case reviews, and plans hierarchy emails (`manager` → `ASM/RSM` → `zonal` → `HOD` → `Director` / `HR`).
 
-**Pocket HRMS is the only source** (Bizom is no longer used). Datasets, joined on **EMP_CODE** (never on names):
+**Head Office uses Pocket HRMS only** (Bizom is used only in the Field Sales module). Datasets are joined on **EMP_CODE** (never on names):
 
-| Dataset | What it gives |
-|---|---|
-| Pocket HRMS Attendance Summary (daily) | One row per employee: In Time / Out Time ("Unswipe" = no punch, "Invalid" = missing punch), shift, Type (A / P / leave code), Department, Designation |
-| Pocket HRMS Permission Report (daily) | Short-leave permissions: date, time window, Pending/Approved |
-| Employee master (HR's routing workbook `APIS_Email_Routing_Master.xlsx`, or the Employee Amendment Excel; kept on the Employees screen) | Department, HOD + email, team lead (Sub split ID), reporting manager, status, routing issues |
+| Module | Dataset | What it gives |
+|---|---|---|
+| Head Office | Pocket HRMS Attendance Summary (daily) | One row per employee: In Time / Out Time ("Unswipe" = no punch, "Invalid" = missing punch), shift, Type (A / P / leave code), Department, Designation |
+| Head Office | Pocket HRMS Permission Report (daily) | Short-leave permissions: date, time window, Pending/Approved |
+| Head Office | Pocket HRMS On Duty Report (daily/multi-day) | On-duty / WFH requests: date, time window, Pending/Approved |
+| Head Office | Employee master (`APIS_Email_Routing_Master.xlsx` or Employee Amendment Excel) | Department, HOD + email, team lead (Sub split ID), `also_to`, reporting manager, status, routing issues |
+| Field Sales | Bizom Attendance, Attendance & EOD, Call Variance, and AttendanceReport history | Field attendance status, market hours/KM, outlet visits & coordinates, selfie URLs, and scrambled device codes (raw Bizom files are not stored) |
+| Field Sales | Field Sales staff master | Hierarchy (`manager` / `asm` / `zonal` / `hod` emails), zone, HQ, channel, `holiday_state`, status |
 
 Python 3.12 (FastAPI) + React (Vite). SQLite database on a single PC; SQL Server optional for a shared server.
 
 ## Run it
+
+**One-click (Windows):** double-click `start.bat` (starts the app on `http://localhost:8001` and opens it in the browser) and `stop.bat` to stop it.
+
+Or run manually:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -22,7 +30,7 @@ py -3.12 -m venv .venv
 npm --prefix frontend install
 npm --prefix frontend run build
 .\.venv\Scripts\python.exe main.py init-db
-.\.venv\Scripts\python.exe main.py serve          # open http://127.0.0.1:8000
+.\.venv\Scripts\python.exe main.py serve          # open http://127.0.0.1:8000 (or --port 8001)
 ```
 
 After updating to a new version, run `main.py init-db` again (it applies database changes and access rights).
@@ -73,7 +81,7 @@ With today's workbook: 29 people (25 team leads + HODs) + Director + HR exceptio
 
 - **Subject:** `Daily Attendance | 13-Nov-2026 | <recipient> | 2 absent · 3 late · 1 missing punch` (the most useful counts; "all present" when nobody needs attention, "N record(s) to fix" for HR)
 - **Body:** counts first (total, present, absent, leave, on duty, WFH, late, missing punch), then **only the employees needing attention** (absent, late, missing punch, left early, no attendance record). HODs also get the department summary by team; the Director the company summary by HOD.
-- **Attachments:** that recipient's full list (.xlsx, people needing attention first; HODs also get the department summary and roster) and an interactive HTML dashboard of the same people.
+- **Attachments:** that recipient's full list (.xlsx, people needing attention first; HODs also get the department summary and roster) and an interactive HTML dashboard of the same people. *(Note: the **Last 7 days** and **Last 30 days** grid sheets in `daily/daily_excel.py` are temporarily paused via `PAUSE_HISTORY_GRID_SHEETS = True` while their logic is being updated.)*
 - **Privacy:** each email has exactly one recipient in To and contains only that recipient's people. HOD CC on team emails is off unless HR approves it (Settings).
 - **Manual or Auto, per upload:** *Manual* (default, preview mode) prepares the emails and they wait on **Approve emails** until someone approves; *Auto* sends them as soon as the files are processed. The Upload page asks every time; the default is set in Settings (preview mode).
 - **Safety:** each recipient is sent at most once per day (re-uploading a day prepares the emails again but sends nothing new; an admin can deliberately **Resend**). Failed deliveries are retried (3 attempts by default) and can be approved again. Addresses are validated; a missing Director/HR address holds that email. Every send is in the Email log.

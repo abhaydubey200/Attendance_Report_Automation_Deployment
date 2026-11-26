@@ -31,6 +31,8 @@ CODES = [  # code, label, colour (cell), dark text?
 ]
 STATUS_CODE = {"PRESENT": "P", "MISSING_PUNCH": "MP", "ON_DUTY": "OD", "WFH": "WFH", "HALF_DAY": "HD", "LEAVE": "L",
                "ABSENT": "A", "WEEK_OFF": "WO", "HOLIDAY": "HO"}
+# Temporarily paused while the 7/30-day attendance grid logic is being corrected.
+PAUSE_HISTORY_GRID_SHEETS = True
 
 
 def code_of(row: dict | None) -> str:
@@ -243,7 +245,7 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
         people = s["company"]
 
     # ------------------------------------------------------------------ last 7 report days
-    if ups and people:
+    if not PAUSE_HISTORY_GRID_SHEETS and ups and people:
         wl = wb.add_worksheet("Last 7 days")
         days = [d for _, d in ups]
         fixed = [("Code", 10), ("Name", 24)] + ([("HOD", 18)] if kind != "hod" else [])
@@ -316,34 +318,35 @@ def build(settings: Settings, item: MailItem, kind: str, s: dict, b: dict, ups: 
         wt.insert_chart(3, 6, ch)
         wt.freeze_panes(4, 1)
 
-        w3 = wb.add_worksheet("Last 30 days")
-        labels = pack["labels"]
-        fixed = [("Code", 10), ("Name", 24)] + ([("HOD", 18)] if kind != "hod" else []) + \
-                [("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("WFH / OD", 8), ("Usual in-time", 10), ("Avg hours", 8)]
-        excel_banner(wb, w3, [w for _, w in fixed] + [4] * len(labels), f"{who} – day by day, last {len(labels)} report days to {day}",
-                     "P present · LT late · OD on duty · WFH · HD half day · L leave · A absent · MP missing punch · WO week off / holiday")
-        dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
-        for j, (h, w) in enumerate(fixed):
-            w3.write(3, j, h, head)
-            w3.set_column(j, j, w)
-        c0 = len(fixed)
-        for k, (lab, wd) in enumerate(zip(labels, pack["weekday_of"])):
-            w3.write(3, c0 + k, f"{lab} {wd}", dh)
-        w3.set_column(c0, c0 + len(labels) - 1, 4.2)
-        w3.set_row(3, 64)
-        pp = pack["people"]
-        ordered = sorted(people, key=lambda p: ((pp.get(p["code"].upper()) or {}).get("pct30") if (pp.get(p["code"].upper()) or {}).get("pct30") is not None else 999, p["name"]))
-        for i, p in enumerate(ordered, start=4):
-            h = pp.get(p["code"].upper()) or {}
-            vals = [p["code"], p["name"]] + ([p.get("hod") or ""] if kind != "hod" else []) + \
-                   [h.get("pct30"), h.get("late30"), h.get("absent30"), h.get("leave30"), h.get("wfh_od30"), h.get("usual_in"), h.get("avg_hours")]
-            for j, x in enumerate(vals):
-                w3.write(i, j, "" if x is None else x, pct_fmt[band(x)] if j == c0 - 7 and isinstance(x, (int, float)) else cell)
-            for k, ch_ in enumerate((h.get("strip") or "-" * len(labels)).ljust(len(labels), "-")[:len(labels)]):
-                c = P2X.get(ch_, "")
-                w3.write(i, c0 + k, c, code_fmt.get(c, code_fmt[""]) if c else code_fmt[""])
-        w3.autofilter(3, 0, 3 + len(ordered), c0 + len(labels) - 1)
-        w3.freeze_panes(4, 2)
+        if not PAUSE_HISTORY_GRID_SHEETS:
+            w3 = wb.add_worksheet("Last 30 days")
+            labels = pack["labels"]
+            fixed = [("Code", 10), ("Name", 24)] + ([("HOD", 18)] if kind != "hod" else []) + \
+                    [("30-day %", 9), ("Late", 6), ("Absent", 7), ("Leave", 6), ("WFH / OD", 8), ("Usual in-time", 10), ("Avg hours", 8)]
+            excel_banner(wb, w3, [w for _, w in fixed] + [4] * len(labels), f"{who} – day by day, last {len(labels)} report days to {day}",
+                         "P present · LT late · OD on duty · WFH · HD half day · L leave · A absent · MP missing punch · WO week off / holiday")
+            dh = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#3D2A10", "align": "center", "rotation": 90, "border": 1, "font_size": 9})
+            for j, (h, w) in enumerate(fixed):
+                w3.write(3, j, h, head)
+                w3.set_column(j, j, w)
+            c0 = len(fixed)
+            for k, (lab, wd) in enumerate(zip(labels, pack["weekday_of"])):
+                w3.write(3, c0 + k, f"{lab} {wd}", dh)
+            w3.set_column(c0, c0 + len(labels) - 1, 4.2)
+            w3.set_row(3, 64)
+            pp = pack["people"]
+            ordered = sorted(people, key=lambda p: ((pp.get(p["code"].upper()) or {}).get("pct30") if (pp.get(p["code"].upper()) or {}).get("pct30") is not None else 999, p["name"]))
+            for i, p in enumerate(ordered, start=4):
+                h = pp.get(p["code"].upper()) or {}
+                vals = [p["code"], p["name"]] + ([p.get("hod") or ""] if kind != "hod" else []) + \
+                       [h.get("pct30"), h.get("late30"), h.get("absent30"), h.get("leave30"), h.get("wfh_od30"), h.get("usual_in"), h.get("avg_hours")]
+                for j, x in enumerate(vals):
+                    w3.write(i, j, "" if x is None else x, pct_fmt[band(x)] if j == c0 - 7 and isinstance(x, (int, float)) else cell)
+                for k, ch_ in enumerate((h.get("strip") or "-" * len(labels)).ljust(len(labels), "-")[:len(labels)]):
+                    c = P2X.get(ch_, "")
+                    w3.write(i, c0 + k, c, code_fmt.get(c, code_fmt[""]) if c else code_fmt[""])
+            w3.autofilter(3, 0, 3 + len(ordered), c0 + len(labels) - 1)
+            w3.freeze_panes(4, 2)
 
         if kind != "hod" and len(pack.get("groups") or []) > 1:
             g = pack["groups"]

@@ -129,8 +129,7 @@ def test_plan_content_and_privacy(engine, settings):
         assert "1 of 1 people in your team needs attention on 13-Nov-2026: 1 late." in html                  # headline
         assert "2 of 3 people in your wider team need attention on 13-Nov-2026: 1 absent, 1 late." in html
         wbk = load_workbook(io.BytesIO(files[0].content))
-        assert wbk.sheetnames == ["Summary", "Needs attention", "Team list", "Wider team list", "Last 7 days", "Trend", "Last 30 days"]
-        assert "HOD" not in [c.value for c in wbk["Last 30 days"][4]]                     # HOD emails name no one's manager
+        assert wbk.sheetnames == ["Summary", "Needs attention", "Team list", "Wider team list", "Trend"]
         assert "Teams at a glance" not in html and "HOD" not in html                     # no per-team table in HOD emails
         html, _, _ = mail.render(s, settings, by["DIRECTOR"])
         assert "Daily Company Attendance" in html and "Company – 13-Nov-2026" in html and "Director Office staff" in html
